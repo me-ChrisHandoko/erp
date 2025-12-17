@@ -14,7 +14,7 @@ type CashTransaction struct {
 	ID              string               `gorm:"type:varchar(255);primaryKey"`
 	TenantID        string               `gorm:"type:varchar(255);not null;index"`
 	TransactionNumber string             `gorm:"type:varchar(100);not null;uniqueIndex"`
-	TransactionDate time.Time            `gorm:"type:datetime;not null;index"`
+	TransactionDate time.Time            `gorm:"type:timestamp;not null;index"`
 	Type            CashTransactionType  `gorm:"type:varchar(20);not null;index"` // CASH_IN, CASH_OUT
 	Category        CashCategory         `gorm:"type:varchar(50);not null;index"` // SALES, PURCHASE, EXPENSE, etc.
 	Amount          decimal.Decimal      `gorm:"type:decimal(15,2);not null"`

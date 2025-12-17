@@ -14,8 +14,8 @@ type Invoice struct {
 	ID              string          `gorm:"type:varchar(255);primaryKey"`
 	TenantID        string          `gorm:"type:varchar(255);not null;index"`
 	InvoiceNumber   string          `gorm:"type:varchar(100);not null;uniqueIndex"`
-	InvoiceDate     time.Time       `gorm:"type:datetime;not null;index"`
-	DueDate         time.Time       `gorm:"type:datetime;not null;index"`
+	InvoiceDate     time.Time       `gorm:"type:timestamp;not null;index"`
+	DueDate         time.Time       `gorm:"type:timestamp;not null;index"`
 	CustomerID      string          `gorm:"type:varchar(255);not null;index"`
 	SalesOrderID    *string         `gorm:"type:varchar(255);index"`
 	DeliveryID      *string         `gorm:"type:varchar(255);index"`
@@ -27,7 +27,7 @@ type Invoice struct {
 	PaymentStatus   PaymentStatus   `gorm:"type:varchar(20);default:'UNPAID';index"`
 	Notes           *string         `gorm:"type:text"`
 	FakturPajakNo   *string         `gorm:"type:varchar(100);uniqueIndex"` // Tax invoice number
-	FakturPajakDate *time.Time      `gorm:"type:datetime"`
+	FakturPajakDate *time.Time      `gorm:"type:timestamp"`
 	CreatedAt       time.Time       `gorm:"autoCreateTime"`
 	UpdatedAt       time.Time       `gorm:"autoUpdateTime"`
 
@@ -96,7 +96,7 @@ type Payment struct {
 	ID            string          `gorm:"type:varchar(255);primaryKey"`
 	TenantID      string          `gorm:"type:varchar(255);not null;index"`
 	PaymentNumber string          `gorm:"type:varchar(100);not null;uniqueIndex"`
-	PaymentDate   time.Time       `gorm:"type:datetime;not null;index"`
+	PaymentDate   time.Time       `gorm:"type:timestamp;not null;index"`
 	CustomerID    string          `gorm:"type:varchar(255);not null;index"`
 	InvoiceID     string          `gorm:"type:varchar(255);not null;index"`
 	Amount        decimal.Decimal `gorm:"type:decimal(15,2);not null"`
@@ -105,7 +105,7 @@ type Payment struct {
 	BankAccountID *string         `gorm:"type:varchar(255);index"`
 	Notes         *string         `gorm:"type:text"`
 	ReceivedBy    *string         `gorm:"type:varchar(255)"` // User who received payment
-	ReceivedAt    *time.Time      `gorm:"type:datetime"`
+	ReceivedAt    *time.Time      `gorm:"type:timestamp"`
 	CreatedAt     time.Time       `gorm:"autoCreateTime"`
 	UpdatedAt     time.Time       `gorm:"autoUpdateTime"`
 
@@ -135,14 +135,14 @@ type PaymentCheck struct {
 	ID          string      `gorm:"type:varchar(255);primaryKey"`
 	PaymentID   string      `gorm:"type:varchar(255);not null;index"`
 	CheckNumber string      `gorm:"type:varchar(100);not null;uniqueIndex"`
-	CheckDate   time.Time   `gorm:"type:datetime;not null"`
-	DueDate     time.Time   `gorm:"type:datetime;not null;index"`
+	CheckDate   time.Time   `gorm:"type:timestamp;not null"`
+	DueDate     time.Time   `gorm:"type:timestamp;not null;index"`
 	Amount      decimal.Decimal `gorm:"type:decimal(15,2);not null"`
 	BankName    string      `gorm:"type:varchar(255);not null"`
 	AccountName *string     `gorm:"type:varchar(255)"`
 	Status      CheckStatus `gorm:"type:varchar(20);default:'ISSUED';index"`
-	ClearedDate *time.Time  `gorm:"type:datetime"`
-	BouncedDate *time.Time  `gorm:"type:datetime"`
+	ClearedDate *time.Time  `gorm:"type:timestamp"`
+	BouncedDate *time.Time  `gorm:"type:timestamp"`
 	BouncedNote *string     `gorm:"type:text"`
 	Notes       *string     `gorm:"type:text"`
 	CreatedAt   time.Time   `gorm:"autoCreateTime"`

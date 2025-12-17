@@ -14,14 +14,14 @@ type StockTransfer struct {
 	ID                string              `gorm:"type:varchar(255);primaryKey"`
 	TenantID          string              `gorm:"type:varchar(255);not null;index"`
 	TransferNumber    string              `gorm:"type:varchar(100);not null;uniqueIndex"`
-	TransferDate      time.Time           `gorm:"type:datetime;not null;index"`
+	TransferDate      time.Time           `gorm:"type:timestamp;not null;index"`
 	SourceWarehouseID string              `gorm:"type:varchar(255);not null;index"`
 	DestWarehouseID   string              `gorm:"type:varchar(255);not null;index"`
 	Status            StockTransferStatus `gorm:"type:varchar(20);default:'DRAFT';index"`
 	ShippedBy         *string             `gorm:"type:varchar(255)"` // User who shipped
-	ShippedAt         *time.Time          `gorm:"type:datetime"`
+	ShippedAt         *time.Time          `gorm:"type:timestamp"`
 	ReceivedBy        *string             `gorm:"type:varchar(255)"` // User who received
-	ReceivedAt        *time.Time          `gorm:"type:datetime"`
+	ReceivedAt        *time.Time          `gorm:"type:timestamp"`
 	Notes             *string             `gorm:"type:text"`
 	CreatedAt         time.Time           `gorm:"autoCreateTime"`
 	UpdatedAt         time.Time           `gorm:"autoUpdateTime"`

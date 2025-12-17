@@ -30,7 +30,7 @@ type Customer struct {
 	CreditLimit        decimal.Decimal `gorm:"type:decimal(15,2);default:0"`
 	CurrentOutstanding decimal.Decimal `gorm:"type:decimal(15,2);default:0;index"`
 	OverdueAmount      decimal.Decimal `gorm:"type:decimal(15,2);default:0;index"`
-	LastTransactionAt  *time.Time      `gorm:"type:datetime"`
+	LastTransactionAt  *time.Time      `gorm:"type:timestamp"`
 	Notes              *string         `gorm:"type:text"`
 	IsActive           bool            `gorm:"default:true"`
 	CreatedAt          time.Time       `gorm:"autoCreateTime"`
@@ -75,7 +75,7 @@ type Supplier struct {
 	CreditLimit        decimal.Decimal `gorm:"type:decimal(15,2);default:0"`
 	CurrentOutstanding decimal.Decimal `gorm:"type:decimal(15,2);default:0;index"`
 	OverdueAmount      decimal.Decimal `gorm:"type:decimal(15,2);default:0;index"`
-	LastTransactionAt  *time.Time      `gorm:"type:datetime"`
+	LastTransactionAt  *time.Time      `gorm:"type:timestamp"`
 	Notes              *string         `gorm:"type:text"`
 	IsActive           bool            `gorm:"default:true"`
 	CreatedAt          time.Time       `gorm:"autoCreateTime"`

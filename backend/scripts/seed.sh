@@ -7,7 +7,7 @@ set -e
 
 # Configuration
 SEEDS_DIR="db/seeds"
-DB_URL="${DATABASE_URL:-file:./erp.db}"
+DB_URL="${DATABASE_URL:?DATABASE_URL environment variable is required}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -23,21 +23,9 @@ print_message() {
     echo -e "${color}${message}${NC}"
 }
 
-# Detect database type from URL
-get_db_type() {
-    if [[ "$DB_URL" == postgres* ]] || [[ "$DB_URL" == postgresql* ]]; then
-        echo "postgres"
-    elif [[ "$DB_URL" == file:* ]]; then
-        echo "sqlite"
-    else
-        echo "unknown"
-    fi
-}
-
-# Execute SQL file based on database type
+# Execute SQL file (PostgreSQL only)
 execute_sql() {
     local sql_file=$1
-    local db_type=$(get_db_type)
 
     if [ ! -f "$sql_file" ]; then
         print_message "$YELLOW" "Warning: Seed file not found: $sql_file"
@@ -45,18 +33,7 @@ execute_sql() {
     fi
 
     print_message "$BLUE" "  Executing: $sql_file"
-
-    if [ "$db_type" == "postgres" ]; then
-        # PostgreSQL
-        psql "$DB_URL" < "$sql_file"
-    elif [ "$db_type" == "sqlite" ]; then
-        # SQLite
-        db_file=${DB_URL#file:}
-        sqlite3 "$db_file" < "$sql_file"
-    else
-        print_message "$RED" "Error: Unsupported database type"
-        exit 1
-    fi
+    psql "$DB_URL" < "$sql_file"
 }
 
 # Seed development data

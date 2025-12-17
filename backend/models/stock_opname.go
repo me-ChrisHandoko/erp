@@ -14,12 +14,12 @@ type StockOpname struct {
 	ID          string            `gorm:"type:varchar(255);primaryKey"`
 	TenantID    string            `gorm:"type:varchar(255);not null;index"`
 	OpnameNumber string            `gorm:"type:varchar(100);not null;uniqueIndex"`
-	OpnameDate  time.Time         `gorm:"type:datetime;not null;index"`
+	OpnameDate  time.Time         `gorm:"type:timestamp;not null;index"`
 	WarehouseID string            `gorm:"type:varchar(255);not null;index"`
 	Status      StockOpnameStatus `gorm:"type:varchar(20);default:'DRAFT';index"`
 	CountedBy   *string           `gorm:"type:varchar(255)"` // User who performed count
 	ApprovedBy  *string           `gorm:"type:varchar(255)"` // User who approved adjustments
-	ApprovedAt  *time.Time        `gorm:"type:datetime"`
+	ApprovedAt  *time.Time        `gorm:"type:timestamp"`
 	Notes       *string           `gorm:"type:text"`
 	CreatedAt   time.Time         `gorm:"autoCreateTime"`
 	UpdatedAt   time.Time         `gorm:"autoUpdateTime"`

@@ -1,0 +1,26 @@
+	backend/cmd/api		coverage: 0.0% of statements
+	backend/cmd/api/bootstrap		coverage: 0.0% of statements
+	backend/cmd/migrate		coverage: 0.0% of statements
+# backend/cmd/server
+cmd/server/main.go:25:21: undefined: config.LoadConfig
+FAIL	backend/cmd/server [build failed]
+	backend/cmd/worker		coverage: 0.0% of statements
+	backend/db		coverage: 0.0% of statements
+	backend/examples		coverage: 0.0% of statements
+	backend/internal/config		coverage: 0.0% of statements
+ok  	backend/internal/database	1.386s	coverage: 47.0% of statements
+?   	backend/internal/dto	[no test files]
+	backend/internal/handler		coverage: 0.0% of statements
+ok  	backend/internal/jobs	1.911s	coverage: 81.8% of statements
+ok  	backend/internal/middleware	0.911s	coverage: 93.9% of statements
+	backend/internal/router		coverage: 0.0% of statements
+ok  	backend/internal/service/auth	1.862s	coverage: 11.9% of statements
+ok  	backend/models	3.239s	coverage: 94.2% of statements
+	backend/pkg/email		coverage: 0.0% of statements
+	backend/pkg/errors		coverage: 0.0% of statements
+	backend/pkg/jwt		coverage: 0.0% of statements
+	backend/pkg/logger		coverage: 0.0% of statements
+	backend/pkg/response		coverage: 0.0% of statements
+	backend/pkg/security		coverage: 0.0% of statements
+ok  	backend/pkg/validator	1.400s	coverage: 42.2% of statements
+FAIL

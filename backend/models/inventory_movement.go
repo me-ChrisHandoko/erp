@@ -14,7 +14,7 @@ import (
 type InventoryMovement struct {
 	ID              string          `gorm:"type:varchar(255);primaryKey"`
 	TenantID        string          `gorm:"type:varchar(255);not null;index"`
-	MovementDate    time.Time       `gorm:"type:datetime;not null;index"`
+	MovementDate    time.Time       `gorm:"type:timestamp;not null;index"`
 	WarehouseID     string          `gorm:"type:varchar(255);not null;index"`
 	ProductID       string          `gorm:"type:varchar(255);not null;index"`
 	BatchID         *string         `gorm:"type:varchar(255);index"` // Required if product.isBatchTracked

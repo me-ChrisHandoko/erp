@@ -59,12 +59,12 @@ type ProductBatch struct {
 	BatchNumber      string          `gorm:"type:varchar(100);not null;uniqueIndex:idx_batch_product"` // e.g., "BATCH-2025-001"
 	ProductID        string          `gorm:"type:varchar(255);not null;index;uniqueIndex:idx_batch_product"`
 	WarehouseStockID string          `gorm:"type:varchar(255);not null;index"`
-	ManufactureDate  *time.Time      `gorm:"type:datetime"`
-	ExpiryDate       *time.Time      `gorm:"type:datetime;index"` // CRITICAL for sembako
+	ManufactureDate  *time.Time      `gorm:"type:timestamp"`
+	ExpiryDate       *time.Time      `gorm:"type:timestamp;index"` // CRITICAL for sembako
 	Quantity         decimal.Decimal `gorm:"type:decimal(15,3);not null"`
 	SupplierID       *string         `gorm:"type:varchar(255)"`
 	GoodsReceiptID   *string         `gorm:"type:varchar(255);index"`
-	ReceiptDate      time.Time       `gorm:"type:datetime;not null"`
+	ReceiptDate      time.Time       `gorm:"type:timestamp;not null"`
 	Status           BatchStatus     `gorm:"type:varchar(20);default:'AVAILABLE';index"`
 	QualityStatus    *string         `gorm:"type:varchar(20);default:'GOOD'"` // GOOD, DAMAGED, QUARANTINE
 	ReferenceNumber  *string         `gorm:"type:varchar(100)"`               // Supplier's batch/lot number
@@ -135,8 +135,8 @@ type PriceList struct {
 	CustomerID    *string         `gorm:"type:varchar(255);index:idx_product_customer"` // NULL = default price
 	Price         decimal.Decimal `gorm:"type:decimal(15,2);not null"`
 	MinQty        decimal.Decimal `gorm:"type:decimal(15,3);default:0"`
-	EffectiveFrom time.Time       `gorm:"type:datetime;not null"`
-	EffectiveTo   *time.Time      `gorm:"type:datetime"`
+	EffectiveFrom time.Time       `gorm:"type:timestamp;not null"`
+	EffectiveTo   *time.Time      `gorm:"type:timestamp"`
 	IsActive      bool            `gorm:"default:true"`
 	CreatedAt     time.Time       `gorm:"autoCreateTime"`
 	UpdatedAt     time.Time       `gorm:"autoUpdateTime"`

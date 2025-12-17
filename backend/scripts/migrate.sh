@@ -7,7 +7,7 @@ set -e
 
 # Configuration
 MIGRATIONS_DIR="db/migrations"
-DB_URL="${DATABASE_URL:-file:./erp.db}"
+DB_URL="${DATABASE_URL:?DATABASE_URL environment variable is required}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -30,7 +30,7 @@ print_message() {
 check_migrate_installed() {
     if ! command -v migrate &> /dev/null; then
         print_message "$RED" "Error: golang-migrate is not installed"
-        print_message "$YELLOW" "Install it with: go install -tags 'postgres sqlite3' github.com/golang-migrate/migrate/v4/cmd/migrate@latest"
+        print_message "$YELLOW" "Install it with: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest"
         exit 1
     fi
 }

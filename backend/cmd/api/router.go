@@ -29,7 +29,6 @@ func setupRoutes(router *gin.Engine, cfg *config.Config, db *gorm.DB) {
 			// auth := public.Group("/auth")
 			// {
 			// 	auth.POST("/login", authHandler.Login)
-			// 	auth.POST("/register", authHandler.Register)
 			// 	auth.POST("/refresh", authHandler.RefreshToken)
 			// }
 		}

@@ -58,7 +58,7 @@ type WarehouseStock struct {
 	MinimumStock  decimal.Decimal `gorm:"type:decimal(15,3);default:0"`
 	MaximumStock  decimal.Decimal `gorm:"type:decimal(15,3);default:0"`
 	Location      *string         `gorm:"type:varchar(100)"` // e.g., "RAK-A-01", "ZONE-B"
-	LastCountDate *time.Time      `gorm:"type:datetime"`
+	LastCountDate *time.Time      `gorm:"type:timestamp"`
 	LastCountQty  *decimal.Decimal `gorm:"type:decimal(15,3)"`
 	CreatedAt     time.Time       `gorm:"autoCreateTime"`
 	UpdatedAt     time.Time       `gorm:"autoUpdateTime"`

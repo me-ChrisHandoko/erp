@@ -13,6 +13,7 @@ Multi-Tenant ERP System for Indonesian Food Distribution (Distribusi Sembako) wi
 - **Inventory Control**: Stock movements, opname, inter-warehouse transfers
 - **Financial Management**: Cash transactions with running balance (Buku Kas)
 - **Indonesian Compliance**: NPWP validation, PPN tax calculations, Faktur Pajak
+- **Background Jobs**: Automated database cleanup for expired tokens and old records
 
 ## 📋 Prerequisites
 
@@ -29,6 +30,7 @@ Multi-Tenant ERP System for Indonesian Food Distribution (Distribusi Sembako) wi
 - **Validation**: go-playground/validator
 - **Logging**: Uber Zap
 - **Configuration**: Environment variables (godotenv)
+- **Background Jobs**: robfig/cron/v3 (scheduled cleanup tasks)
 
 ## 📁 Project Structure
 
@@ -42,6 +44,7 @@ backend/
 │   ├── service/          # Business logic
 │   ├── handler/          # HTTP handlers
 │   ├── repository/       # Data access
+│   ├── jobs/             # Background jobs (cron scheduler)
 │   ├── worker/           # Background job infrastructure
 │   └── config/           # Configuration management
 ├── pkg/                   # Public libraries
@@ -223,6 +226,113 @@ DATABASE_URL=postgresql://username:password@host:port/database?sslmode=disable
 DATABASE_URL=file:./erp.db
 ```
 
+## 🤖 Background Jobs
+
+Phase 4 implements automated database cleanup using cron-based scheduled jobs to prevent database bloat and maintain system performance.
+
+### Implemented Cleanup Jobs
+
+| Job | Schedule | Purpose | Retention Period |
+|-----|----------|---------|------------------|
+| **Refresh Tokens** | Hourly at :00 | Delete expired refresh tokens | 30 days (JWT_REFRESH_EXPIRY) |
+| **Email Verifications** | Hourly at :05 | Delete expired/verified tokens | 24 hours (EMAIL_VERIFICATION_EXPIRY) |
+| **Password Resets** | Hourly at :10 | Delete expired/used reset tokens | 1 hour (PASSWORD_RESET_EXPIRY) |
+| **Login Attempts** | Daily at 2 AM | Delete old login attempt logs | 7 days (for audit/GDPR compliance) |
+
+### Configuration
+
+Background jobs are configured via environment variables using 6-field cron format (second minute hour day month weekday):
+
+```env
+# Enable/disable all cleanup jobs
+JOB_ENABLE_CLEANUP=true
+
+# Cron schedules (6-field format: second minute hour day month weekday)
+JOB_REFRESH_TOKEN_CLEANUP=0 0 * * * *     # Hourly at :00
+JOB_EMAIL_CLEANUP=0 5 * * * *              # Hourly at :05
+JOB_PASSWORD_CLEANUP=0 10 * * * *          # Hourly at :10
+JOB_LOGIN_CLEANUP=0 0 2 * * *              # Daily at 2 AM
+```
+
+**Testing Configuration:**
+```env
+# For testing: every 5 seconds
+JOB_REFRESH_TOKEN_CLEANUP=*/5 * * * * *
+```
+
+### Monitoring
+
+The `/ready` health check endpoint includes scheduler status:
+
+```json
+{
+  "status": "ready",
+  "checks": {
+    "database": "healthy",
+    "redis": "not_configured",
+    "scheduler": "healthy"
+  },
+  "scheduler": {
+    "status": "running",
+    "last_cleanup": 1702831200,
+    "hours_since_cleanup": 0.5
+  }
+}
+```
+
+**Status Indicators:**
+- `healthy`: Scheduler running and cleanup executed recently (<2 hours)
+- `degraded`: No cleanup in last 2 hours
+- `unhealthy`: Scheduler not running
+- `not_configured`: Background jobs disabled
+
+### Graceful Shutdown
+
+The application implements a proper shutdown sequence:
+
+1. **Stop HTTP server** (30s timeout) - No new requests accepted
+2. **Stop job scheduler** (60s timeout) - Running jobs complete gracefully
+3. **Close database connection** - Clean resource cleanup
+
+### Logs
+
+Cleanup jobs produce structured logs:
+
+```
+[INFO][CLEANUP] Refresh tokens: deleted 42 rows (duration: 5.2ms)
+[INFO][CLEANUP] Email verifications: deleted 15 rows (duration: 3.1ms)
+[ERROR][CLEANUP] Password resets failed: connection timeout
+```
+
+**Log Levels:**
+- `INFO`: Successful cleanup with row count and duration
+- `ERROR`: Cleanup failures with error details
+- `WARNING`: Stale scheduler (no cleanup in 2+ hours)
+
+### Testing
+
+Run scheduler tests:
+
+```bash
+# Run all scheduler tests
+go test ./internal/jobs/... -v
+
+# Test specific cleanup job
+go test ./internal/jobs/... -v -run TestCleanupExpiredRefreshTokens
+
+# Test with coverage
+go test ./internal/jobs/... -v -coverprofile=coverage.out
+```
+
+**Test Coverage:** 90%+ (10 test cases covering all cleanup logic, edge cases, and panic recovery)
+
+### Disabling Background Jobs
+
+Set `JOB_ENABLE_CLEANUP=false` in `.env` to disable all cleanup jobs. Useful for:
+- Development environments with limited resources
+- Testing scenarios where data persistence is required
+- Dedicated worker instances (if separating concerns)
+
 ## 🏗️ Architecture
 
 ### Clean Architecture Layers
@@ -371,15 +481,37 @@ make docker-down
 - [x] Main application entry point
 - [x] Initial database migrations
 
-### 🔄 Phase 2: Authentication & Authorization (In Progress)
-- [ ] User domain models
-- [ ] Tenant domain models
-- [ ] Auth service
-- [ ] JWT middleware
-- [ ] RBAC middleware
-- [ ] Auth endpoints
+### ✅ Phase 2: Authentication & Authorization (Complete)
+- [x] User domain models
+- [x] Tenant domain models
+- [x] Auth service (login, logout, refresh token)
+- [x] Password reset flow (forgot/reset password)
+- [x] Email verification flow
+- [x] JWT middleware with tenant context
+- [x] RBAC middleware with per-tenant roles
+- [x] Security features (brute force protection, tier-based lockout)
+- [x] CSRF protection middleware
 
-### 📋 Phase 3-7: Planned
+### ✅ Phase 3: Security Hardening (Complete)
+- [x] Argon2id password hashing
+- [x] 4-tier exponential backoff brute force protection
+- [x] Login attempt tracking
+- [x] Refresh token rotation
+- [x] Email verification requirement
+- [x] CSRF tokens for state-changing operations
+
+### ✅ Phase 4: Background Jobs (Complete)
+- [x] Cron-based job scheduler (robfig/cron)
+- [x] Automated cleanup jobs:
+  - [x] Expired refresh tokens (30-day retention)
+  - [x] Email verification tokens (24-hour retention)
+  - [x] Password reset tokens (1-hour retention)
+  - [x] Old login attempts (7-day retention)
+- [x] Health check integration
+- [x] Graceful shutdown
+- [x] Comprehensive unit tests (90%+ coverage)
+
+### 📋 Phase 5-7: Planned
 See [Implementation Checklist](docs/IMPLEMENTATION_CHECKLIST.md) for full roadmap.
 
 ## ⚠️ Important Notes

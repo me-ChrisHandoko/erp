@@ -14,7 +14,7 @@ type SalesOrder struct {
 	ID               string            `gorm:"type:varchar(255);primaryKey"`
 	TenantID         string            `gorm:"type:varchar(255);not null;index"`
 	SONumber         string            `gorm:"type:varchar(100);not null;uniqueIndex"`
-	SODate           time.Time         `gorm:"type:datetime;not null;index"`
+	SODate           time.Time         `gorm:"type:timestamp;not null;index"`
 	CustomerID       string            `gorm:"type:varchar(255);not null;index"`
 	Status           SalesOrderStatus  `gorm:"type:varchar(20);default:'DRAFT';index"`
 	Subtotal         decimal.Decimal   `gorm:"type:decimal(15,2);default:0"`
@@ -23,12 +23,12 @@ type SalesOrder struct {
 	TotalAmount      decimal.Decimal   `gorm:"type:decimal(15,2);default:0"`
 	Notes            *string           `gorm:"type:text"`
 	DeliveryAddress  *string           `gorm:"type:text"`
-	DeliveryDate     *time.Time        `gorm:"type:datetime"`
+	DeliveryDate     *time.Time        `gorm:"type:timestamp"`
 	SalespersonID    *string           `gorm:"type:varchar(255);index"`
 	ApprovedBy       *string           `gorm:"type:varchar(255)"`
-	ApprovedAt       *time.Time        `gorm:"type:datetime"`
+	ApprovedAt       *time.Time        `gorm:"type:timestamp"`
 	CancelledBy      *string           `gorm:"type:varchar(255)"`
-	CancelledAt      *time.Time        `gorm:"type:datetime"`
+	CancelledAt      *time.Time        `gorm:"type:timestamp"`
 	CancellationNote *string           `gorm:"type:text"`
 	CreatedAt        time.Time         `gorm:"autoCreateTime"`
 	UpdatedAt        time.Time         `gorm:"autoUpdateTime"`

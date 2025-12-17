@@ -14,7 +14,7 @@ type PurchaseOrder struct {
 	ID                 string          `gorm:"type:varchar(255);primaryKey"`
 	TenantID           string          `gorm:"type:varchar(255);not null;index"`
 	PONumber           string          `gorm:"type:varchar(100);not null;uniqueIndex"`
-	PODate             time.Time       `gorm:"type:datetime;not null;index"`
+	PODate             time.Time       `gorm:"type:timestamp;not null;index"`
 	SupplierID         string          `gorm:"type:varchar(255);not null;index"`
 	WarehouseID        string          `gorm:"type:varchar(255);not null;index"` // Destination warehouse
 	Status             PurchaseOrderStatus `gorm:"type:varchar(20);default:'DRAFT';index"`
@@ -23,12 +23,12 @@ type PurchaseOrder struct {
 	TaxAmount          decimal.Decimal `gorm:"type:decimal(15,2);default:0"`
 	TotalAmount        decimal.Decimal `gorm:"type:decimal(15,2);default:0"`
 	Notes              *string         `gorm:"type:text"`
-	ExpectedDeliveryAt *time.Time      `gorm:"type:datetime"`
+	ExpectedDeliveryAt *time.Time      `gorm:"type:timestamp"`
 	RequestedBy        *string         `gorm:"type:varchar(255);index"`
 	ApprovedBy         *string         `gorm:"type:varchar(255)"`
-	ApprovedAt         *time.Time      `gorm:"type:datetime"`
+	ApprovedAt         *time.Time      `gorm:"type:timestamp"`
 	CancelledBy        *string         `gorm:"type:varchar(255)"`
-	CancelledAt        *time.Time      `gorm:"type:datetime"`
+	CancelledAt        *time.Time      `gorm:"type:timestamp"`
 	CancellationNote   *string         `gorm:"type:text"`
 	CreatedAt          time.Time       `gorm:"autoCreateTime"`
 	UpdatedAt          time.Time       `gorm:"autoUpdateTime"`

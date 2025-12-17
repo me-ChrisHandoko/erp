@@ -14,7 +14,7 @@ type Delivery struct {
 	ID                string          `gorm:"type:varchar(255);primaryKey"`
 	TenantID          string          `gorm:"type:varchar(255);not null;index"`
 	DeliveryNumber    string          `gorm:"type:varchar(100);not null;uniqueIndex"`
-	DeliveryDate      time.Time       `gorm:"type:datetime;not null;index"`
+	DeliveryDate      time.Time       `gorm:"type:timestamp;not null;index"`
 	SalesOrderID      string          `gorm:"type:varchar(255);not null;index"`
 	WarehouseID       string          `gorm:"type:varchar(255);not null;index"` // Source warehouse
 	CustomerID        string          `gorm:"type:varchar(255);not null;index"`
@@ -23,10 +23,10 @@ type Delivery struct {
 	DeliveryAddress   *string         `gorm:"type:text"`
 	DriverName        *string         `gorm:"type:varchar(255)"`
 	VehicleNumber     *string         `gorm:"type:varchar(50)"`
-	DepartureTime     *time.Time      `gorm:"type:datetime"`
-	ArrivalTime       *time.Time      `gorm:"type:datetime"`
+	DepartureTime     *time.Time      `gorm:"type:timestamp"`
+	ArrivalTime       *time.Time      `gorm:"type:timestamp"`
 	ReceivedBy        *string         `gorm:"type:varchar(255)"` // Customer's receiver name
-	ReceivedAt        *time.Time      `gorm:"type:datetime"`
+	ReceivedAt        *time.Time      `gorm:"type:timestamp"`
 	SignatureURL      *string         `gorm:"type:varchar(500)"` // POD signature image
 	PhotoURL          *string         `gorm:"type:varchar(500)"` // POD photo
 	TTNKNumber        *string         `gorm:"type:varchar(100)"` // Expedition tracking number

@@ -14,7 +14,7 @@ type SupplierPayment struct {
 	ID              string          `gorm:"type:varchar(255);primaryKey"`
 	TenantID        string          `gorm:"type:varchar(255);not null;index"`
 	PaymentNumber   string          `gorm:"type:varchar(100);not null;uniqueIndex"`
-	PaymentDate     time.Time       `gorm:"type:datetime;not null;index"`
+	PaymentDate     time.Time       `gorm:"type:timestamp;not null;index"`
 	SupplierID      string          `gorm:"type:varchar(255);not null;index"`
 	PurchaseOrderID *string         `gorm:"type:varchar(255);index"` // Optional PO reference
 	Amount          decimal.Decimal `gorm:"type:decimal(15,2);not null"`
@@ -23,7 +23,7 @@ type SupplierPayment struct {
 	BankAccountID   *string         `gorm:"type:varchar(255);index"`
 	Notes           *string         `gorm:"type:text"`
 	ApprovedBy      *string         `gorm:"type:varchar(255)"` // User who approved payment
-	ApprovedAt      *time.Time      `gorm:"type:datetime"`
+	ApprovedAt      *time.Time      `gorm:"type:timestamp"`
 	CreatedAt       time.Time       `gorm:"autoCreateTime"`
 	UpdatedAt       time.Time       `gorm:"autoUpdateTime"`
 

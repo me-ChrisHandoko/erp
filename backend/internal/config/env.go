@@ -22,20 +22,63 @@ func Load() (*Config, error) {
 			Debug:       getEnvAsBool("APP_DEBUG", true),
 		},
 		Database: DatabaseConfig{
-			URL:             getEnv("DATABASE_URL", "file:./erp.db"),
+			URL:             getEnv("DATABASE_URL", ""),
 			MaxOpenConns:    getEnvAsInt("DB_MAX_OPEN_CONNS", 25),
 			MaxIdleConns:    getEnvAsInt("DB_MAX_IDLE_CONNS", 5),
 			ConnMaxLifetime: getEnvAsDuration("DB_CONN_MAX_LIFETIME", 5*time.Minute),
 		},
 		JWT: JWTConfig{
-			Secret:        getEnv("JWT_SECRET", ""),
-			Expiry:        getEnvAsDuration("JWT_EXPIRY", 24*time.Hour),
-			RefreshExpiry: getEnvAsDuration("JWT_REFRESH_EXPIRY", 168*time.Hour),
+			Secret:         getEnv("JWT_SECRET", ""),
+			Algorithm:      getEnv("JWT_ALGORITHM", "HS256"),
+			Expiry:         getEnvAsDuration("JWT_EXPIRY", 30*time.Minute),
+			RefreshExpiry:  getEnvAsDuration("JWT_REFRESH_EXPIRY", 30*24*time.Hour),
+			PrivateKeyPath: getEnv("JWT_PRIVATE_KEY_PATH", ""),
+			PublicKeyPath:  getEnv("JWT_PUBLIC_KEY_PATH", ""),
+		},
+		Argon2: Argon2Config{
+			Memory:      uint32(getEnvAsInt("ARGON2_MEMORY", 65536)),      // 64 MB
+			Iterations:  uint32(getEnvAsInt("ARGON2_ITERATIONS", 3)),
+			Parallelism: uint8(getEnvAsInt("ARGON2_PARALLELISM", 4)),
+			SaltLength:  uint32(getEnvAsInt("ARGON2_SALT_LENGTH", 16)),
+			KeyLength:   uint32(getEnvAsInt("ARGON2_KEY_LENGTH", 32)),
+		},
+		Security: SecurityConfig{
+			MaxLoginAttempts:     getEnvAsInt("MAX_LOGIN_ATTEMPTS", 5),
+			LoginLockoutDuration: getEnvAsDuration("LOGIN_LOCKOUT_DURATION", 15*time.Minute),
+			// 4-tier exponential backoff for brute force protection
+			LockoutTier1Attempts: getEnvAsInt("LOCKOUT_TIER1_ATTEMPTS", 3),
+			LockoutTier1Duration: getEnvAsDuration("LOCKOUT_TIER1_DURATION", 5*time.Minute),
+			LockoutTier2Attempts: getEnvAsInt("LOCKOUT_TIER2_ATTEMPTS", 5),
+			LockoutTier2Duration: getEnvAsDuration("LOCKOUT_TIER2_DURATION", 15*time.Minute),
+			LockoutTier3Attempts: getEnvAsInt("LOCKOUT_TIER3_ATTEMPTS", 10),
+			LockoutTier3Duration: getEnvAsDuration("LOCKOUT_TIER3_DURATION", 1*time.Hour),
+			LockoutTier4Attempts: getEnvAsInt("LOCKOUT_TIER4_ATTEMPTS", 15),
+			LockoutTier4Duration: getEnvAsDuration("LOCKOUT_TIER4_DURATION", 24*time.Hour),
+		},
+		Email: EmailConfig{
+			SMTPHost:            getEnv("SMTP_HOST", ""),
+			SMTPPort:            getEnvAsInt("SMTP_PORT", 587),
+			SMTPUser:            getEnv("SMTP_USER", ""),
+			SMTPPassword:        getEnv("SMTP_PASSWORD", ""),
+			SMTPFromName:        getEnv("SMTP_FROM_NAME", "ERP System"),
+			SMTPFromEmail:       getEnv("SMTP_FROM_EMAIL", ""),
+			SMTPTLS:             getEnvAsBool("SMTP_TLS", true),
+			VerificationExpiry:  getEnvAsDuration("EMAIL_VERIFICATION_EXPIRY", 24*time.Hour),
+			PasswordResetExpiry: getEnvAsDuration("PASSWORD_RESET_EXPIRY", 1*time.Hour),
+		},
+		Cookie: CookieConfig{
+			Secure: getEnvAsBool("COOKIE_SECURE", false),
+			Domain: getEnv("COOKIE_DOMAIN", ""),
 		},
 		Tenant: TenantConfig{
 			DefaultSubscriptionPrice: getEnvAsInt64("DEFAULT_SUBSCRIPTION_PRICE", 300000),
 			TrialPeriodDays:          getEnvAsInt("TRIAL_PERIOD_DAYS", 14),
 			GracePeriodDays:          getEnvAsInt("GRACE_PERIOD_DAYS", 7),
+		},
+		TenantIsolation: TenantIsolationConfig{
+			StrictMode:  getEnvAsBool("TENANT_STRICT_MODE", true),
+			LogWarnings: getEnvAsBool("TENANT_LOG_WARNINGS", true),
+			AllowBypass: getEnvAsBool("TENANT_ALLOW_BYPASS", true),
 		},
 		Tax: TaxConfig{
 			DefaultPPNRate:       getEnvAsFloat64("DEFAULT_PPN_RATE", 11.0),
@@ -71,6 +114,13 @@ func Load() (*Config, error) {
 			Enabled:  getEnvAsBool("CACHE_ENABLED", false),
 			RedisURL: getEnv("REDIS_URL", "redis://localhost:6379/0"),
 			TTL:      getEnvAsDuration("CACHE_TTL", 1*time.Hour),
+		},
+		Job: JobConfig{
+			EnableCleanup:       getEnvAsBool("JOB_ENABLE_CLEANUP", true),
+			RefreshTokenCleanup: getEnv("JOB_REFRESH_TOKEN_CLEANUP", "0 0 * * * *"),   // Hourly at :00
+			EmailCleanup:        getEnv("JOB_EMAIL_CLEANUP", "0 5 * * * *"),            // Hourly at :05
+			PasswordCleanup:     getEnv("JOB_PASSWORD_CLEANUP", "0 10 * * * *"),        // Hourly at :10
+			LoginCleanup:        getEnv("JOB_LOGIN_CLEANUP", "0 0 2 * * *"),            // Daily at 2 AM
 		},
 	}
 

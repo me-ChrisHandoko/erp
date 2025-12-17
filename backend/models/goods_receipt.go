@@ -14,15 +14,15 @@ type GoodsReceipt struct {
 	ID               string             `gorm:"type:varchar(255);primaryKey"`
 	TenantID         string             `gorm:"type:varchar(255);not null;index"`
 	GRNNumber        string             `gorm:"type:varchar(100);not null;uniqueIndex"`
-	GRNDate          time.Time          `gorm:"type:datetime;not null;index"`
+	GRNDate          time.Time          `gorm:"type:timestamp;not null;index"`
 	PurchaseOrderID  string             `gorm:"type:varchar(255);not null;index"`
 	WarehouseID      string             `gorm:"type:varchar(255);not null;index"` // Destination warehouse
 	SupplierID       string             `gorm:"type:varchar(255);not null;index"`
 	Status           GoodsReceiptStatus `gorm:"type:varchar(20);default:'PENDING';index"`
 	ReceivedBy       *string            `gorm:"type:varchar(255)"` // User who received
-	ReceivedAt       *time.Time         `gorm:"type:datetime"`
+	ReceivedAt       *time.Time         `gorm:"type:timestamp"`
 	InspectedBy      *string            `gorm:"type:varchar(255)"` // User who inspected
-	InspectedAt      *time.Time         `gorm:"type:datetime"`
+	InspectedAt      *time.Time         `gorm:"type:timestamp"`
 	SupplierInvoice  *string            `gorm:"type:varchar(100)"` // Supplier's invoice number
 	SupplierDONumber *string            `gorm:"type:varchar(100)"` // Supplier's delivery order number
 	Notes            *string            `gorm:"type:text"`
@@ -58,8 +58,8 @@ type GoodsReceiptItem struct {
 	ProductID          string          `gorm:"type:varchar(255);not null;index"`
 	ProductUnitID      *string         `gorm:"type:varchar(255);index"`
 	BatchNumber        *string         `gorm:"type:varchar(100);index"` // Batch/lot number from supplier
-	ManufactureDate    *time.Time      `gorm:"type:datetime"`
-	ExpiryDate         *time.Time      `gorm:"type:datetime;index"` // For perishable products
+	ManufactureDate    *time.Time      `gorm:"type:timestamp"`
+	ExpiryDate         *time.Time      `gorm:"type:timestamp;index"` // For perishable products
 	OrderedQty         decimal.Decimal `gorm:"type:decimal(15,3);not null"`
 	ReceivedQty        decimal.Decimal `gorm:"type:decimal(15,3);default:0"` // Physically received
 	AcceptedQty        decimal.Decimal `gorm:"type:decimal(15,3);default:0"` // Passed quality inspection

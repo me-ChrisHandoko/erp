@@ -15,7 +15,7 @@ type Tenant struct {
 	CompanyID      string       `gorm:"type:varchar(255);uniqueIndex;not null;index"`
 	SubscriptionID *string      `gorm:"type:varchar(255);index"`
 	Status         TenantStatus `gorm:"type:varchar(20);default:'TRIAL';index"`
-	TrialEndsAt    *time.Time   `gorm:"type:datetime"`
+	TrialEndsAt    *time.Time   `gorm:"type:timestamp"`
 	Notes          *string      `gorm:"type:text"`
 	CreatedAt      time.Time    `gorm:"autoCreateTime"`
 	UpdatedAt      time.Time    `gorm:"autoUpdateTime"`
@@ -46,15 +46,15 @@ type Subscription struct {
 	Price              decimal.Decimal    `gorm:"type:decimal(15,2);default:300000"` // Monthly price per PT/CV
 	BillingCycle       string             `gorm:"type:varchar(20);default:'MONTHLY'"` // MONTHLY, QUARTERLY, YEARLY
 	Status             SubscriptionStatus `gorm:"type:varchar(20);default:'ACTIVE';index"`
-	CurrentPeriodStart time.Time          `gorm:"type:datetime;not null"`
-	CurrentPeriodEnd   time.Time          `gorm:"type:datetime;not null"`
-	NextBillingDate    time.Time          `gorm:"type:datetime;not null;index"`
+	CurrentPeriodStart time.Time          `gorm:"type:timestamp;not null"`
+	CurrentPeriodEnd   time.Time          `gorm:"type:timestamp;not null"`
+	NextBillingDate    time.Time          `gorm:"type:timestamp;not null;index"`
 	PaymentMethod      *string            `gorm:"type:varchar(50)"` // "TRANSFER", "VA", "CREDIT_CARD", "QRIS"
-	LastPaymentDate    *time.Time         `gorm:"type:datetime"`
+	LastPaymentDate    *time.Time         `gorm:"type:timestamp"`
 	LastPaymentAmount  *decimal.Decimal   `gorm:"type:decimal(15,2)"`
-	GracePeriodEnds    *time.Time         `gorm:"type:datetime;index"`
+	GracePeriodEnds    *time.Time         `gorm:"type:timestamp;index"`
 	AutoRenew          bool               `gorm:"default:true"`
-	CancelledAt        *time.Time         `gorm:"type:datetime"`
+	CancelledAt        *time.Time         `gorm:"type:timestamp"`
 	CancellationReason *string            `gorm:"type:text"`
 	CreatedAt          time.Time          `gorm:"autoCreateTime"`
 	UpdatedAt          time.Time          `gorm:"autoUpdateTime"`
@@ -82,14 +82,14 @@ type SubscriptionPayment struct {
 	ID             string                    `gorm:"type:varchar(255);primaryKey"`
 	SubscriptionID string                    `gorm:"type:varchar(255);not null;index"`
 	Amount         decimal.Decimal           `gorm:"type:decimal(15,2);not null"`
-	PaymentDate    time.Time                 `gorm:"type:datetime;not null;index"`
+	PaymentDate    time.Time                 `gorm:"type:timestamp;not null;index"`
 	PaymentMethod  string                    `gorm:"type:varchar(50);not null"` // "TRANSFER", "VA_BCA", "CC_VISA", "QRIS"
 	Status         SubscriptionPaymentStatus `gorm:"type:varchar(20);default:'PENDING';index"`
 	Reference      *string                   `gorm:"type:varchar(255)"` // Transfer proof, transaction ID, VA number
 	InvoiceNumber  *string                   `gorm:"type:varchar(100);uniqueIndex"` // Invoice for this payment
-	PeriodStart    time.Time                 `gorm:"type:datetime;not null"`
-	PeriodEnd      time.Time                 `gorm:"type:datetime;not null"`
-	PaidAt         *time.Time                `gorm:"type:datetime;index"` // Actual payment timestamp
+	PeriodStart    time.Time                 `gorm:"type:timestamp;not null"`
+	PeriodEnd      time.Time                 `gorm:"type:timestamp;not null"`
+	PaidAt         *time.Time                `gorm:"type:timestamp;index"` // Actual payment timestamp
 	Notes          *string                   `gorm:"type:text"`
 	CreatedAt      time.Time                 `gorm:"autoCreateTime"`
 	UpdatedAt      time.Time                 `gorm:"autoUpdateTime"`
