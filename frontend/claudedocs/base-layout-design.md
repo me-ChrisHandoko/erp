@@ -1,4 +1,5 @@
 # Base Layout Design Specification
+
 ## ERP Distribution Frontend - Sidebar-07 Integration
 
 **Version:** 1.0
@@ -13,6 +14,7 @@
 This document specifies the base layout architecture for the ERP Distribution (Distribusi Sembako) frontend application using shadcn/ui sidebar-07 component. The design implements a multi-tenant aware, responsive layout optimized for Indonesian food distribution business workflows.
 
 ### Design Goals
+
 - ✅ Clean separation between authenticated and public routes
 - ✅ Reusable sidebar layout for all ERP modules
 - ✅ Multi-tenant organization switching
@@ -198,6 +200,7 @@ export default function RootLayout({
 ```
 
 **Key Features:**
+
 - Server component (no "use client")
 - Indonesian language (`lang="id"`)
 - Geist font optimization
@@ -219,15 +222,14 @@ export default function AuthLayout({
 }) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-muted/50">
-      <div className="w-full max-w-md p-6">
-        {children}
-      </div>
+      <div className="w-full max-w-md p-6">{children}</div>
     </div>
   );
 }
 ```
 
 **Key Features:**
+
 - Centered card layout
 - No sidebar
 - Responsive max-width
@@ -246,29 +248,25 @@ export default function AuthLayout({
 import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 
-export default function AppLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider defaultOpen={true}>
       <AppSidebar />
-      <SidebarInset>
-        {children}
-      </SidebarInset>
+      <SidebarInset>{children}</SidebarInset>
     </SidebarProvider>
   );
 }
 ```
 
 **Key Features:**
+
 - Client component (uses SidebarProvider context)
 - SidebarProvider wraps entire app section
 - Default open state (can be controlled via props)
 - Clean composition pattern
 
 **Future Enhancements:**
+
 - Add Redux Provider wrapper
 - Add authentication check
 - Add tenant context provider
@@ -422,6 +420,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 ```
 
 **Key Features:**
+
 - Indonesian labels for ERP workflows
 - Icon-based navigation with Lucide icons
 - Collapsible sidebar (icon mode supported)
@@ -430,6 +429,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 - Scrollable rail for resize handle
 
 **Data Flow:**
+
 1. Hard-coded sample data (current)
 2. Future: Fetch from API in layout, pass as props
 3. Future: Use Redux for tenant/user state
@@ -486,7 +486,7 @@ export default function DashboardPage() {
             {/* Add dashboard widgets here */}
           </div>
         </div>
-        <div className="min-h-[100vh] flex-1 rounded-xl bg-muted/50 p-4 md:min-h-min">
+        <div className="min-h-screen flex-1 rounded-xl bg-muted/50 p-4 md:min-h-min">
           {/* Main dashboard content */}
           <p className="text-muted-foreground">
             Konten dashboard akan ditampilkan di sini.
@@ -499,6 +499,7 @@ export default function DashboardPage() {
 ```
 
 **Key Changes from Original:**
+
 - ✅ Removed SidebarProvider (now in layout)
 - ✅ Removed AppSidebar import (in layout)
 - ✅ Removed SidebarInset wrapper (in layout)
@@ -513,9 +514,9 @@ export default function DashboardPage() {
 
 ```typescript
 // src/lib/store/index.ts
-import { configureStore } from '@reduxjs/toolkit';
-import tenantReducer from './slices/tenantSlice';
-import userReducer from './slices/userSlice';
+import { configureStore } from "@reduxjs/toolkit";
+import tenantReducer from "./slices/tenantSlice";
+import userReducer from "./slices/userSlice";
 
 export const store = configureStore({
   reducer: {
@@ -530,7 +531,7 @@ export type AppDispatch = typeof store.dispatch;
 
 ```typescript
 // src/lib/store/slices/tenantSlice.ts
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 
 interface TenantState {
   currentTenantId: string | null;
@@ -548,15 +549,15 @@ const initialState: TenantState = {
 };
 
 export const tenantSlice = createSlice({
-  name: 'tenant',
+  name: "tenant",
   initialState,
   reducers: {
     setCurrentTenant: (state, action: PayloadAction<string>) => {
       state.currentTenantId = action.payload;
       // Store in localStorage for persistence
-      localStorage.setItem('currentTenantId', action.payload);
+      localStorage.setItem("currentTenantId", action.payload);
     },
-    setTenants: (state, action: PayloadAction<TenantState['tenants']>) => {
+    setTenants: (state, action: PayloadAction<TenantState["tenants"]>) => {
       state.tenants = action.payload;
     },
   },
@@ -570,7 +571,7 @@ export default tenantSlice.reducer;
 
 ```typescript
 // src/lib/api/client.ts
-import { store } from '@/lib/store';
+import { store } from "@/lib/store";
 
 export async function apiRequest<T>(
   endpoint: string,
@@ -583,19 +584,22 @@ export async function apiRequest<T>(
 
   // Add tenant header
   if (tenantId) {
-    headers.set('X-Tenant-ID', tenantId);
+    headers.set("X-Tenant-ID", tenantId);
   }
 
   // Add JWT token
-  const token = localStorage.getItem('authToken');
+  const token = localStorage.getItem("authToken");
   if (token) {
-    headers.set('Authorization', `Bearer ${token}`);
+    headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  const response = await fetch(
+    `${process.env.NEXT_PUBLIC_API_URL}${endpoint}`,
+    {
+      ...options,
+      headers,
+    }
+  );
 
   if (!response.ok) {
     throw new Error(`API Error: ${response.statusText}`);
@@ -618,21 +622,17 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { apiRequest } from "@/lib/api/client";
 import { setTenants } from "@/lib/store/slices/tenantSlice";
 
-export default function AppLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function AppLayout({ children }: { children: React.ReactNode }) {
   const dispatch = useDispatch();
 
   useEffect(() => {
     // Fetch user's tenants on layout mount
     async function fetchTenants() {
       try {
-        const data = await apiRequest('/api/tenants/user-tenants');
+        const data = await apiRequest("/api/tenants/user-tenants");
         dispatch(setTenants(data));
       } catch (error) {
-        console.error('Failed to fetch tenants:', error);
+        console.error("Failed to fetch tenants:", error);
       }
     }
 
@@ -642,9 +642,7 @@ export default function AppLayout({
   return (
     <SidebarProvider defaultOpen={true}>
       <AppSidebar />
-      <SidebarInset>
-        {children}
-      </SidebarInset>
+      <SidebarInset>{children}</SidebarInset>
     </SidebarProvider>
   );
 }
@@ -656,20 +654,22 @@ export default function AppLayout({
 
 ### 6.1 Breakpoints
 
-| Device | Width | Sidebar Behavior |
-|--------|-------|------------------|
-| Mobile | < 768px | Sheet overlay (slide-in) |
-| Tablet | 768px - 1024px | Collapsible, starts in icon mode |
-| Desktop | > 1024px | Collapsible, starts expanded |
+| Device  | Width          | Sidebar Behavior                 |
+| ------- | -------------- | -------------------------------- |
+| Mobile  | < 768px        | Sheet overlay (slide-in)         |
+| Tablet  | 768px - 1024px | Collapsible, starts in icon mode |
+| Desktop | > 1024px       | Collapsible, starts expanded     |
 
 ### 6.2 Sidebar States
 
 **Desktop:**
+
 - **Expanded:** 16rem width (256px)
 - **Collapsed:** 3rem width (48px) - icon-only mode
 - **Transition:** Smooth animation via CSS
 
 **Mobile:**
+
 - **Closed:** Hidden completely
 - **Open:** Sheet overlay, 18rem width (288px)
 - **Backdrop:** Dark overlay with tap-to-close
@@ -708,12 +708,12 @@ export default function AppLayout({
 
 ```typescript
 // Example with React Query (future enhancement)
-import { useQuery } from '@tanstack/react-query';
+import { useQuery } from "@tanstack/react-query";
 
 function useTenants() {
   return useQuery({
-    queryKey: ['tenants'],
-    queryFn: () => apiRequest('/api/tenants/user-tenants'),
+    queryKey: ["tenants"],
+    queryFn: () => apiRequest("/api/tenants/user-tenants"),
     staleTime: 5 * 60 * 1000, // 5 minutes
     cacheTime: 10 * 60 * 1000, // 10 minutes
   });
@@ -773,30 +773,35 @@ headers: {
 ### Phase 1: Base Structure (2-3 hours)
 
 **Step 1:** Create route groups
+
 ```bash
 mkdir -p src/app/\(auth\)/{login,register}
 mkdir -p src/app/\(app\)
 ```
 
 **Step 2:** Create auth layout
+
 ```bash
 # Create src/app/(auth)/layout.tsx
 # Copy centered layout code from specification
 ```
 
 **Step 3:** Create app layout
+
 ```bash
 # Create src/app/(app)/layout.tsx
 # Copy SidebarProvider layout code from specification
 ```
 
 **Step 4:** Move dashboard
+
 ```bash
 # Move src/app/dashboard to src/app/(app)/dashboard
 # Update imports to remove SidebarProvider
 ```
 
 **Step 5:** Update root layout
+
 ```bash
 # Update metadata and lang="id"
 ```
@@ -804,12 +809,14 @@ mkdir -p src/app/\(app\)
 ### Phase 2: ERP Navigation (1-2 hours)
 
 **Step 1:** Update AppSidebar with ERP navigation
+
 ```bash
 # Replace sample data in src/components/app-sidebar.tsx
 # Add Indonesian labels and proper icons
 ```
 
 **Step 2:** Test navigation
+
 ```bash
 npm run dev
 # Verify all menu items render correctly
@@ -819,32 +826,37 @@ npm run dev
 ### Phase 3: Multi-Tenant Setup (3-4 hours)
 
 **Step 1:** Install Redux Toolkit
+
 ```bash
 npm install @reduxjs/toolkit react-redux
 ```
 
 **Step 2:** Create store structure
+
 ```bash
 mkdir -p src/lib/store/slices
 # Create index.ts, tenantSlice.ts, userSlice.ts
 ```
 
 **Step 3:** Create API client
+
 ```bash
 mkdir -p src/lib/api
 # Create client.ts with tenant header logic
 ```
 
 **Step 4:** Wrap app with Redux Provider
+
 ```typescript
 // Update src/app/layout.tsx to include Provider
-import { Provider } from 'react-redux';
-import { store } from '@/lib/store';
+import { Provider } from "react-redux";
+import { store } from "@/lib/store";
 
 // Wrap children with <Provider store={store}>
 ```
 
 **Step 5:** Update TeamSwitcher
+
 ```typescript
 // Connect TeamSwitcher to Redux
 // Dispatch setCurrentTenant on selection
@@ -853,11 +865,13 @@ import { store } from '@/lib/store';
 ### Phase 4: Create Module Pages (4-6 hours)
 
 **Step 1:** Create route structure
+
 ```bash
 mkdir -p src/app/\(app\)/{master,inventory,procurement,sales,finance,settings}
 ```
 
 **Step 2:** Create placeholder pages
+
 ```typescript
 // For each route, create page.tsx with:
 // - Header with breadcrumbs
@@ -866,6 +880,7 @@ mkdir -p src/app/\(app\)/{master,inventory,procurement,sales,finance,settings}
 ```
 
 **Step 3:** Test routing
+
 ```bash
 # Verify all routes accessible
 # Test breadcrumb generation
@@ -874,21 +889,25 @@ mkdir -p src/app/\(app\)/{master,inventory,procurement,sales,finance,settings}
 ### Phase 5: Polish & Testing (2-3 hours)
 
 **Step 1:** Test mobile responsive
+
 - Open DevTools mobile view
 - Test Sheet overlay behavior
 - Verify touch interactions
 
 **Step 2:** Test keyboard shortcuts
+
 - Cmd/Ctrl + B to toggle sidebar
 - Verify focus management
 
 **Step 3:** Add loading states
+
 ```typescript
 // Add Skeleton components for loading
 import { Skeleton } from "@/components/ui/skeleton";
 ```
 
 **Step 4:** Test tenant switching
+
 - Switch tenants in TeamSwitcher
 - Verify context updates
 - Check API headers include correct tenant ID
@@ -936,6 +955,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 ## 11. Future Enhancements
 
 ### 11.1 Short-term (1-2 weeks)
+
 - Real API integration for user/tenant data
 - Permission-based navigation filtering
 - Loading states and error handling
@@ -943,6 +963,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 - Notification system in header
 
 ### 11.2 Medium-term (1-2 months)
+
 - Search functionality in sidebar
 - Favorites/pinned menu items
 - Recent pages history
@@ -950,6 +971,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 - Multi-language support (English/Indonesian toggle)
 
 ### 11.3 Long-term (3-6 months)
+
 - Customizable dashboard widgets
 - User preferences for sidebar width
 - Collapsible menu groups
@@ -964,18 +986,18 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 ```typescript
 import {
-  LayoutDashboard,  // Dashboard
-  Database,         // Master Data
-  Package,          // Inventory
-  ShoppingCart,     // Procurement
-  TrendingUp,       // Sales
-  Wallet,           // Finance
-  Settings,         // Settings
-  Users,            // Users
-  Building,         // Warehouses
-  FileText,         // Invoices/Documents
-  TruckIcon,        // Deliveries
-  CreditCard,       // Payments
+  LayoutDashboard, // Dashboard
+  Database, // Master Data
+  Package, // Inventory
+  ShoppingCart, // Procurement
+  TrendingUp, // Sales
+  Wallet, // Finance
+  Settings, // Settings
+  Users, // Users
+  Building, // Warehouses
+  FileText, // Invoices/Documents
+  TruckIcon, // Deliveries
+  CreditCard, // Payments
 } from "lucide-react";
 ```
 

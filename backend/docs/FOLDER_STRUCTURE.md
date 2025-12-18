@@ -264,7 +264,8 @@ backend/
 │   └── architecture/          # Architecture diagrams
 │       └── system_overview.png
 │
-├── schema.prisma              # Database schema definition
+├── db/                        # Database migrations
+│   └── migration.go           # GORM migration code
 ├── go.mod                     # Go module dependencies
 ├── go.sum                     # Dependency checksums
 ├── .env.example               # Environment variable template
@@ -796,7 +797,7 @@ func GenerateInvoiceNumber(company *domain.Company, date time.Time) string {
 - [ ] Setup `cmd/api/main.go` and bootstrap
 - [ ] Implement `internal/config/` configuration management
 - [ ] Setup `pkg/logger/` structured logging
-- [ ] Create `db/migrations/` from schema.prisma
+- [ ] Create `db/migrations/` using GORM AutoMigrate
 - [ ] Setup `pkg/response/` standardized responses
 
 ### Phase 2: Authentication & Authorization (Week 3)

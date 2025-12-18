@@ -8,7 +8,7 @@ This is a **Go-based Multi-Tenant ERP System** for Indonesian food distribution 
 
 **Key Technologies:**
 - Go 1.25.4
-- Prisma ORM (schema-first approach)
+- GORM (Go ORM library)
 - PostgreSQL/SQLite database
 - Multi-tenant architecture with tenant isolation
 
@@ -93,29 +93,29 @@ This is a **Go-based Multi-Tenant ERP System** for Indonesian food distribution 
 
 ### Database Operations
 
-**Generate Prisma Client (TypeScript/JavaScript context):**
+**Run Database Migrations:**
 ```bash
-npx prisma generate
+go run cmd/migrate/main.go
 ```
 
-**Apply Schema Migrations:**
+**Seed Database with Test Data:**
 ```bash
-npx prisma migrate dev --name <migration_name>
+go run cmd/seed/main.go
 ```
 
-**View Database in Prisma Studio:**
-```bash
-npx prisma studio
+**Auto-Migrate Models (Development):**
+```go
+// In code using GORM AutoMigrate
+db.AutoMigrate(&models.User{}, &models.Company{}, &models.Tenant{}, ...)
 ```
 
 **Reset Database (CAUTION - Development only):**
 ```bash
-npx prisma migrate reset
+rm dev.db  # For SQLite
+# Or DROP DATABASE for PostgreSQL
 ```
 
 ### Go Development
-
-Since Go code is not yet implemented, typical commands would be:
 
 ```bash
 # Initialize Go modules (if starting fresh)

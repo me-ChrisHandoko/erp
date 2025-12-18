@@ -1,5 +1,5 @@
 // Package models - Enum type definitions
-// All enum values match Prisma schema exactly for database compatibility
+// All enum values ensure database compatibility and type safety
 package models
 
 // UserRole - User roles with per-tenant assignment

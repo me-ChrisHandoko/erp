@@ -317,6 +317,7 @@ func TestRecordLoginAttempt_Success(t *testing.T) {
 		"192.168.1.1",
 		"test-agent",
 		true,
+		nil, // No failure reason for successful login
 	)
 
 	assert.NoError(t, err)
@@ -336,6 +337,7 @@ func TestRecordLoginAttempt_Failure(t *testing.T) {
 		"192.168.1.1",
 		"test-agent",
 		false,
+		nil, // No specific failure reason for this test
 	)
 
 	assert.NoError(t, err)

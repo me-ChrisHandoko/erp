@@ -57,10 +57,10 @@ func TestCUIDGeneration(t *testing.T) {
 
 	// Test User CUID generation
 	user := &models.User{
-		Email:    "test@example.com",
-		Username: "testuser",
-		Password: "hashedpassword",
-		Name:     "Test User",
+		Email:        "test@example.com",
+		Username:     "testuser",
+		PasswordHash: "hashedpassword",
+		FullName:     "Test User",
 	}
 	database.Create(user)
 
@@ -96,8 +96,8 @@ func TestUserCreation(t *testing.T) {
 	user := &models.User{
 		Email:         "john@example.com",
 		Username:      "johndoe",
-		Password:      "hashedpassword123",
-		Name:          "John Doe",
+		PasswordHash:  "hashedpassword123",
+		FullName:      "John Doe",
 		IsSystemAdmin: true,
 		IsActive:      true,
 	}
@@ -227,10 +227,10 @@ func TestUserTenantJunction(t *testing.T) {
 
 	// Create User
 	user := &models.User{
-		Email:    "manager@test.com",
-		Username: "manager",
-		Password: "hashed",
-		Name:     "Manager User",
+		Email:        "manager@test.com",
+		Username:     "manager",
+		PasswordHash: "hashed",
+		FullName:     "Manager User",
 	}
 	database.Create(user)
 
@@ -280,19 +280,19 @@ func TestUniqueConstraints(t *testing.T) {
 
 	// Create first user
 	user1 := &models.User{
-		Email:    "unique@test.com",
-		Username: "uniqueuser",
-		Password: "hashed",
-		Name:     "First User",
+		Email:        "unique@test.com",
+		Username:     "uniqueuser",
+		PasswordHash: "hashed",
+		FullName:     "First User",
 	}
 	database.Create(user1)
 
 	// Try to create second user with same email (should fail)
 	user2 := &models.User{
-		Email:    "unique@test.com",
-		Username: "differentuser",
-		Password: "hashed",
-		Name:     "Second User",
+		Email:        "unique@test.com",
+		Username:     "differentuser",
+		PasswordHash: "hashed",
+		FullName:     "Second User",
 	}
 	result := database.Create(user2)
 

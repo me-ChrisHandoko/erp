@@ -495,9 +495,9 @@ func TestAuditLogCreation(t *testing.T) {
 	assert.NoError(t, err)
 
 	user := &User{
-		Email:    "audit@test.com",
-		Password: "hashedpassword",
-		IsActive: true,
+		Email:        "audit@test.com",
+		PasswordHash: "hashedpassword",
+		IsActive:     true,
 	}
 	err = db.Create(user).Error
 	assert.NoError(t, err)
@@ -693,7 +693,7 @@ func TestCascadeDeletePhase4(t *testing.T) {
 	err = db.Create(setting).Error
 	assert.NoError(t, err)
 
-	user := &User{Email: "fk@test.com", Password: "hash", IsActive: true}
+	user := &User{Email: "fk@test.com", PasswordHash: "hash", IsActive: true}
 	err = db.Create(user).Error
 	assert.NoError(t, err)
 

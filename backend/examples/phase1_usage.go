@@ -38,8 +38,8 @@ func ExampleCreateUser(database *gorm.DB) {
 	user := &models.User{
 		Email:         "john.doe@company.com",
 		Username:      "johndoe",
-		Password:      "$2a$10$hashedPasswordHere", // Should be bcrypt hashed
-		Name:          "John Doe",
+		PasswordHash:  "$2a$10$hashedPasswordHere", // Should be bcrypt hashed
+		FullName:      "John Doe",
 		IsSystemAdmin: false,
 		IsActive:      true,
 	}
@@ -281,14 +281,14 @@ func ExampleFullOnboardingFlow(database *gorm.DB) {
 
 	// 3. Create Owner User
 	owner := &models.User{
-		Email:    "owner@distrisejahtera.com",
-		Username: "owner_distri",
-		Password: "$2a$10$hashedPassword",
-		Name:     "Budi Santoso",
-		IsActive: true,
+		Email:        "owner@distrisejahtera.com",
+		Username:     "owner_distri",
+		PasswordHash: "$2a$10$hashedPassword",
+		FullName:     "Budi Santoso",
+		IsActive:     true,
 	}
 	database.Create(owner)
-	fmt.Printf("3️⃣ Owner user created: %s\n", owner.Name)
+	fmt.Printf("3️⃣ Owner user created: %s\n", owner.FullName)
 
 	// 4. Assign Owner to Tenant
 	userTenant := &models.UserTenant{

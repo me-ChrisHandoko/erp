@@ -1,5 +1,5 @@
 // Package models contains GORM model definitions for ERP system
-// Migrated from Prisma schema with 100% parity
+// Multi-tenant ERP with comprehensive business logic
 package models
 
 import (

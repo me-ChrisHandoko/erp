@@ -76,9 +76,8 @@ docs/_build/
 .air.toml
 tmp/
 
-# Prisma
+# Node.js (if needed for tools)
 node_modules/
-.prisma/
 
 # Docker
 docker-compose.override.yml
