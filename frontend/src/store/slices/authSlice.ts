@@ -102,6 +102,7 @@ const authSlice = createSlice({
     /**
      * Logout and clear all authentication state
      * Called on user logout or session expiry
+     * Note: rememberEmail is intentionally NOT cleared to preserve "Remember Me" functionality
      */
     logout: (state) => {
       state.user = null;
@@ -112,7 +113,7 @@ const authSlice = createSlice({
       state.error = null;
       state.isLoading = false;
 
-      // Clear localStorage
+      // Clear localStorage (only access token, preserve rememberEmail for convenience)
       if (typeof window !== 'undefined') {
         localStorage.removeItem('accessToken');
       }
