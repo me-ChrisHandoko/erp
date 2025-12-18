@@ -7,8 +7,8 @@ import "time"
 type User struct {
 	ID              string     `gorm:"primaryKey;size:255"`
 	Email           string     `gorm:"uniqueIndex;size:255;not null"`
-	PasswordHash    string     `gorm:"size:255;not null"`
-	FullName        string     `gorm:"size:255;not null"`
+	PasswordHash    string     `gorm:"column:password;size:255;not null"` // Maps to DB column 'password'
+	FullName        string     `gorm:"column:name;size:255;not null"` // Maps to DB column 'name'
 	Phone           string     `gorm:"size:50"`
 	IsActive        bool       `gorm:"default:true;not null"`
 	IsSystemAdmin   bool       `gorm:"default:false;not null"`
@@ -138,12 +138,18 @@ func (PasswordReset) TableName() string {
 // LoginAttempt represents a login attempt for brute force protection
 // Maps to login_attempts table in database
 type LoginAttempt struct {
-	ID          string    `gorm:"primaryKey;size:255"`
-	Email       string    `gorm:"size:255;not null;index"`
-	IPAddress   string    `gorm:"size:45;index"`
-	UserAgent   string    `gorm:"size:500"`
-	Success     bool      `gorm:"not null"`
-	AttemptedAt time.Time `gorm:"not null;index"`
+	ID            string    `gorm:"primaryKey;size:255"`
+	Email         string    `gorm:"size:255;not null;index"`
+	IPAddress     string    `gorm:"size:45;index"`
+	UserAgent     string    `gorm:"size:500"`
+	Success       bool      `gorm:"column:is_success;not null"`
+	FailureReason *string   `gorm:"size:255"` // Nullable field for failure reason
+	AttemptedAt   time.Time `gorm:"column:created_at;not null;index"`
+
+	// Unlock metadata for soft delete and audit trail
+	UnlockedAt   *time.Time `gorm:"index"`                    // When admin unlocked this attempt
+	UnlockedBy   *string    `gorm:"size:255"`                 // Email of admin who unlocked
+	UnlockReason *string    `gorm:"size:500"`                 // Admin reason for unlocking
 }
 
 // TableName specifies the table name for LoginAttempt model

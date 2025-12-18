@@ -67,8 +67,9 @@ func Load() (*Config, error) {
 			PasswordResetExpiry: getEnvAsDuration("PASSWORD_RESET_EXPIRY", 1*time.Hour),
 		},
 		Cookie: CookieConfig{
-			Secure: getEnvAsBool("COOKIE_SECURE", false),
-			Domain: getEnv("COOKIE_DOMAIN", ""),
+			Secure:   getEnvAsBool("COOKIE_SECURE", false),
+			Domain:   getEnv("COOKIE_DOMAIN", ""),
+			SameSite: getEnv("COOKIE_SAMESITE", "Lax"),
 		},
 		Tenant: TenantConfig{
 			DefaultSubscriptionPrice: getEnvAsInt64("DEFAULT_SUBSCRIPTION_PRICE", 300000),

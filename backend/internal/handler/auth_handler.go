@@ -3,6 +3,7 @@ package handler
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -85,11 +86,14 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	}
 
 	// Call auth service
+	fmt.Println("🔍 DEBUG [RefreshToken]: Calling authService.RefreshToken...")
 	response, err := h.authService.RefreshToken(c.Request.Context(), req)
 	if err != nil {
+		fmt.Println("🚨 DEBUG [RefreshToken]: Error:", err)
 		h.handleError(c, err)
 		return
 	}
+	fmt.Println("✅ DEBUG [RefreshToken]: Success")
 
 	// Set new refresh token as httpOnly cookie
 	h.setRefreshTokenCookie(c, response.RefreshToken)
@@ -337,8 +341,10 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 	tenantID, _ := c.Get("tenant_id")
 
 	// Get user details
+	// IMPORTANT: Bypass tenant isolation - this endpoint is called during session restore
+	// when user may not have tenant context yet (chicken-and-egg problem)
 	var user auth.User
-	if err := h.authService.DB().Where("id = ?", userID.(string)).First(&user).Error; err != nil {
+	if err := h.authService.DB().Set("bypass_tenant", true).Where("id = ?", userID.(string)).First(&user).Error; err != nil {
 		h.handleError(c, errors.NewInternalError(err))
 		return
 	}
@@ -452,8 +458,17 @@ func (h *AuthHandler) setRefreshTokenCookie(c *gin.Context, token string) {
 		true,                     // httpOnly (prevent XSS)
 	)
 
-	// Set SameSite attribute for CSRF protection
-	c.SetSameSite(http.SameSiteStrictMode)
+	// Set SameSite attribute from configuration
+	sameSiteMode := http.SameSiteLaxMode // Default
+	switch h.cfg.Cookie.SameSite {
+	case "Strict":
+		sameSiteMode = http.SameSiteStrictMode
+	case "None":
+		sameSiteMode = http.SameSiteNoneMode
+	case "Lax":
+		sameSiteMode = http.SameSiteLaxMode
+	}
+	c.SetSameSite(sameSiteMode)
 }
 
 // clearRefreshTokenCookie clears the refresh token cookie
@@ -505,8 +520,17 @@ func (h *AuthHandler) setCSRFToken(c *gin.Context) {
 		false, // NOT httpOnly - frontend needs to read it
 	)
 
-	// Set SameSite=Strict
-	c.SetSameSite(http.SameSiteStrictMode)
+	// Set SameSite attribute from configuration
+	sameSiteMode := http.SameSiteLaxMode // Default
+	switch h.cfg.Cookie.SameSite {
+	case "Strict":
+		sameSiteMode = http.SameSiteStrictMode
+	case "None":
+		sameSiteMode = http.SameSiteNoneMode
+	case "Lax":
+		sameSiteMode = http.SameSiteLaxMode
+	}
+	c.SetSameSite(sameSiteMode)
 }
 
 // generateCSRFToken creates a cryptographically secure random token

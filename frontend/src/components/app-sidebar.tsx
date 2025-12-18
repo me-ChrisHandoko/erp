@@ -1,21 +1,20 @@
 "use client"
 
 import * as React from "react"
+import { useSelector } from "react-redux"
 import {
-  AudioWaveform,
-  BookOpen,
-  Bot,
-  Command,
-  Frame,
-  GalleryVerticalEnd,
-  Map,
-  PieChart,
-  Settings2,
-  SquareTerminal,
+  LayoutDashboard,
+  Database,
+  Package,
+  ShoppingCart,
+  TrendingUp,
+  Wallet,
+  Settings,
+  Building2,
+  PackageOpen,
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
-import { NavProjects } from "@/components/nav-projects"
 import { NavUser } from "@/components/nav-user"
 import { TeamSwitcher } from "@/components/team-switcher"
 import {
@@ -25,149 +24,211 @@ import {
   SidebarHeader,
   SidebarRail,
 } from "@/components/ui/sidebar"
+import { RootState } from "@/store"
 
-// This is sample data.
-const data = {
-  user: {
-    name: "shadcn",
-    email: "m@example.com",
-    avatar: "/avatars/shadcn.jpg",
-  },
+// ERP Navigation Data
+const staticData = {
   teams: [
     {
-      name: "Acme Inc",
-      logo: GalleryVerticalEnd,
+      name: "PT Distribusi Utama",
+      logo: Building2,
       plan: "Enterprise",
     },
     {
-      name: "Acme Corp.",
-      logo: AudioWaveform,
-      plan: "Startup",
-    },
-    {
-      name: "Evil Corp.",
-      logo: Command,
-      plan: "Free",
+      name: "CV Sembako Jaya",
+      logo: PackageOpen,
+      plan: "Professional",
     },
   ],
   navMain: [
     {
-      title: "Playground",
-      url: "#",
-      icon: SquareTerminal,
+      title: "Dashboard",
+      url: "/dashboard",
+      icon: LayoutDashboard,
       isActive: true,
+    },
+    {
+      title: "Master Data",
+      url: "#",
+      icon: Database,
       items: [
         {
-          title: "History",
-          url: "#",
+          title: "Pelanggan",
+          url: "/master/customers",
         },
         {
-          title: "Starred",
-          url: "#",
+          title: "Pemasok",
+          url: "/master/suppliers",
         },
         {
-          title: "Settings",
-          url: "#",
+          title: "Produk",
+          url: "/master/products",
+        },
+        {
+          title: "Gudang",
+          url: "/master/warehouses",
         },
       ],
     },
     {
-      title: "Models",
+      title: "Persediaan",
       url: "#",
-      icon: Bot,
+      icon: Package,
       items: [
         {
-          title: "Genesis",
-          url: "#",
+          title: "Stok Barang",
+          url: "/inventory/stock",
         },
         {
-          title: "Explorer",
-          url: "#",
+          title: "Transfer Gudang",
+          url: "/inventory/transfers",
         },
         {
-          title: "Quantum",
-          url: "#",
+          title: "Stock Opname",
+          url: "/inventory/opname",
+        },
+        {
+          title: "Penyesuaian",
+          url: "/inventory/adjustments",
         },
       ],
     },
     {
-      title: "Documentation",
+      title: "Pembelian",
       url: "#",
-      icon: BookOpen,
+      icon: ShoppingCart,
       items: [
         {
-          title: "Introduction",
-          url: "#",
+          title: "Purchase Order",
+          url: "/procurement/orders",
         },
         {
-          title: "Get Started",
-          url: "#",
+          title: "Penerimaan Barang",
+          url: "/procurement/receipts",
         },
         {
-          title: "Tutorials",
-          url: "#",
+          title: "Faktur Pembelian",
+          url: "/procurement/invoices",
         },
         {
-          title: "Changelog",
-          url: "#",
+          title: "Pembayaran",
+          url: "/procurement/payments",
         },
       ],
     },
     {
-      title: "Settings",
+      title: "Penjualan",
       url: "#",
-      icon: Settings2,
+      icon: TrendingUp,
       items: [
         {
-          title: "General",
-          url: "#",
+          title: "Sales Order",
+          url: "/sales/orders",
         },
         {
-          title: "Team",
-          url: "#",
+          title: "Pengiriman",
+          url: "/sales/deliveries",
         },
         {
-          title: "Billing",
-          url: "#",
+          title: "Faktur Penjualan",
+          url: "/sales/invoices",
         },
         {
-          title: "Limits",
-          url: "#",
+          title: "Penerimaan Kas",
+          url: "/sales/payments",
         },
       ],
     },
-  ],
-  projects: [
     {
-      name: "Design Engineering",
+      title: "Keuangan",
       url: "#",
-      icon: Frame,
+      icon: Wallet,
+      items: [
+        {
+          title: "Jurnal Umum",
+          url: "/finance/journal",
+        },
+        {
+          title: "Kas & Bank",
+          url: "/finance/cash-bank",
+        },
+        {
+          title: "Biaya",
+          url: "/finance/expenses",
+        },
+        {
+          title: "Laporan",
+          url: "/finance/reports",
+        },
+      ],
     },
     {
-      name: "Sales & Marketing",
+      title: "Pengaturan",
       url: "#",
-      icon: PieChart,
-    },
-    {
-      name: "Travel",
-      url: "#",
-      icon: Map,
+      icon: Settings,
+      items: [
+        {
+          title: "Profil Perusahaan",
+          url: "/settings/company",
+        },
+        {
+          title: "Pengguna",
+          url: "/settings/users",
+        },
+        {
+          title: "Roles & Permissions",
+          url: "/settings/roles",
+        },
+        {
+          title: "Konfigurasi",
+          url: "/settings/config",
+        },
+      ],
     },
   ],
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  // Get authenticated user from Redux
+  const authUser = useSelector((state: RootState) => state.auth.user)
+
+  console.log("[Sidebar] authUser from Redux:", {
+    hasUser: !!authUser,
+    email: authUser?.email,
+    fullName: authUser?.fullName,
+    fullNameLength: authUser?.fullName?.length,
+  });
+
+  // Map user data to NavUser props format
+  // Backend returns 'fullName', but NavUser expects 'name'
+  const userData = authUser
+    ? {
+        // Fallback to email username if fullName is empty (during session restore)
+        name: authUser.fullName || authUser.email.split('@')[0],
+        email: authUser.email,
+        avatar: "", // No avatar image - will use Lucide icon fallback
+      }
+    : {
+        name: "Guest User",
+        email: "guest@example.com",
+        avatar: "", // No avatar image - will use Lucide icon fallback
+      }
+
+  console.log("[Sidebar] userData mapped:", {
+    name: userData.name,
+    email: userData.email,
+  });
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <TeamSwitcher teams={data.teams} />
+        <TeamSwitcher teams={staticData.teams} />
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={data.navMain} />
-        <NavProjects projects={data.projects} />
+        <NavMain items={staticData.navMain} />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavUser user={userData} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

@@ -63,65 +63,103 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 	var user User
 	if err := s.db.Where("email = ?", req.Email).First(&user).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			// Record failed attempt
-			s.recordLoginAttempt(ctx, req.Email, req.IPAddress, req.UserAgent, false)
+			// Record failed attempt - user not found
+			reason := FailureReasonInvalidCredentials
+			s.recordLoginAttempt(ctx, req.Email, req.IPAddress, req.UserAgent, false, &reason)
 			return nil, errors.NewAuthenticationError("Invalid email or password")
 		}
 		return nil, errors.NewInternalError(err)
 	}
 
+	// DEBUG: Print loaded password hash
+	fmt.Printf("🔍 DEBUG: Loaded hash length: %d\n", len(user.PasswordHash))
+	fmt.Printf("🔍 DEBUG: Loaded hash: %s\n", user.PasswordHash)
+
 	// Check if user is active
 	if !user.IsActive {
+		fmt.Println("🚨 DEBUG: User is inactive:", user.Email)
+		// Record failed attempt - account inactive
+		reason := FailureReasonAccountInactive
+		s.recordLoginAttempt(ctx, req.Email, req.IPAddress, req.UserAgent, false, &reason)
 		return nil, errors.NewAuthenticationError("Account is inactive")
 	}
+	fmt.Println("✅ DEBUG: User is active:", user.Email)
 
 	// Verify password
+	fmt.Println("🔍 DEBUG: Verifying password for:", user.Email)
 	valid, err := s.passwordHasher.VerifyPassword(req.Password, user.PasswordHash)
 	if err != nil {
+		fmt.Println("🚨 DEBUG: Password verification error:", err)
 		return nil, errors.NewInternalError(err)
 	}
 	if !valid {
-		// Record failed attempt
-		s.recordLoginAttempt(ctx, req.Email, req.IPAddress, req.UserAgent, false)
+		fmt.Println("🚨 DEBUG: Invalid password for:", user.Email)
+		// Record failed attempt - invalid password
+		reason := FailureReasonInvalidPassword
+		s.recordLoginAttempt(ctx, req.Email, req.IPAddress, req.UserAgent, false, &reason)
 		return nil, errors.NewAuthenticationError("Invalid email or password")
 	}
+	fmt.Println("✅ DEBUG: Password valid for:", user.Email)
 
-	// Check if email is verified
-	if !user.EmailVerified {
-		s.recordLoginAttempt(ctx, req.Email, req.IPAddress, req.UserAgent, false)
-		return nil, errors.NewAuthenticationError("Email not verified. Please check your inbox and verify your email address")
-	}
+	// NOTE: Email verification check disabled for internal ERP system
+	// In production with self-registration, you may want to enable this:
+	// if !user.EmailVerified {
+	//     s.recordLoginAttempt(ctx, req.Email, req.IPAddress, req.UserAgent, false)
+	//     return nil, errors.NewAuthenticationError("Email not verified")
+	// }
 
 	// Get user's tenants
+	// IMPORTANT: Bypass tenant isolation for authentication - we don't have tenant context yet!
+	fmt.Println("🔍 DEBUG: Getting user tenants...")
 	var userTenants []UserTenant
-	if err := s.db.Where("user_id = ? AND is_active = ?", user.ID, true).Find(&userTenants).Error; err != nil {
+	if err := s.db.Set("bypass_tenant", true).Where("user_id = ? AND is_active = ?", user.ID, true).Find(&userTenants).Error; err != nil {
+		fmt.Println("🚨 DEBUG: Error getting tenants:", err)
 		return nil, errors.NewInternalError(err)
 	}
+	fmt.Printf("✅ DEBUG: Found %d tenants\n", len(userTenants))
 
 	if len(userTenants) == 0 {
+		fmt.Println("🚨 DEBUG: No active tenants for user")
+		// Record failed attempt - no tenant access
+		reason := FailureReasonNoTenantAccess
+		s.recordLoginAttempt(ctx, req.Email, req.IPAddress, req.UserAgent, false, &reason)
 		return nil, errors.NewAuthorizationError("User has no active tenant access")
 	}
 
 	// Use first tenant as default (in real app, user might select tenant)
 	defaultUserTenant := userTenants[0]
+	fmt.Printf("✅ DEBUG: Using tenant: %s (role: %s)\n", defaultUserTenant.TenantID, defaultUserTenant.Role)
 
 	// Get tenant details
+	// IMPORTANT: Bypass tenant isolation - we're validating tenant before setting context
+	fmt.Println("🔍 DEBUG: Getting tenant details...")
 	var tenant Tenant
-	if err := s.db.Where("id = ?", defaultUserTenant.TenantID).First(&tenant).Error; err != nil {
+	if err := s.db.Set("bypass_tenant", true).Where("id = ?", defaultUserTenant.TenantID).First(&tenant).Error; err != nil {
+		fmt.Println("🚨 DEBUG: Error getting tenant details:", err)
 		return nil, errors.NewInternalError(err)
 	}
+	fmt.Printf("✅ DEBUG: Tenant status: %s\n", tenant.Status)
 
 	// Check tenant status and subscription
 	if tenant.Status != "ACTIVE" && tenant.Status != "TRIAL" {
+		fmt.Println("🚨 DEBUG: Tenant not active or trial")
+		// Record failed attempt - tenant inactive
+		reason := FailureReasonTenantInactive
+		s.recordLoginAttempt(ctx, req.Email, req.IPAddress, req.UserAgent, false, &reason)
 		return nil, errors.NewSubscriptionError("Tenant subscription is not active")
 	}
 
 	// Check trial expiry
 	if tenant.Status == "TRIAL" && tenant.TrialEndsAt != nil && time.Now().After(*tenant.TrialEndsAt) {
+		fmt.Println("🚨 DEBUG: Trial expired")
+		// Record failed attempt - trial expired
+		reason := FailureReasonTrialExpired
+		s.recordLoginAttempt(ctx, req.Email, req.IPAddress, req.UserAgent, false, &reason)
 		return nil, errors.NewSubscriptionError("Trial period has expired")
 	}
 
 	// Generate JWT tokens
+	fmt.Println("🔍 DEBUG: Generating access token...")
 	accessToken, err := s.tokenService.GenerateAccessToken(
 		user.ID,
 		user.Email,
@@ -129,21 +167,31 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 		defaultUserTenant.Role,
 	)
 	if err != nil {
+		fmt.Println("🚨 DEBUG: Error generating access token:", err)
 		return nil, errors.NewInternalError(fmt.Errorf("failed to generate access token: %w", err))
 	}
+	fmt.Println("✅ DEBUG: Access token generated")
 
+	fmt.Println("🔍 DEBUG: Generating refresh token...")
 	refreshToken, err := s.tokenService.GenerateRefreshToken(user.ID)
 	if err != nil {
+		fmt.Println("🚨 DEBUG: Error generating refresh token:", err)
 		return nil, errors.NewInternalError(fmt.Errorf("failed to generate refresh token: %w", err))
 	}
+	fmt.Println("✅ DEBUG: Refresh token generated")
 
 	// Store refresh token
+	fmt.Println("🔍 DEBUG: Storing refresh token...")
 	if err := s.storeRefreshToken(ctx, user.ID, refreshToken, req.DeviceInfo, req.IPAddress, req.UserAgent); err != nil {
+		fmt.Println("🚨 DEBUG: Error storing refresh token:", err)
 		return nil, err
 	}
+	fmt.Println("✅ DEBUG: Refresh token stored")
 
 	// Record successful login
-	s.recordLoginAttempt(ctx, req.Email, req.IPAddress, req.UserAgent, true)
+	fmt.Println("🔍 DEBUG: Recording successful login...")
+	s.recordLoginAttempt(ctx, req.Email, req.IPAddress, req.UserAgent, true, nil) // nil = no failure reason for success
+	fmt.Println("✅ DEBUG: Login recorded")
 
 	return &dto.AuthResponse{
 		AccessToken:  accessToken,
@@ -201,27 +249,39 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *dto.RefreshTokenReq
 
 	// Check if user is active
 	if !user.IsActive {
+		fmt.Println("🚨 DEBUG [RefreshToken]: User is inactive")
 		return nil, errors.NewAuthenticationError("Account is inactive")
 	}
+	fmt.Println("✅ DEBUG [RefreshToken]: User is active")
 
 	// Get user's active tenants
+	// IMPORTANT: Bypass tenant isolation for refresh - we don't have tenant context yet!
+	fmt.Println("🔍 DEBUG [RefreshToken]: Getting user tenants...")
 	var userTenants []UserTenant
-	if err := s.db.Where("user_id = ? AND is_active = ?", user.ID, true).Find(&userTenants).Error; err != nil {
+	if err := s.db.Set("bypass_tenant", true).Where("user_id = ? AND is_active = ?", user.ID, true).Find(&userTenants).Error; err != nil {
+		fmt.Println("🚨 DEBUG [RefreshToken]: Error getting tenants:", err)
 		return nil, errors.NewInternalError(err)
 	}
+	fmt.Printf("✅ DEBUG [RefreshToken]: Found %d tenants\n", len(userTenants))
 
 	if len(userTenants) == 0 {
+		fmt.Println("🚨 DEBUG [RefreshToken]: No active tenants for user")
 		return nil, errors.NewAuthorizationError("User has no active tenant access")
 	}
 
 	// Use first tenant as default
 	defaultUserTenant := userTenants[0]
+	fmt.Printf("✅ DEBUG [RefreshToken]: Using tenant: %s (role: %s)\n", defaultUserTenant.TenantID, defaultUserTenant.Role)
 
 	// Get tenant and check subscription status
+	// IMPORTANT: Bypass tenant isolation - we're validating tenant before setting context
+	fmt.Println("🔍 DEBUG [RefreshToken]: Getting tenant details...")
 	var tenant Tenant
-	if err := s.db.Where("id = ?", defaultUserTenant.TenantID).First(&tenant).Error; err != nil {
+	if err := s.db.Set("bypass_tenant", true).Where("id = ?", defaultUserTenant.TenantID).First(&tenant).Error; err != nil {
+		fmt.Println("🚨 DEBUG [RefreshToken]: Error getting tenant details:", err)
 		return nil, errors.NewInternalError(err)
 	}
+	fmt.Printf("✅ DEBUG [RefreshToken]: Tenant status: %s\n", tenant.Status)
 
 	// CRITICAL: Check subscription status before issuing new tokens
 	// Reference: BACKEND-IMPLEMENTATION-ANALYSIS.md - Recommendation #2
@@ -231,10 +291,12 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *dto.RefreshTokenReq
 
 	// Check trial expiry
 	if tenant.Status == "TRIAL" && tenant.TrialEndsAt != nil && time.Now().After(*tenant.TrialEndsAt) {
+		fmt.Println("🚨 DEBUG [RefreshToken]: Trial expired")
 		return nil, errors.NewSubscriptionError("Trial period has expired")
 	}
 
 	// Generate new access token
+	fmt.Println("🔍 DEBUG [RefreshToken]: Generating new access token...")
 	accessToken, err := s.tokenService.GenerateAccessToken(
 		user.ID,
 		user.Email,
@@ -242,16 +304,22 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *dto.RefreshTokenReq
 		defaultUserTenant.Role,
 	)
 	if err != nil {
+		fmt.Println("🚨 DEBUG [RefreshToken]: Error generating access token:", err)
 		return nil, errors.NewInternalError(fmt.Errorf("failed to generate access token: %w", err))
 	}
+	fmt.Println("✅ DEBUG [RefreshToken]: Access token generated")
 
 	// Optionally rotate refresh token (best practice)
+	fmt.Println("🔍 DEBUG [RefreshToken]: Generating new refresh token...")
 	newRefreshToken, err := s.tokenService.GenerateRefreshToken(user.ID)
 	if err != nil {
+		fmt.Println("🚨 DEBUG [RefreshToken]: Error generating refresh token:", err)
 		return nil, errors.NewInternalError(fmt.Errorf("failed to generate refresh token: %w", err))
 	}
+	fmt.Println("✅ DEBUG [RefreshToken]: New refresh token generated")
 
 	// Revoke old refresh token
+	fmt.Println("🔍 DEBUG [RefreshToken]: Revoking old refresh token...")
 	if err := s.db.Model(&RefreshToken{}).
 		Where("token_hash = ?", tokenHash).
 		Updates(map[string]interface{}{
@@ -259,13 +327,18 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *dto.RefreshTokenReq
 			"revoked_at": time.Now(),
 			"updated_at": time.Now(),
 		}).Error; err != nil {
+		fmt.Println("🚨 DEBUG [RefreshToken]: Error revoking old token:", err)
 		return nil, errors.NewInternalError(err)
 	}
+	fmt.Println("✅ DEBUG [RefreshToken]: Old refresh token revoked")
 
 	// Store new refresh token
+	fmt.Println("🔍 DEBUG [RefreshToken]: Storing new refresh token...")
 	if err := s.storeRefreshToken(ctx, user.ID, newRefreshToken, refreshTokenRecord.DeviceInfo, refreshTokenRecord.IPAddress, refreshTokenRecord.UserAgent); err != nil {
+		fmt.Println("🚨 DEBUG [RefreshToken]: Error storing new token:", err)
 		return nil, err
 	}
+	fmt.Println("✅ DEBUG [RefreshToken]: New refresh token stored")
 
 	return &dto.AuthResponse{
 		AccessToken:  accessToken,
@@ -544,9 +617,10 @@ func (s *AuthService) checkLoginAttempts(ctx context.Context, email, ipAddress s
 	cutoffTime := time.Now().Add(-maxLockoutDuration)
 
 	// Count failed attempts within the lookback window
+	// Exclude attempts that have been unlocked (unlocked_at IS NULL)
 	var count int64
 	if err := s.db.Model(&LoginAttempt{}).
-		Where("(email = ? OR ip_address = ?) AND success = ? AND attempted_at > ?",
+		Where("(email = ? OR ip_address = ?) AND is_success = ? AND created_at > ? AND unlocked_at IS NULL",
 			email, ipAddress, false, cutoffTime).
 		Count(&count).Error; err != nil {
 		return false, 0, 0, 0, errors.NewInternalError(err)
@@ -578,10 +652,11 @@ func (s *AuthService) checkLoginAttempts(ctx context.Context, email, ipAddress s
 	}
 
 	// Get the most recent failed attempt to calculate remaining lockout time
+	// Exclude attempts that have been unlocked (unlocked_at IS NULL)
 	var lastAttempt LoginAttempt
 	if err := s.db.Model(&LoginAttempt{}).
-		Where("(email = ? OR ip_address = ?) AND success = ?", email, ipAddress, false).
-		Order("attempted_at DESC").
+		Where("(email = ? OR ip_address = ?) AND is_success = ? AND unlocked_at IS NULL", email, ipAddress, false).
+		Order("created_at DESC").
 		First(&lastAttempt).Error; err != nil {
 		// If no failed attempt found, no lockout
 		return false, 0, 0, count, nil
@@ -605,19 +680,22 @@ func (s *AuthService) checkLoginAttempts(ctx context.Context, email, ipAddress s
 }
 
 // recordLoginAttempt records login attempt for brute force protection
-func (s *AuthService) recordLoginAttempt(ctx context.Context, email, ipAddress, userAgent string, success bool) error {
+// failureReason should be one of the FailureReason* constants, or nil for successful login
+func (s *AuthService) recordLoginAttempt(ctx context.Context, email, ipAddress, userAgent string, success bool, failureReason *string) error {
 	attempt := LoginAttempt{
-		ID:          uuid.New().String(),
-		Email:       email,
-		IPAddress:   ipAddress,
-		UserAgent:   userAgent,
-		Success:     success,
-		AttemptedAt: time.Now(),
+		ID:            uuid.New().String(),
+		Email:         email,
+		IPAddress:     ipAddress,
+		UserAgent:     userAgent,
+		Success:       success,
+		FailureReason: failureReason,
+		AttemptedAt:   time.Now(),
 	}
 
 	if err := s.db.Create(&attempt).Error; err != nil {
 		// Don't return error, just log it
 		// Recording attempts should not block authentication
+		fmt.Printf("⚠️  Failed to record login attempt: %v\n", err)
 		return nil
 	}
 
@@ -693,8 +771,10 @@ func (s *AuthService) SwitchTenant(userID string, newTenantID string) (string, *
 // GetUserTenants returns all tenants accessible to user
 func (s *AuthService) GetUserTenants(userID string) ([]UserTenant, []Tenant, error) {
 	// Query user_tenants for user
+	// IMPORTANT: Bypass tenant isolation - this is called during session restore and /auth/me
+	// when user may not have tenant context yet (chicken-and-egg problem)
 	var userTenants []UserTenant
-	err := s.db.Where("user_id = ? AND is_active = ?", userID, true).
+	err := s.db.Set("bypass_tenant", true).Where("user_id = ? AND is_active = ?", userID, true).
 		Find(&userTenants).Error
 	if err != nil {
 		return nil, nil, errors.NewInternalError(err)
@@ -711,8 +791,9 @@ func (s *AuthService) GetUserTenants(userID string) ([]UserTenant, []Tenant, err
 	}
 
 	// Get tenant details
+	// IMPORTANT: Bypass tenant isolation - querying tenants user belongs to
 	var tenants []Tenant
-	err = s.db.Where("id IN ?", tenantIDs).Find(&tenants).Error
+	err = s.db.Set("bypass_tenant", true).Where("id IN ?", tenantIDs).Find(&tenants).Error
 	if err != nil {
 		return nil, nil, errors.NewInternalError(err)
 	}

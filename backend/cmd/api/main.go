@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	"backend/cmd/api/bootstrap"
 	"backend/internal/config"
 )
@@ -25,6 +27,15 @@ import (
 // @description Type "Bearer" followed by a space and JWT token.
 
 func main() {
+	// 🔧 FIX: Set timezone to Asia/Jakarta (WIB) for Indonesian business
+	// This ensures all timestamps are consistent between database and application
+	loc, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		// Fallback to UTC if Asia/Jakarta not available
+		loc = time.UTC
+	}
+	time.Local = loc
+
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {

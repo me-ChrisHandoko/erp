@@ -91,8 +91,9 @@ type EmailConfig struct {
 
 // CookieConfig holds cookie configuration
 type CookieConfig struct {
-	Secure bool
-	Domain string
+	Secure   bool
+	Domain   string
+	SameSite string // Lax, Strict, or None
 }
 
 // TenantConfig holds tenant-related configuration

@@ -323,7 +323,7 @@ func TestRecordLoginAttempt_Success(t *testing.T) {
 
 	// Verify attempt was recorded
 	var count int64
-	db.Model(&LoginAttempt{}).Where("email = ? AND success = ?", "test@example.com", true).Count(&count)
+	db.Model(&LoginAttempt{}).Where("email = ? AND is_success = ?", "test@example.com", true).Count(&count)
 	assert.Equal(t, int64(1), count)
 }
 
@@ -342,7 +342,7 @@ func TestRecordLoginAttempt_Failure(t *testing.T) {
 
 	// Verify attempt was recorded
 	var count int64
-	db.Model(&LoginAttempt{}).Where("email = ? AND success = ?", "test@example.com", false).Count(&count)
+	db.Model(&LoginAttempt{}).Where("email = ? AND is_success = ?", "test@example.com", false).Count(&count)
 	assert.Equal(t, int64(1), count)
 }
 

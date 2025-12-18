@@ -94,6 +94,9 @@ func SetupCORS(router *gin.Engine, cfg config.CORSConfig) {
 			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 		}
 
+		// CRITICAL: Allow credentials (cookies) for authentication
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+
 		c.Writer.Header().Set("Access-Control-Allow-Methods", joinStrings(cfg.AllowedMethods, ", "))
 		c.Writer.Header().Set("Access-Control-Allow-Headers", joinStrings(cfg.AllowedHeaders, ", "))
 		c.Writer.Header().Set("Access-Control-Max-Age", "86400")

@@ -9,12 +9,13 @@ import (
 )
 
 // User - Application user with multi-tenant access
+// Note: This model matches the database schema from migration 000001_init_schema.up.sql
 type User struct {
 	ID            string    `gorm:"type:varchar(255);primaryKey"`
 	Email         string    `gorm:"type:varchar(255);uniqueIndex;not null"`
 	Username      string    `gorm:"type:varchar(255);uniqueIndex;not null"`
-	Password      string    `gorm:"type:varchar(255);not null"` // Should be hashed
-	Name          string    `gorm:"type:varchar(255);not null"`
+	PasswordHash  string    `gorm:"column:password;type:varchar(255);not null"` // Maps to DB column 'password'
+	FullName      string    `gorm:"column:name;type:varchar(255);not null"` // Maps to DB column 'name'
 	IsSystemAdmin bool      `gorm:"default:false"` // Can manage all tenants
 	IsActive      bool      `gorm:"default:true"`
 	CreatedAt     time.Time `gorm:"autoCreateTime"`

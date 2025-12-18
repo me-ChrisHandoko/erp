@@ -116,8 +116,13 @@ migrate-create: ## Create a new migration file (usage: make migrate-create name=
 	@./scripts/migrate.sh create $(name)
 	@echo "$(GREEN)✓ Migration created$(RESET)"
 
-seed: ## Seed database with development data
-	@echo "$(BLUE)Seeding database...$(RESET)"
+seed: ## Seed database with test users for login
+	@echo "$(BLUE)Seeding database with test users...$(RESET)"
+	@go run ./cmd/seed
+	@echo "$(GREEN)✓ Database seeded with test users$(RESET)"
+
+seed-sql: ## Seed database with SQL files (dev)
+	@echo "$(BLUE)Seeding database from SQL files...$(RESET)"
 	@./scripts/seed.sh dev
 	@echo "$(GREEN)✓ Database seeded$(RESET)"
 
