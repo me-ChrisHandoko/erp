@@ -3,6 +3,8 @@
 
 import { configureStore } from '@reduxjs/toolkit';
 import { authApi } from './services/authApi';
+import { companyApi } from './services/companyApi';
+import { tenantApi } from './services/tenantApi';
 import authReducer from './slices/authSlice';
 
 /**
@@ -16,13 +18,19 @@ export const store = configureStore({
     // Auth state slice
     auth: authReducer,
 
-    // RTK Query API reducer
+    // RTK Query API reducers
     [authApi.reducerPath]: authApi.reducer,
+    [companyApi.reducerPath]: companyApi.reducer,
+    [tenantApi.reducerPath]: tenantApi.reducer,
   },
 
   // Add RTK Query middleware for caching, invalidation, etc.
   middleware: (getDefaultMiddleware) =>
-    getDefaultMiddleware().concat(authApi.middleware),
+    getDefaultMiddleware().concat(
+      authApi.middleware,
+      companyApi.middleware,
+      tenantApi.middleware
+    ),
 
   // Enable Redux DevTools in development
   devTools: process.env.NODE_ENV !== 'production',
