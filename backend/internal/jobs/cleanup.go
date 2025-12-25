@@ -37,8 +37,8 @@ func (s *Scheduler) cleanupExpiredEmailVerifications() {
 	start := time.Now()
 	now := time.Now().UTC()
 
-	// Delete expired (24hr) OR already verified (VerifiedAt IS NOT NULL)
-	result := s.db.Where("expires_at < ? OR verified_at IS NOT NULL", now).
+	// Delete expired (24hr) OR already used (is_used = true OR used_at IS NOT NULL)
+	result := s.db.Where("expires_at < ? OR is_used = ? OR used_at IS NOT NULL", now, true).
 		Delete(&auth.EmailVerification{})
 
 	s.lastCleanup = time.Now()

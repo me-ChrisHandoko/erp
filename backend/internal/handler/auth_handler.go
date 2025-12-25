@@ -77,9 +77,19 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	// Get refresh token from cookie
 	refreshToken, err := c.Cookie("refresh_token")
 	if err != nil {
+		fmt.Println("🚨 DEBUG [RefreshToken]: No refresh_token cookie found")
 		c.JSON(http.StatusUnauthorized, errors.NewAuthenticationError("Refresh token not found"))
 		return
 	}
+
+	// Log token preview for debugging (first 16 chars only)
+	tokenPreview := refreshToken
+	if len(refreshToken) > 16 {
+		tokenPreview = refreshToken[:16] + "..."
+	}
+	fmt.Printf("🔍 DEBUG [RefreshToken]: Cookie token preview: %s\n", tokenPreview)
+	fmt.Printf("🔍 DEBUG [RefreshToken]: Client IP: %s\n", c.ClientIP())
+	fmt.Printf("🔍 DEBUG [RefreshToken]: User-Agent: %s\n", c.Request.UserAgent())
 
 	req := &dto.RefreshTokenRequest{
 		RefreshToken: refreshToken,
@@ -95,8 +105,19 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	}
 	fmt.Println("✅ DEBUG [RefreshToken]: Success")
 
+	// Log new token being set
+	newTokenPreview := response.RefreshToken
+	if len(response.RefreshToken) > 16 {
+		newTokenPreview = response.RefreshToken[:16] + "..."
+	}
+	fmt.Printf("🍪 DEBUG [RefreshToken]: Setting new cookie with token: %s\n", newTokenPreview)
+	fmt.Printf("🍪 DEBUG [RefreshToken]: Cookie config - Domain: '%s', Secure: %v, SameSite: %s\n",
+		h.cfg.Cookie.Domain, h.cfg.Cookie.Secure, h.cfg.Cookie.SameSite)
+
 	// Set new refresh token as httpOnly cookie
 	h.setRefreshTokenCookie(c, response.RefreshToken)
+
+	fmt.Println("✅ DEBUG [RefreshToken]: New cookie set successfully")
 
 	// Don't send refresh token in response body
 	response.RefreshToken = ""

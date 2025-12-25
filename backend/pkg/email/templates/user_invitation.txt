@@ -1,0 +1,29 @@
+========================================
+YOU'VE BEEN INVITED!
+========================================
+
+Hello {{.RecipientName}},
+
+Great news! You've been invited to join {{.TenantName}} on {{.CompanyName}}.
+
+INVITATION DETAILS:
+-------------------
+Invited by: {{.InviterName}}
+Company: {{.TenantName}}
+
+To accept your invitation and set up your account, please visit:
+
+{{.InvitationURL}}
+
+IMPORTANT INFORMATION:
+----------------------
+- This invitation link will expire in {{.ExpiryHours}} hours
+- Please accept the invitation before it expires
+- If the link doesn't work, copy and paste it into your browser
+
+We're excited to have you join the team!
+
+----------------------------------------
+{{.CompanyName}}
+This is an automated email. Please do not reply.
+© 2025 {{.CompanyName}}. All rights reserved.

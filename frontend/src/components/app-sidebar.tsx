@@ -48,6 +48,25 @@ const staticData = {
       isActive: true,
     },
     {
+      title: "Perusahaan",
+      url: "#",
+      icon: Building2,
+      items: [
+        {
+          title: "Profil Perusahaan",
+          url: "/company/profile",
+        },
+        {
+          title: "Rekening Bank",
+          url: "/company/banks",
+        },
+        {
+          title: "Tim & Pengguna",
+          url: "/company/team",
+        },
+      ],
+    },
+    {
       title: "Master Data",
       url: "#",
       icon: Database,
@@ -168,20 +187,16 @@ const staticData = {
       icon: Settings,
       items: [
         {
-          title: "Profil Perusahaan",
-          url: "/settings/company",
-        },
-        {
-          title: "Pengguna",
-          url: "/settings/users",
-        },
-        {
           title: "Roles & Permissions",
           url: "/settings/roles",
         },
         {
-          title: "Konfigurasi",
+          title: "Konfigurasi Sistem",
           url: "/settings/config",
+        },
+        {
+          title: "Preferensi",
+          url: "/settings/preferences",
         },
       ],
     },

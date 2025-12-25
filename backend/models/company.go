@@ -32,6 +32,7 @@ type Company struct {
 
 	// Indonesian Tax Compliance
 	NPWP              *string         `gorm:"type:varchar(50);uniqueIndex"` // Nomor Pokok Wajib Pajak
+	NIB               *string         `gorm:"type:varchar(50)"`             // Nomor Induk Berusaha
 	IsPKP             bool            `gorm:"default:false"`                // Pengusaha Kena Pajak
 	PPNRate           decimal.Decimal `gorm:"type:decimal(5,2);default:11"` // PPN rate (11% in 2025)
 	FakturPajakSeries *string         `gorm:"type:varchar(50)"`             // Series Faktur Pajak

@@ -159,7 +159,6 @@ export function UserTable({
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Email</TableHead>
-              <TableHead>Phone</TableHead>
               <TableHead>Role</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Last Login</TableHead>
@@ -169,7 +168,7 @@ export function UserTable({
           <TableBody>
             {users.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7}>
+                <TableCell colSpan={6}>
                   <EmptyState
                     icon={Shield}
                     title="No users found"
@@ -186,7 +185,6 @@ export function UserTable({
                 <TableRow key={user.id}>
                   <TableCell className="font-medium">{user.name}</TableCell>
                   <TableCell>{user.email}</TableCell>
-                  <TableCell>{user.phone || "-"}</TableCell>
                   <TableCell>
                     <Badge variant={getRoleBadgeVariant(user.role)}>
                       {getRoleIcon(user.role)}

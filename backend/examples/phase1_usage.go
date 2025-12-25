@@ -7,23 +7,28 @@ import (
 	"backend/models"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/shopspring/decimal"
-	"gorm.io/driver/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 // ExampleSetupDatabase shows how to initialize database and run migration
 func ExampleSetupDatabase() {
-	// Open database connection (SQLite for development)
-	database, err := gorm.Open(sqlite.Open("erp.db"), &gorm.Config{})
+	// Get DATABASE_URL from environment variable
+	// Example: postgresql://user:password@localhost:5432/erp_db?sslmode=disable
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		log.Fatal("DATABASE_URL environment variable is required")
+	}
+
+	// Open database connection (PostgreSQL)
+	database, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{})
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
-
-	// Enable foreign key constraints (SQLite only)
-	database.Exec("PRAGMA foreign_keys = ON")
 
 	// Run Phase 1 migration
 	if err := db.AutoMigratePhase1(database); err != nil {

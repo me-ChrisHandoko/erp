@@ -2,14 +2,11 @@
  * User Validation Schemas
  *
  * Zod schemas for user management operations:
- * - Invite user (email, name, phone, role)
+ * - Invite user (email, name, role)
  * - Update user role
  */
 
 import { z } from "zod";
-
-// Indonesian phone regex: +628xxx or 08xxx (8-11 digits after prefix)
-const phoneRegex = /^(\+628|08)\d{8,11}$/;
 
 /**
  * Invite User Schema
@@ -27,12 +24,6 @@ export const inviteUserSchema = z.object({
     .min(1, "Name is required")
     .max(255, "Name must be less than 255 characters")
     .regex(/^[a-zA-Z\s.'-]+$/, "Name can only contain letters, spaces, and . ' -"),
-
-  phone: z
-    .string()
-    .regex(phoneRegex, "Invalid Indonesian phone number (format: +628xxx or 08xxx)")
-    .optional()
-    .or(z.literal("")),
 
   role: z.enum(["ADMIN", "STAFF", "VIEWER"], {
     message: "Invalid role. Must be ADMIN, STAFF, or VIEWER",

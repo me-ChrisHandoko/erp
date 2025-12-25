@@ -32,7 +32,6 @@ export interface TenantUser {
   tenantId: string;
   email: string;
   name: string;
-  phone?: string;
   role: UserRole;
   isActive: boolean;
   createdAt: string;
@@ -43,7 +42,6 @@ export interface TenantUser {
 export interface InviteUserRequest {
   email: string;
   name: string;
-  phone?: string;
   role: UserRole;
 }
 

@@ -17,14 +17,14 @@ help: ## Show this help message
 # Development
 build: ## Build the application
 	@echo "$(BLUE)Building API server...$(RESET)"
-	@go build -o bin/api ./cmd/api
+	@go build -o bin/api ./cmd/server
 	@echo "$(BLUE)Building worker...$(RESET)"
 	@go build -o bin/worker ./cmd/worker
 	@echo "$(GREEN)✓ Build complete$(RESET)"
 
 run: ## Run the API server
 	@echo "$(BLUE)Starting API server...$(RESET)"
-	@go run ./cmd/api
+	@go run ./cmd/server
 
 run-worker: ## Run the background worker
 	@echo "$(BLUE)Starting background worker...$(RESET)"
@@ -181,7 +181,7 @@ setup: deps install-tools ## Setup development environment
 # Documentation
 docs: ## Generate API documentation
 	@echo "$(BLUE)Generating API documentation...$(RESET)"
-	@swag init -g cmd/api/main.go -o api/openapi
+	@swag init -g cmd/server/main.go -o api/openapi
 	@echo "$(GREEN)✓ Documentation generated$(RESET)"
 
 # All-in-one commands

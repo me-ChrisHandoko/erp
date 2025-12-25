@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"backend/internal/config"
 	"backend/internal/dto"
@@ -223,24 +224,62 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *dto.RefreshTokenReq
 		return nil, errors.NewAuthenticationError("Invalid refresh token")
 	}
 
+	// Begin database transaction with row-level locking to prevent race conditions
+	// This ensures that concurrent refresh attempts will serialize at the database level
+	tx := s.db.Begin()
+	if tx.Error != nil {
+		return nil, errors.NewInternalError(fmt.Errorf("failed to begin transaction: %w", tx.Error))
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+			panic(r)
+		}
+	}()
+
 	// Check if token exists and is not revoked
+	// CRITICAL: Use SELECT FOR UPDATE to lock the row for the duration of the transaction
+	// This prevents concurrent transactions from reading the same token simultaneously
 	var refreshTokenRecord RefreshToken
 	tokenHash := hashToken(req.RefreshToken)
-	if err := s.db.Where("token_hash = ? AND is_revoked = ?", tokenHash, false).First(&refreshTokenRecord).Error; err != nil {
+
+	// Log token hash being searched (for debugging)
+	fmt.Printf("🔍 DEBUG [RefreshToken]: Searching for token hash with row lock: %s\n", tokenHash[:16]+"...")
+
+	// Use Clauses(clause.Locking{Strength: "UPDATE"}) for row-level locking
+	// Second concurrent request will WAIT here until first transaction commits
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("token_hash = ? AND is_revoked = ?", tokenHash, false).
+		First(&refreshTokenRecord).Error; err != nil {
+		tx.Rollback()
 		if err == gorm.ErrRecordNotFound {
+			// Check if token exists but is revoked
+			var revokedToken RefreshToken
+			if err2 := s.db.Where("token_hash = ?", tokenHash).First(&revokedToken).Error; err2 == nil {
+				fmt.Printf("🚨 DEBUG [RefreshToken]: Token found but REVOKED at %v\n", revokedToken.RevokedAt)
+				fmt.Printf("🚨 DEBUG [RefreshToken]: Token was created at %v, revoked after %v\n",
+					revokedToken.CreatedAt, revokedToken.RevokedAt.Sub(revokedToken.CreatedAt))
+			} else {
+				fmt.Println("🚨 DEBUG [RefreshToken]: Token hash not found in database at all")
+			}
 			return nil, errors.NewAuthenticationError("Refresh token not found or revoked")
 		}
 		return nil, errors.NewInternalError(err)
 	}
 
+	fmt.Printf("✅ DEBUG [RefreshToken]: Token found and locked - Created: %v, Expires: %v\n",
+		refreshTokenRecord.CreatedAt, refreshTokenRecord.ExpiresAt)
+
 	// Check expiry
 	if time.Now().After(refreshTokenRecord.ExpiresAt) {
+		tx.Rollback()
 		return nil, errors.NewAuthenticationError("Refresh token expired")
 	}
 
 	// Get user
 	var user User
 	if err := s.db.Where("id = ?", userID).First(&user).Error; err != nil {
+		tx.Rollback()
 		if err == gorm.ErrRecordNotFound {
 			return nil, errors.NewAuthenticationError("User not found")
 		}
@@ -249,6 +288,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *dto.RefreshTokenReq
 
 	// Check if user is active
 	if !user.IsActive {
+		tx.Rollback()
 		fmt.Println("🚨 DEBUG [RefreshToken]: User is inactive")
 		return nil, errors.NewAuthenticationError("Account is inactive")
 	}
@@ -259,12 +299,14 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *dto.RefreshTokenReq
 	fmt.Println("🔍 DEBUG [RefreshToken]: Getting user tenants...")
 	var userTenants []UserTenant
 	if err := s.db.Set("bypass_tenant", true).Where("user_id = ? AND is_active = ?", user.ID, true).Find(&userTenants).Error; err != nil {
+		tx.Rollback()
 		fmt.Println("🚨 DEBUG [RefreshToken]: Error getting tenants:", err)
 		return nil, errors.NewInternalError(err)
 	}
 	fmt.Printf("✅ DEBUG [RefreshToken]: Found %d tenants\n", len(userTenants))
 
 	if len(userTenants) == 0 {
+		tx.Rollback()
 		fmt.Println("🚨 DEBUG [RefreshToken]: No active tenants for user")
 		return nil, errors.NewAuthorizationError("User has no active tenant access")
 	}
@@ -278,6 +320,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *dto.RefreshTokenReq
 	fmt.Println("🔍 DEBUG [RefreshToken]: Getting tenant details...")
 	var tenant Tenant
 	if err := s.db.Set("bypass_tenant", true).Where("id = ?", defaultUserTenant.TenantID).First(&tenant).Error; err != nil {
+		tx.Rollback()
 		fmt.Println("🚨 DEBUG [RefreshToken]: Error getting tenant details:", err)
 		return nil, errors.NewInternalError(err)
 	}
@@ -286,16 +329,18 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *dto.RefreshTokenReq
 	// CRITICAL: Check subscription status before issuing new tokens
 	// Reference: BACKEND-IMPLEMENTATION-ANALYSIS.md - Recommendation #2
 	if tenant.Status != "ACTIVE" && tenant.Status != "TRIAL" {
+		tx.Rollback()
 		return nil, errors.NewSubscriptionError("Tenant subscription is not active")
 	}
 
 	// Check trial expiry
 	if tenant.Status == "TRIAL" && tenant.TrialEndsAt != nil && time.Now().After(*tenant.TrialEndsAt) {
+		tx.Rollback()
 		fmt.Println("🚨 DEBUG [RefreshToken]: Trial expired")
 		return nil, errors.NewSubscriptionError("Trial period has expired")
 	}
 
-	// Generate new access token
+	// Generate new access token (token generation is stateless, no rollback needed)
 	fmt.Println("🔍 DEBUG [RefreshToken]: Generating new access token...")
 	accessToken, err := s.tokenService.GenerateAccessToken(
 		user.ID,
@@ -304,6 +349,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *dto.RefreshTokenReq
 		defaultUserTenant.Role,
 	)
 	if err != nil {
+		tx.Rollback()
 		fmt.Println("🚨 DEBUG [RefreshToken]: Error generating access token:", err)
 		return nil, errors.NewInternalError(fmt.Errorf("failed to generate access token: %w", err))
 	}
@@ -313,32 +359,53 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *dto.RefreshTokenReq
 	fmt.Println("🔍 DEBUG [RefreshToken]: Generating new refresh token...")
 	newRefreshToken, err := s.tokenService.GenerateRefreshToken(user.ID)
 	if err != nil {
+		tx.Rollback()
 		fmt.Println("🚨 DEBUG [RefreshToken]: Error generating refresh token:", err)
 		return nil, errors.NewInternalError(fmt.Errorf("failed to generate refresh token: %w", err))
 	}
 	fmt.Println("✅ DEBUG [RefreshToken]: New refresh token generated")
 
-	// Revoke old refresh token
-	fmt.Println("🔍 DEBUG [RefreshToken]: Revoking old refresh token...")
-	if err := s.db.Model(&RefreshToken{}).
+	// Revoke old refresh token within the transaction
+	// CRITICAL: Use tx instead of s.db to ensure atomicity
+	fmt.Printf("🔍 DEBUG [RefreshToken]: Revoking old token in transaction (hash: %s...)\n", tokenHash[:16])
+	result := tx.Model(&RefreshToken{}).
 		Where("token_hash = ?", tokenHash).
 		Updates(map[string]interface{}{
 			"is_revoked": true,
 			"revoked_at": time.Now(),
 			"updated_at": time.Now(),
-		}).Error; err != nil {
-		fmt.Println("🚨 DEBUG [RefreshToken]: Error revoking old token:", err)
-		return nil, errors.NewInternalError(err)
-	}
-	fmt.Println("✅ DEBUG [RefreshToken]: Old refresh token revoked")
+		})
 
-	// Store new refresh token
-	fmt.Println("🔍 DEBUG [RefreshToken]: Storing new refresh token...")
-	if err := s.storeRefreshToken(ctx, user.ID, newRefreshToken, refreshTokenRecord.DeviceInfo, refreshTokenRecord.IPAddress, refreshTokenRecord.UserAgent); err != nil {
+	if result.Error != nil {
+		tx.Rollback()
+		fmt.Println("🚨 DEBUG [RefreshToken]: Error revoking old token:", result.Error)
+		return nil, errors.NewInternalError(result.Error)
+	}
+
+	fmt.Printf("✅ DEBUG [RefreshToken]: Old token revoked in transaction (%d rows affected)\n", result.RowsAffected)
+	if result.RowsAffected == 0 {
+		tx.Rollback()
+		fmt.Println("⚠️  WARNING: No rows affected during revocation - token may have been already revoked")
+		return nil, errors.NewAuthenticationError("Failed to revoke old token")
+	}
+
+	// Store new refresh token within the transaction
+	// CRITICAL: Use tx for storeRefreshToken to ensure atomicity
+	fmt.Println("🔍 DEBUG [RefreshToken]: Storing new refresh token in transaction...")
+	if err := s.storeRefreshTokenTx(ctx, tx, user.ID, newRefreshToken, refreshTokenRecord.DeviceInfo, refreshTokenRecord.IPAddress, refreshTokenRecord.UserAgent); err != nil {
+		tx.Rollback()
 		fmt.Println("🚨 DEBUG [RefreshToken]: Error storing new token:", err)
 		return nil, err
 	}
-	fmt.Println("✅ DEBUG [RefreshToken]: New refresh token stored")
+	fmt.Println("✅ DEBUG [RefreshToken]: New refresh token stored in transaction")
+
+	// Commit the transaction
+	// All operations succeeded - commit atomically
+	if err := tx.Commit().Error; err != nil {
+		fmt.Println("🚨 DEBUG [RefreshToken]: Error committing transaction:", err)
+		return nil, errors.NewInternalError(fmt.Errorf("failed to commit transaction: %w", err))
+	}
+	fmt.Println("✅ DEBUG [RefreshToken]: Transaction committed successfully")
 
 	return &dto.AuthResponse{
 		AccessToken:  accessToken,
@@ -563,11 +630,172 @@ func (s *AuthService) ResetPassword(ctx context.Context, req *dto.PasswordResetC
 
 // Helper functions
 
-// storeRefreshToken stores refresh token in database
+// storeRefreshTokenTx stores refresh token in database within a transaction
+// Also enforces a limit of 3 active tokens per user to prevent token accumulation
+// CRITICAL: This method accepts a transaction to maintain atomicity with other operations
+func (s *AuthService) storeRefreshTokenTx(ctx context.Context, tx *gorm.DB, userID, token, deviceInfo, ipAddress, userAgent string) error {
+	tokenHash := hashToken(token)
+	expiresAt := time.Now().Add(s.cfg.JWT.RefreshExpiry)
+
+	// STEP 1: Cleanup expired tokens first (regardless of revocation status)
+	// This prevents accumulation of expired but unrevoked tokens
+	expiredCount := int64(0)
+	if result := tx.Model(&RefreshToken{}).
+		Where("user_id = ? AND expires_at < ? AND is_revoked = ?", userID, time.Now(), false).
+		Updates(map[string]interface{}{
+			"is_revoked": true,
+			"revoked_at": time.Now(),
+			"updated_at": time.Now(),
+		}); result.Error != nil {
+		fmt.Printf("⚠️  WARNING: Failed to revoke expired tokens: %v\n", result.Error)
+	} else {
+		expiredCount = result.RowsAffected
+		if expiredCount > 0 {
+			fmt.Printf("🗑️  DEBUG [StoreToken]: Revoked %d expired tokens\n", expiredCount)
+		}
+	}
+
+	// STEP 2: Check how many active (non-expired) tokens this user currently has
+	var activeTokenCount int64
+	if err := tx.Model(&RefreshToken{}).
+		Where("user_id = ? AND is_revoked = ? AND expires_at > ?", userID, false, time.Now()).
+		Count(&activeTokenCount).Error; err != nil {
+		fmt.Printf("⚠️  WARNING: Failed to count active tokens: %v\n", err)
+	} else {
+		fmt.Printf("📊 DEBUG [StoreToken]: User has %d active tokens (after removing %d expired)\n", activeTokenCount, expiredCount)
+
+		// STEP 3: Enforce maximum active token limit
+		// UPDATED: Changed from >= 3 to >= 2 to keep only 1 newest + new one = 2 total
+		// This prevents accumulation and ensures proper cleanup
+		const maxActiveTokens = 2 // Keep only 1 old token + 1 new token
+		if activeTokenCount >= maxActiveTokens {
+			tokensToRevoke := activeTokenCount - (maxActiveTokens - 1) // Keep maxActiveTokens-1, revoke the rest
+			fmt.Printf("⚠️  WARNING: User has %d active tokens (limit: %d), revoking %d oldest tokens\n",
+				activeTokenCount, maxActiveTokens, tokensToRevoke)
+
+			// Get oldest tokens to revoke
+			var oldTokens []RefreshToken
+			if err := tx.Where("user_id = ? AND is_revoked = ? AND expires_at > ?", userID, false, time.Now()).
+				Order("created_at ASC").
+				Limit(int(tokensToRevoke)).
+				Find(&oldTokens).Error; err != nil {
+				fmt.Printf("⚠️  WARNING: Failed to fetch old tokens: %v\n", err)
+			} else {
+				// Revoke each old token
+				revokedCount := 0
+				for _, oldToken := range oldTokens {
+					if err := tx.Model(&RefreshToken{}).
+						Where("id = ?", oldToken.ID).
+						Updates(map[string]interface{}{
+							"is_revoked": true,
+							"revoked_at": time.Now(),
+							"updated_at": time.Now(),
+						}).Error; err != nil {
+						fmt.Printf("⚠️  WARNING: Failed to revoke old token %s: %v\n", oldToken.ID, err)
+					} else {
+						revokedCount++
+						fmt.Printf("🗑️  DEBUG: Revoked old token ID %s from %v (age: %v)\n",
+							oldToken.ID[:8], oldToken.CreatedAt, time.Since(oldToken.CreatedAt))
+					}
+				}
+				fmt.Printf("✅ DEBUG [StoreToken]: Successfully revoked %d/%d old tokens\n", revokedCount, len(oldTokens))
+			}
+		}
+	}
+
+	// Create new refresh token
+	refreshToken := RefreshToken{
+		ID:         uuid.New().String(),
+		UserID:     userID,
+		TokenHash:  tokenHash,
+		DeviceInfo: deviceInfo,
+		IPAddress:  ipAddress,
+		UserAgent:  userAgent,
+		IsRevoked:  false,
+		ExpiresAt:  expiresAt,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}
+
+	if err := tx.Create(&refreshToken).Error; err != nil {
+		return errors.NewInternalError(fmt.Errorf("failed to store refresh token: %w", err))
+	}
+
+	fmt.Printf("✅ DEBUG [StoreToken]: New token stored (expires: %v)\n", expiresAt)
+	return nil
+}
+
+// storeRefreshToken stores refresh token in database (non-transactional version)
+// Also enforces a limit of 2 active tokens per user to prevent token accumulation
+// UPDATED: Matches storeRefreshTokenTx logic with expired token cleanup
 func (s *AuthService) storeRefreshToken(ctx context.Context, userID, token, deviceInfo, ipAddress, userAgent string) error {
 	tokenHash := hashToken(token)
 	expiresAt := time.Now().Add(s.cfg.JWT.RefreshExpiry)
 
+	// STEP 1: Cleanup expired tokens first (regardless of revocation status)
+	expiredCount := int64(0)
+	if result := s.db.Model(&RefreshToken{}).
+		Where("user_id = ? AND expires_at < ? AND is_revoked = ?", userID, time.Now(), false).
+		Updates(map[string]interface{}{
+			"is_revoked": true,
+			"revoked_at": time.Now(),
+			"updated_at": time.Now(),
+		}); result.Error != nil {
+		fmt.Printf("⚠️  WARNING: Failed to revoke expired tokens: %v\n", result.Error)
+	} else {
+		expiredCount = result.RowsAffected
+		if expiredCount > 0 {
+			fmt.Printf("🗑️  DEBUG [StoreToken]: Revoked %d expired tokens\n", expiredCount)
+		}
+	}
+
+	// STEP 2: Check how many active (non-expired) tokens this user currently has
+	var activeTokenCount int64
+	if err := s.db.Model(&RefreshToken{}).
+		Where("user_id = ? AND is_revoked = ? AND expires_at > ?", userID, false, time.Now()).
+		Count(&activeTokenCount).Error; err != nil {
+		fmt.Printf("⚠️  WARNING: Failed to count active tokens: %v\n", err)
+	} else {
+		fmt.Printf("📊 DEBUG [StoreToken]: User has %d active tokens (after removing %d expired)\n", activeTokenCount, expiredCount)
+
+		// STEP 3: Enforce maximum active token limit
+		const maxActiveTokens = 2 // Keep only 1 old token + 1 new token
+		if activeTokenCount >= maxActiveTokens {
+			tokensToRevoke := activeTokenCount - (maxActiveTokens - 1)
+			fmt.Printf("⚠️  WARNING: User has %d active tokens (limit: %d), revoking %d oldest tokens\n",
+				activeTokenCount, maxActiveTokens, tokensToRevoke)
+
+			// Get oldest tokens to revoke
+			var oldTokens []RefreshToken
+			if err := s.db.Where("user_id = ? AND is_revoked = ? AND expires_at > ?", userID, false, time.Now()).
+				Order("created_at ASC").
+				Limit(int(tokensToRevoke)).
+				Find(&oldTokens).Error; err != nil {
+				fmt.Printf("⚠️  WARNING: Failed to fetch old tokens: %v\n", err)
+			} else {
+				// Revoke each old token
+				revokedCount := 0
+				for _, oldToken := range oldTokens {
+					if err := s.db.Model(&RefreshToken{}).
+						Where("id = ?", oldToken.ID).
+						Updates(map[string]interface{}{
+							"is_revoked": true,
+							"revoked_at": time.Now(),
+							"updated_at": time.Now(),
+						}).Error; err != nil {
+						fmt.Printf("⚠️  WARNING: Failed to revoke old token %s: %v\n", oldToken.ID, err)
+					} else {
+						revokedCount++
+						fmt.Printf("🗑️  DEBUG: Revoked old token ID %s from %v (age: %v)\n",
+							oldToken.ID[:8], oldToken.CreatedAt, time.Since(oldToken.CreatedAt))
+					}
+				}
+				fmt.Printf("✅ DEBUG [StoreToken]: Successfully revoked %d/%d old tokens\n", revokedCount, len(oldTokens))
+			}
+		}
+	}
+
+	// Create new refresh token
 	refreshToken := RefreshToken{
 		ID:         uuid.New().String(),
 		UserID:     userID,
@@ -585,6 +813,7 @@ func (s *AuthService) storeRefreshToken(ctx context.Context, userID, token, devi
 		return errors.NewInternalError(fmt.Errorf("failed to store refresh token: %w", err))
 	}
 
+	fmt.Printf("✅ DEBUG [StoreToken]: New token stored (expires: %v)\n", expiresAt)
 	return nil
 }
 
@@ -816,7 +1045,7 @@ func (s *AuthService) VerifyEmail(token string) (*User, error) {
 	}
 
 	// 2. Check if already verified
-	if verification.VerifiedAt != nil {
+	if verification.IsUsed || verification.UsedAt != nil {
 		return nil, errors.NewValidationError([]errors.ValidationError{
 			{Field: "token", Message: "Email already verified"},
 		})
@@ -846,7 +1075,8 @@ func (s *AuthService) VerifyEmail(token string) (*User, error) {
 	}
 
 	// 6. Mark verification as used
-	verification.VerifiedAt = &now
+	verification.IsUsed = true
+	verification.UsedAt = &now
 	err = s.db.Save(&verification).Error
 	if err != nil {
 		return nil, errors.NewInternalError(err)

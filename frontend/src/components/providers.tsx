@@ -21,6 +21,9 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
   const [tokenRestored, setTokenRestored] = useState(false);
   const user = useSelector((state: RootState) => state.auth.user);
 
+  // SOLUTION 1: Monitor access token from Redux to detect refresh flow
+  const accessTokenFromRedux = useSelector((state: RootState) => state.auth.accessToken);
+
   // Fetch current user data to get fullName (only if we have partial user data without fullName)
   const shouldFetchFullData = tokenRestored && user && !user.fullName;
 
@@ -29,6 +32,7 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
     hasUser: !!user,
     userFullName: user?.fullName,
     shouldFetch: shouldFetchFullData,
+    hasReduxToken: !!accessTokenFromRedux,
   });
 
   const { data: currentUser, isLoading, isError, error } = useGetCurrentUserQuery(undefined, {
@@ -45,6 +49,53 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
   if (isError && error) {
     console.error("[Auth] API Error Details:", error);
   }
+
+  // SOLUTION 1: Detect when token exists in Redux but user doesn't (after refresh)
+  useEffect(() => {
+    if (accessTokenFromRedux && !user && !tokenRestored) {
+      console.log("[Auth] Token detected in Redux after refresh, triggering user fetch");
+
+      try {
+        // Decode token to get user info
+        const decoded = jwtDecode<JWTPayload>(accessTokenFromRedux);
+        const now = Date.now() / 1000;
+
+        // Check if token is still valid
+        if (decoded.exp > now) {
+          console.log("[Auth] Setting partial user data from refreshed token");
+
+          // Set partial user data from token
+          dispatch(
+            setCredentials({
+              user: {
+                id: decoded.user_id,
+                email: decoded.email,
+                fullName: "", // Will be populated from API call
+                isActive: true,
+                createdAt: "",
+              },
+              accessToken: accessTokenFromRedux,
+              activeTenant: decoded.tenant_id
+                ? {
+                    tenantId: decoded.tenant_id,
+                    role: decoded.role as any,
+                    companyName: "",
+                    status: "ACTIVE",
+                  }
+                : null,
+              availableTenants: [],
+            })
+          );
+
+          setTokenRestored(true); // Trigger getCurrentUser query
+        } else {
+          console.log("[Auth] Refreshed token already expired");
+        }
+      } catch (error) {
+        console.error("[Auth] Failed to decode refreshed token:", error);
+      }
+    }
+  }, [accessTokenFromRedux, user, tokenRestored, dispatch]);
 
   useEffect(() => {
     // Only run on client side

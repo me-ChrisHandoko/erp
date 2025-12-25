@@ -2,11 +2,15 @@ package email
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"html/template"
+	"math"
 	"net/smtp"
 	"path/filepath"
+	"time"
 
 	"backend/internal/config"
 )
@@ -61,6 +65,39 @@ func (s *EmailService) SendPasswordResetEmail(to, recipientName, resetToken stri
 	// Send email
 	subject := "Reset Your Password"
 	return s.sendEmail(to, subject, htmlBody, plainBody)
+}
+
+// SendInvitationEmail sends user invitation email with activation link
+// Implements retry logic with exponential backoff for reliability
+// Reference: ANALYSIS-01-TENANT-COMPANY-SETUP.md Issue #3 (lines 116-138)
+func (s *EmailService) SendInvitationEmail(to, recipientName, tenantName, inviterName, invitationToken string) error {
+	// Build invitation URL
+	// TODO: Get frontend URL from config
+	invitationURL := fmt.Sprintf("http://localhost:3000/accept-invitation?token=%s", invitationToken)
+
+	data := map[string]interface{}{
+		"RecipientName":  recipientName,
+		"TenantName":     tenantName,
+		"InviterName":    inviterName,
+		"CompanyName":    s.cfg.Server.AppName,
+		"InvitationURL":  invitationURL,
+		"ExpiryHours":    48, // 48 hours expiry for invitations
+	}
+
+	htmlBody, err := s.renderTemplate("user_invitation.html", data)
+	if err != nil {
+		return fmt.Errorf("failed to render HTML template: %w", err)
+	}
+
+	plainBody, err := s.renderTemplate("user_invitation.txt", data)
+	if err != nil {
+		return fmt.Errorf("failed to render plain text template: %w", err)
+	}
+
+	subject := fmt.Sprintf("You've been invited to join %s", tenantName)
+
+	// Send email with retry logic (3 attempts with exponential backoff)
+	return s.sendEmailWithRetry(to, subject, htmlBody, plainBody, 3)
 }
 
 // SendEmailVerificationEmail sends email verification link
@@ -218,4 +255,48 @@ func (s *EmailService) renderTemplate(templateName string, data interface{}) (st
 	}
 
 	return buf.String(), nil
+}
+
+// sendEmailWithRetry sends email with retry logic and exponential backoff
+// Implements Issue #3 requirement: retry logic for email failures
+func (s *EmailService) sendEmailWithRetry(to, subject, htmlBody, plainBody string, maxRetries int) error {
+	var lastErr error
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		// Try to send email
+		err := s.sendEmail(to, subject, htmlBody, plainBody)
+		if err == nil {
+			// Success
+			return nil
+		}
+
+		// Store error
+		lastErr = err
+
+		// Don't retry on last attempt
+		if attempt < maxRetries-1 {
+			// Calculate exponential backoff delay: 2^attempt seconds
+			backoffSeconds := time.Duration(math.Pow(2, float64(attempt))) * time.Second
+			time.Sleep(backoffSeconds)
+		}
+	}
+
+	// All retries failed
+	return fmt.Errorf("failed to send email after %d attempts: %w", maxRetries, lastErr)
+}
+
+// GenerateInvitationToken generates a secure random token for user invitation
+// Token is URL-safe base64 encoded and cryptographically secure
+// Reference: ANALYSIS-01-TENANT-COMPANY-SETUP.md Issue #3
+func GenerateInvitationToken() (string, error) {
+	// Generate 32 bytes of random data (256 bits)
+	tokenBytes := make([]byte, 32)
+	_, err := rand.Read(tokenBytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate random token: %w", err)
+	}
+
+	// Encode to URL-safe base64
+	token := base64.URLEncoding.EncodeToString(tokenBytes)
+	return token, nil
 }

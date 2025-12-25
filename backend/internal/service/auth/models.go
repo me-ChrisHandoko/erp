@@ -104,12 +104,15 @@ func (RefreshToken) TableName() string {
 // EmailVerification represents an email verification token
 // Maps to email_verifications table in database
 type EmailVerification struct {
-	ID         string     `gorm:"primaryKey;size:255"`
-	UserID     string     `gorm:"size:255;not null;index"`
-	Token      string     `gorm:"size:255;not null;uniqueIndex"`
-	ExpiresAt  time.Time  `gorm:"not null"`
-	VerifiedAt *time.Time
-	CreatedAt  time.Time `gorm:"not null"`
+	ID        string     `gorm:"primaryKey;size:255"`
+	UserID    string     `gorm:"size:255;not null;index"`
+	Email     string     `gorm:"size:255;not null"`
+	Token     string     `gorm:"size:255;not null;uniqueIndex"`
+	IsUsed    bool       `gorm:"default:false"`
+	UsedAt    *time.Time `gorm:"type:timestamp"`
+	ExpiresAt time.Time  `gorm:"not null;index"`
+	CreatedAt time.Time  `gorm:"not null;default:CURRENT_TIMESTAMP"`
+	UpdatedAt time.Time  `gorm:"not null;default:CURRENT_TIMESTAMP"`
 }
 
 // TableName specifies the table name for EmailVerification model

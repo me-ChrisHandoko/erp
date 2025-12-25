@@ -5,6 +5,7 @@ import (
 
 	"backend/cmd/api/bootstrap"
 	"backend/internal/config"
+	"backend/internal/service/auth"
 )
 
 // @title ERP Distribusi Sembako API
@@ -51,6 +52,12 @@ func main() {
 	// Initialize database
 	db := bootstrap.InitDatabase(cfg.Database, cfg.Server.Debug)
 	defer bootstrap.CloseDatabase(db)
+
+	// Initialize token cleanup service
+	// This runs in background to clean expired tokens every hour
+	tokenCleanup := auth.NewTokenCleanupService(db)
+	tokenCleanup.Start()
+	defer tokenCleanup.Stop()
 
 	// Initialize HTTP server
 	router := bootstrap.InitServer(cfg.Server)

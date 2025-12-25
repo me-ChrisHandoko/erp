@@ -5,8 +5,8 @@
  * Sends email invitation with temporary password.
  *
  * Features:
- * - Email, name, phone, and role input
- * - Form validation (email format, phone format)
+ * - Email, name, and role input
+ * - Form validation (email format)
  * - Role selection (ADMIN, STAFF, VIEWER only - no OWNER)
  * - Rate limiting handling (429 error)
  * - Success/error feedback
@@ -122,23 +122,6 @@ export function InviteUserForm({ onSuccess, onCancel }: InviteUserFormProps) {
         {errors.name && (
           <p className="text-sm text-red-500">{errors.name.message}</p>
         )}
-      </div>
-
-      {/* Phone (Optional) */}
-      <div className="space-y-2">
-        <Label htmlFor="phone">Phone (Optional)</Label>
-        <Input
-          id="phone"
-          {...register("phone")}
-          placeholder="+628123456789 or 08123456789"
-          disabled={isLoading}
-        />
-        {errors.phone && (
-          <p className="text-sm text-red-500">{errors.phone.message}</p>
-        )}
-        <p className="text-xs text-muted-foreground">
-          Format: +628xxx or 08xxx
-        </p>
       </div>
 
       {/* Role */}

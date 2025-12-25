@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>You're Invited to Join {{.TenantName}}</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333333;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 20px auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            background-color: #10B981;
+            color: #ffffff;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 40px 30px;
+        }
+        .greeting {
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+        .message {
+            font-size: 14px;
+            color: #555555;
+            margin-bottom: 30px;
+        }
+        .inviter-info {
+            padding: 15px;
+            background-color: #F0FDF4;
+            border-left: 4px solid: #10B981;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .button-container {
+            text-align: center;
+            margin: 30px 0;
+        }
+        .accept-button {
+            display: inline-block;
+            padding: 14px 32px;
+            background-color: #10B981;
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 16px;
+            transition: background-color 0.3s ease;
+        }
+        .accept-button:hover {
+            background-color: #059669;
+        }
+        .alternative-link {
+            margin-top: 20px;
+            padding: 20px;
+            background-color: #f9fafb;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #6b7280;
+            word-break: break-all;
+        }
+        .alternative-link p {
+            margin: 5px 0;
+        }
+        .expiry-notice {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #FEF3C7;
+            border-left: 4px solid #F59E0B;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #92400E;
+        }
+        .footer {
+            padding: 20px 30px;
+            background-color: #f9fafb;
+            text-align: center;
+            font-size: 12px;
+            color: #6b7280;
+            border-top: 1px solid #e5e7eb;
+        }
+        .footer p {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎉 You've Been Invited!</h1>
+        </div>
+
+        <div class="content">
+            <div class="greeting">
+                <strong>Hello {{.RecipientName}},</strong>
+            </div>
+
+            <div class="message">
+                <p>Great news! You've been invited to join <strong>{{.TenantName}}</strong> on {{.CompanyName}}.</p>
+            </div>
+
+            <div class="inviter-info">
+                <p><strong>Invited by:</strong> {{.InviterName}}</p>
+                <p><strong>Company:</strong> {{.TenantName}}</p>
+            </div>
+
+            <div class="message">
+                <p>Click the button below to accept your invitation and set up your account:</p>
+            </div>
+
+            <div class="button-container">
+                <a href="{{.InvitationURL}}" class="accept-button">Accept Invitation</a>
+            </div>
+
+            <div class="alternative-link">
+                <p><strong>Button not working?</strong></p>
+                <p>Copy and paste this link into your browser:</p>
+                <p>{{.InvitationURL}}</p>
+            </div>
+
+            <div class="expiry-notice">
+                <strong>⏰ Important:</strong> This invitation link will expire in <strong>{{.ExpiryHours}} hours</strong>.
+                Please accept the invitation before it expires.
+            </div>
+        </div>
+
+        <div class="footer">
+            <p><strong>{{.CompanyName}}</strong></p>
+            <p>This is an automated email. Please do not reply to this message.</p>
+            <p>&copy; 2025 {{.CompanyName}}. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
