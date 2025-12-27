@@ -5,23 +5,23 @@ package models
 import (
 	"time"
 
-	"github.com/lucsky/cuid"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 // BaseModel contains common fields for most models
-// Note: Not using gorm.Model because ID is string (cuid), not uint
+// Note: Not using gorm.Model because ID is string (UUID), not uint
 type BaseModel struct {
 	ID        string    `gorm:"type:varchar(255);primaryKey"`
 	CreatedAt time.Time `gorm:"autoCreateTime"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime"`
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 // This hook is automatically called by GORM before inserting a new record
 func (m *BaseModel) BeforeCreate(tx *gorm.DB) error {
 	if m.ID == "" {
-		m.ID = cuid.New()
+		m.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -35,7 +35,7 @@ type BaseModelWithoutTimestamps struct {
 // BeforeCreate hook for models without timestamps
 func (m *BaseModelWithoutTimestamps) BeforeCreate(tx *gorm.DB) error {
 	if m.ID == "" {
-		m.ID = cuid.New()
+		m.ID = uuid.New().String()
 	}
 	return nil
 }

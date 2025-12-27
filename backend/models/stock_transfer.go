@@ -4,7 +4,7 @@ package models
 import (
 	"time"
 
-	"github.com/lucsky/cuid"
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
@@ -13,7 +13,8 @@ import (
 type StockTransfer struct {
 	ID                string              `gorm:"type:varchar(255);primaryKey"`
 	TenantID          string              `gorm:"type:varchar(255);not null;index"`
-	TransferNumber    string              `gorm:"type:varchar(100);not null;uniqueIndex"`
+	CompanyID         string              `gorm:"type:varchar(255);not null;index:idx_company_stock_transfer;uniqueIndex:idx_company_transfer_number"`
+	TransferNumber    string              `gorm:"type:varchar(100);not null;uniqueIndex:idx_company_transfer_number"`
 	TransferDate      time.Time           `gorm:"type:timestamp;not null;index"`
 	SourceWarehouseID string              `gorm:"type:varchar(255);not null;index"`
 	DestWarehouseID   string              `gorm:"type:varchar(255);not null;index"`
@@ -28,6 +29,7 @@ type StockTransfer struct {
 
 	// Relations
 	Tenant           Tenant              `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE"`
+	Company          Company             `gorm:"foreignKey:CompanyID;constraint:OnDelete:CASCADE"`
 	SourceWarehouse  Warehouse           `gorm:"foreignKey:SourceWarehouseID;constraint:OnDelete:RESTRICT"`
 	DestWarehouse    Warehouse           `gorm:"foreignKey:DestWarehouseID;constraint:OnDelete:RESTRICT"`
 	Items            []StockTransferItem `gorm:"foreignKey:StockTransferID"`
@@ -38,10 +40,10 @@ func (StockTransfer) TableName() string {
 	return "stock_transfers"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (st *StockTransfer) BeforeCreate(tx *gorm.DB) error {
 	if st.ID == "" {
-		st.ID = cuid.New()
+		st.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -68,10 +70,10 @@ func (StockTransferItem) TableName() string {
 	return "stock_transfer_items"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (sti *StockTransferItem) BeforeCreate(tx *gorm.DB) error {
 	if sti.ID == "" {
-		sti.ID = cuid.New()
+		sti.ID = uuid.New().String()
 	}
 	return nil
 }

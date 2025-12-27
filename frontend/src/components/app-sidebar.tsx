@@ -11,7 +11,6 @@ import {
   Wallet,
   Settings,
   Building2,
-  PackageOpen,
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
@@ -25,27 +24,21 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar"
 import { RootState } from "@/store"
+import { usePermissions } from "@/hooks/use-permissions"
+import type { Resource } from "@/lib/permissions"
 
-// ERP Navigation Data
+// ERP Navigation Data with Permission Mapping
+// Note: Team/Company data now comes from Redux via TeamSwitcher component (PHASE 5)
+// PHASE 6: Added resource mapping for permission-based filtering
+
 const staticData = {
-  teams: [
-    {
-      name: "PT Distribusi Utama",
-      logo: Building2,
-      plan: "Enterprise",
-    },
-    {
-      name: "CV Sembako Jaya",
-      logo: PackageOpen,
-      plan: "Professional",
-    },
-  ],
   navMain: [
     {
       title: "Dashboard",
       url: "/dashboard",
       icon: LayoutDashboard,
       isActive: true,
+      // Dashboard tidak memerlukan permission check - semua role bisa akses
     },
     {
       title: "Perusahaan",
@@ -55,14 +48,17 @@ const staticData = {
         {
           title: "Profil Perusahaan",
           url: "/company/profile",
+          resource: "company-settings" as Resource,
         },
         {
           title: "Rekening Bank",
           url: "/company/banks",
+          resource: "bank-accounts" as Resource,
         },
         {
           title: "Tim & Pengguna",
           url: "/company/team",
+          resource: "users" as Resource,
         },
       ],
     },
@@ -74,18 +70,22 @@ const staticData = {
         {
           title: "Pelanggan",
           url: "/master/customers",
+          resource: "customers" as Resource,
         },
         {
           title: "Pemasok",
           url: "/master/suppliers",
+          resource: "suppliers" as Resource,
         },
         {
           title: "Produk",
           url: "/master/products",
+          resource: "products" as Resource,
         },
         {
           title: "Gudang",
           url: "/master/warehouses",
+          resource: "warehouses" as Resource,
         },
       ],
     },
@@ -97,18 +97,22 @@ const staticData = {
         {
           title: "Stok Barang",
           url: "/inventory/stock",
+          resource: "stock" as Resource,
         },
         {
           title: "Transfer Gudang",
           url: "/inventory/transfers",
+          resource: "stock-transfers" as Resource,
         },
         {
           title: "Stock Opname",
           url: "/inventory/opname",
+          resource: "stock-opname" as Resource,
         },
         {
           title: "Penyesuaian",
           url: "/inventory/adjustments",
+          resource: "inventory-adjustments" as Resource,
         },
       ],
     },
@@ -120,18 +124,22 @@ const staticData = {
         {
           title: "Purchase Order",
           url: "/procurement/orders",
+          resource: "purchase-orders" as Resource,
         },
         {
           title: "Penerimaan Barang",
           url: "/procurement/receipts",
+          resource: "goods-receipts" as Resource,
         },
         {
           title: "Faktur Pembelian",
           url: "/procurement/invoices",
+          resource: "purchase-invoices" as Resource,
         },
         {
           title: "Pembayaran",
           url: "/procurement/payments",
+          resource: "supplier-payments" as Resource,
         },
       ],
     },
@@ -143,18 +151,22 @@ const staticData = {
         {
           title: "Sales Order",
           url: "/sales/orders",
+          resource: "sales-orders" as Resource,
         },
         {
           title: "Pengiriman",
           url: "/sales/deliveries",
+          resource: "deliveries" as Resource,
         },
         {
           title: "Faktur Penjualan",
           url: "/sales/invoices",
+          resource: "sales-invoices" as Resource,
         },
         {
           title: "Penerimaan Kas",
           url: "/sales/payments",
+          resource: "customer-payments" as Resource,
         },
       ],
     },
@@ -166,18 +178,22 @@ const staticData = {
         {
           title: "Jurnal Umum",
           url: "/finance/journal",
+          resource: "journal-entries" as Resource,
         },
         {
           title: "Kas & Bank",
           url: "/finance/cash-bank",
+          resource: "cash-bank" as Resource,
         },
         {
           title: "Biaya",
           url: "/finance/expenses",
+          resource: "expenses" as Resource,
         },
         {
           title: "Laporan",
           url: "/finance/reports",
+          resource: "financial-reports" as Resource,
         },
       ],
     },
@@ -189,14 +205,17 @@ const staticData = {
         {
           title: "Roles & Permissions",
           url: "/settings/roles",
+          resource: "roles" as Resource,
         },
         {
           title: "Konfigurasi Sistem",
           url: "/settings/config",
+          resource: "system-config" as Resource,
         },
         {
           title: "Preferensi",
           url: "/settings/preferences",
+          resource: "preferences" as Resource,
         },
       ],
     },
@@ -207,12 +226,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   // Get authenticated user from Redux
   const authUser = useSelector((state: RootState) => state.auth.user)
 
-  console.log("[Sidebar] authUser from Redux:", {
-    hasUser: !!authUser,
-    email: authUser?.email,
-    fullName: authUser?.fullName,
-    fullNameLength: authUser?.fullName?.length,
-  });
+  // PHASE 6: Get permission helper
+  const { canAny } = usePermissions()
 
   // Map user data to NavUser props format
   // Backend returns 'fullName', but NavUser expects 'name'
@@ -229,18 +244,44 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         avatar: "", // No avatar image - will use Lucide icon fallback
       }
 
-  console.log("[Sidebar] userData mapped:", {
-    name: userData.name,
-    email: userData.email,
-  });
+  // PHASE 6: Filter navigation items based on user permissions
+  const filteredNavItems = React.useMemo(() => {
+    return staticData.navMain.map((item) => {
+      // If item has no sub-items, return as is (e.g., Dashboard)
+      if (!item.items || item.items.length === 0) {
+        return item;
+      }
+
+      // Filter sub-items based on permissions
+      const filteredSubItems = item.items.filter((subItem) => {
+        // If sub-item has no resource, show it (backward compatibility)
+        if (!subItem.resource) return true;
+
+        // Check if user has any permission on this resource
+        return canAny(subItem.resource);
+      });
+
+      // Return item with filtered sub-items
+      return {
+        ...item,
+        items: filteredSubItems,
+      };
+    }).filter((item) => {
+      // Hide parent item if all sub-items are filtered out
+      if (item.items && item.items.length === 0) return false;
+      return true;
+    });
+  }, [canAny]);
 
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <TeamSwitcher teams={staticData.teams} />
+        {/* PHASE 5: TeamSwitcher now uses real company data from Redux */}
+        <TeamSwitcher />
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={staticData.navMain} />
+        {/* PHASE 6: Pass filtered navigation items based on permissions */}
+        <NavMain items={filteredNavItems} />
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={userData} />

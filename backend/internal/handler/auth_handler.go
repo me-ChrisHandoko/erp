@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -289,6 +290,56 @@ func (h *AuthHandler) SwitchTenant(c *gin.Context) {
 		ExpiresIn:    int(h.cfg.JWT.Expiry.Seconds()),
 		TokenType:    "Bearer",
 		ActiveTenant: tenantInfo,
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    response,
+	})
+}
+
+// SwitchCompany switches user's active company within current tenant (PHASE 3)
+// POST /api/v1/auth/switch-company
+// Requires authentication
+// Returns new JWT with activeCompanyID claim
+func (h *AuthHandler) SwitchCompany(c *gin.Context) {
+	// Get user ID and tenant ID from context
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, errors.NewAuthenticationError("User not authenticated"))
+		return
+	}
+
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, errors.NewAuthenticationError("Tenant context not found"))
+		return
+	}
+
+	var req dto.SwitchCompanyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("❌ ERROR [SwitchCompany]: Binding error - %v", err)
+		h.handleValidationError(c, err)
+		return
+	}
+
+	log.Printf("🔄 DEBUG [SwitchCompany]: Request - UserID: %s, TenantID: %s, CompanyID: %s", userID, tenantID, req.CompanyID)
+
+	// Call auth service
+	accessToken, company, err := h.authService.SwitchCompany(userID.(string), tenantID.(string), req.CompanyID)
+	if err != nil {
+		h.handleError(c, err)
+		return
+	}
+
+	// Set new refresh token cookie (optional - keep existing refresh token)
+	// Refresh token is tenant-scoped, not company-scoped
+
+	response := &dto.SwitchCompanyResponse{
+		AccessToken: accessToken,
+		CompanyID:   company.ID,
+		CompanyName: company.Name,
+		Message:     "Company switched successfully",
 	}
 
 	c.JSON(http.StatusOK, gin.H{

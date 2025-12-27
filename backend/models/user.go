@@ -4,7 +4,7 @@ package models
 import (
 	"time"
 
-	"github.com/lucsky/cuid"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -22,7 +22,8 @@ type User struct {
 	UpdatedAt     time.Time `gorm:"autoUpdateTime"`
 
 	// Relations - will be populated by GORM when querying with Preload
-	Tenants []UserTenant `gorm:"foreignKey:UserID"`
+	Tenants          []UserTenant      `gorm:"foreignKey:UserID"` // Tier 1: Tenant-level access
+	UserCompanyRoles []UserCompanyRole `gorm:"foreignKey:UserID"` // Tier 2: Per-company access
 	// Note: Other relations (SalesOrders, PurchaseOrders, etc.) will be added in their respective model files
 }
 
@@ -31,10 +32,10 @@ func (User) TableName() string {
 	return "users"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (u *User) BeforeCreate(tx *gorm.DB) error {
 	if u.ID == "" {
-		u.ID = cuid.New()
+		u.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -60,10 +61,10 @@ func (UserTenant) TableName() string {
 	return "user_tenants"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (ut *UserTenant) BeforeCreate(tx *gorm.DB) error {
 	if ut.ID == "" {
-		ut.ID = cuid.New()
+		ut.ID = uuid.New().String()
 	}
 	return nil
 }

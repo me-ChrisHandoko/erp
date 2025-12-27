@@ -13,6 +13,30 @@ import (
 // Global tenant configuration
 var tenantConfig *config.TenantIsolationConfig
 
+// PRODUCTION-READY: Tables that should be EXCLUDED from tenant isolation
+// These are cross-tenant mapping tables or system tables that inherently
+// contain data across multiple tenants
+var tenantIsolationExcludedTables = map[string]bool{
+	// Auth & User Management Tables (user can belong to multiple tenants)
+	"user_tenants":        true, // User → Tenant mapping (cross-tenant by design)
+	"user_company_roles":  true, // User → Company mapping (cross-tenant by design)
+	"refresh_tokens":      true, // Auth tokens are per-user, not per-tenant
+	"login_attempts":      true, // Login tracking is per-user/IP, not per-tenant
+	"email_verifications": true, // Email verification is per-user, not per-tenant
+	"password_resets":     true, // Password reset is per-user, not per-tenant
+
+	// System Tables (no tenant_id column anyway, but explicit for clarity)
+	"users":         true, // Users exist across tenants
+	"tenants":       true, // Tenant master table itself
+	"subscriptions": true, // Subscription is per-tenant (already has tenant_id)
+}
+
+// isTableExcludedFromTenantIsolation checks if a table should skip tenant isolation
+// This is a SECURITY-CRITICAL function - only add tables here if they are genuinely cross-tenant
+func isTableExcludedFromTenantIsolation(tableName string) bool {
+	return tenantIsolationExcludedTables[tableName]
+}
+
 // TenantScope automatically filters queries by tenant_id
 // Usage: db.Scopes(TenantScope(tenantID)).Find(&products)
 // This is the SECOND layer of defense (after GORM callbacks)
@@ -40,6 +64,14 @@ func RegisterTenantCallbacks(db *gorm.DB, cfg *config.TenantIsolationConfig) {
 
 	// Query callback - auto-inject WHERE tenant_id = ?
 	db.Callback().Query().Before("gorm:query").Register("tenant:query", func(db *gorm.DB) {
+		// PRODUCTION-READY: Skip tables that are excluded from tenant isolation
+		// These are cross-tenant mapping tables (user_tenants, user_company_roles, etc.)
+		if db.Statement != nil && db.Statement.Table != "" {
+			if isTableExcludedFromTenantIsolation(db.Statement.Table) {
+				return // Skip tenant isolation for this table
+			}
+		}
+
 		// Skip if table doesn't have tenant_id column
 		if !hasTenantIDColumn(db) {
 			return
@@ -76,6 +108,13 @@ func RegisterTenantCallbacks(db *gorm.DB, cfg *config.TenantIsolationConfig) {
 
 	// Create callback - auto-set tenant_id
 	db.Callback().Create().Before("gorm:create").Register("tenant:create", func(db *gorm.DB) {
+		// PRODUCTION-READY: Skip tables that are excluded from tenant isolation
+		if db.Statement != nil && db.Statement.Table != "" {
+			if isTableExcludedFromTenantIsolation(db.Statement.Table) {
+				return // Skip tenant isolation for this table
+			}
+		}
+
 		// Skip if table doesn't have tenant_id column
 		if !hasTenantIDColumn(db) {
 			return
@@ -101,6 +140,13 @@ func RegisterTenantCallbacks(db *gorm.DB, cfg *config.TenantIsolationConfig) {
 
 	// Prevent tenant_id modification after creation
 	db.Callback().Update().Before("gorm:update").Register("tenant:immutable", func(db *gorm.DB) {
+		// PRODUCTION-READY: Skip tables that are excluded from tenant isolation
+		if db.Statement != nil && db.Statement.Table != "" {
+			if isTableExcludedFromTenantIsolation(db.Statement.Table) {
+				return // Skip tenant isolation for this table
+			}
+		}
+
 		// Skip if table doesn't have tenant_id column
 		if !hasTenantIDColumn(db) {
 			return
@@ -115,6 +161,13 @@ func RegisterTenantCallbacks(db *gorm.DB, cfg *config.TenantIsolationConfig) {
 
 	// Update callback - ensure not updating other tenants' data
 	db.Callback().Update().Before("gorm:update").Register("tenant:update", func(db *gorm.DB) {
+		// PRODUCTION-READY: Skip tables that are excluded from tenant isolation
+		if db.Statement != nil && db.Statement.Table != "" {
+			if isTableExcludedFromTenantIsolation(db.Statement.Table) {
+				return // Skip tenant isolation for this table
+			}
+		}
+
 		// Skip if table doesn't have tenant_id column
 		if !hasTenantIDColumn(db) {
 			return
@@ -150,6 +203,13 @@ func RegisterTenantCallbacks(db *gorm.DB, cfg *config.TenantIsolationConfig) {
 
 	// Delete callback - ensure not deleting other tenants' data
 	db.Callback().Delete().Before("gorm:delete").Register("tenant:delete", func(db *gorm.DB) {
+		// PRODUCTION-READY: Skip tables that are excluded from tenant isolation
+		if db.Statement != nil && db.Statement.Table != "" {
+			if isTableExcludedFromTenantIsolation(db.Statement.Table) {
+				return // Skip tenant isolation for this table
+			}
+		}
+
 		// Skip if table doesn't have tenant_id column
 		if !hasTenantIDColumn(db) {
 			return

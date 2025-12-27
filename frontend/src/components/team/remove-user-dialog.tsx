@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { useRemoveUserMutation } from "@/store/services/tenantApi";
+import { useRemoveCompanyUserMutation } from "@/store/services/companyUserApi";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import type { TenantUser } from "@/types/tenant.types";
 import { ShieldCheck } from "lucide-react";
@@ -43,7 +43,7 @@ export function RemoveUserDialog({
   onOpenChange,
   onSuccess,
 }: RemoveUserDialogProps) {
-  const [removeUser, { isLoading }] = useRemoveUserMutation();
+  const [removeUser, { isLoading }] = useRemoveCompanyUserMutation();
 
   const handleRemove = async () => {
     try {

@@ -4,7 +4,7 @@ package models
 import (
 	"time"
 
-	"github.com/lucsky/cuid"
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
@@ -14,6 +14,7 @@ import (
 type InventoryMovement struct {
 	ID              string          `gorm:"type:varchar(255);primaryKey"`
 	TenantID        string          `gorm:"type:varchar(255);not null;index"`
+	CompanyID       string          `gorm:"type:varchar(255);not null;index:idx_company_inventory_movement"`
 	MovementDate    time.Time       `gorm:"type:timestamp;not null;index"`
 	WarehouseID     string          `gorm:"type:varchar(255);not null;index"`
 	ProductID       string          `gorm:"type:varchar(255);not null;index"`
@@ -32,6 +33,7 @@ type InventoryMovement struct {
 
 	// Relations
 	Tenant    Tenant        `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE"`
+	Company   Company       `gorm:"foreignKey:CompanyID;constraint:OnDelete:CASCADE"`
 	Warehouse Warehouse     `gorm:"foreignKey:WarehouseID;constraint:OnDelete:RESTRICT"`
 	Product   Product       `gorm:"foreignKey:ProductID;constraint:OnDelete:RESTRICT"`
 	Batch     *ProductBatch `gorm:"foreignKey:BatchID"`
@@ -42,10 +44,10 @@ func (InventoryMovement) TableName() string {
 	return "inventory_movements"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (im *InventoryMovement) BeforeCreate(tx *gorm.DB) error {
 	if im.ID == "" {
-		im.ID = cuid.New()
+		im.ID = uuid.New().String()
 	}
 	return nil
 }

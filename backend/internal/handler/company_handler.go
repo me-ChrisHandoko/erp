@@ -15,32 +15,37 @@ import (
 
 // CompanyHandler handles HTTP requests for company profile management
 // Reference: ANALYSIS-01-TENANT-COMPANY-SETUP.md Day 1-4 Tasks
+// PHASE 5: Updated to use MultiCompanyService for multi-company support
 type CompanyHandler struct {
-	companyService *company.CompanyService
-	validator      *customValidator.Validator
+	companyService      *company.CompanyService
+	multiCompanyService *company.MultiCompanyService
+	validator           *customValidator.Validator
 }
 
 // NewCompanyHandler creates a new company handler
-func NewCompanyHandler(companyService *company.CompanyService) *CompanyHandler {
+// PHASE 5: Now requires MultiCompanyService for multi-company operations
+func NewCompanyHandler(companyService *company.CompanyService, multiCompanyService *company.MultiCompanyService) *CompanyHandler {
 	return &CompanyHandler{
-		companyService: companyService,
-		validator:      customValidator.New(),
+		companyService:      companyService,
+		multiCompanyService: multiCompanyService,
+		validator:           customValidator.New(),
 	}
 }
 
-// GetCompanyProfile retrieves company profile for current tenant
+// GetCompanyProfile retrieves company profile for current active company
 // GET /api/v1/company
 // Reference: ANALYSIS-01-TENANT-COMPANY-SETUP.md lines 35-49
+// PHASE 5: Updated to use active company ID from context (multi-company support)
 func (h *CompanyHandler) GetCompanyProfile(c *gin.Context) {
-	// Get tenant ID from context (set by TenantContextMiddleware)
-	tenantID, exists := c.Get("tenant_id")
+	// Get company ID from context (set by CompanyContextMiddleware)
+	companyID, exists := c.Get("company_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, errors.NewAuthenticationError("Tenant context not found"))
+		c.JSON(http.StatusBadRequest, errors.NewBadRequestError("Company context not found. Please provide X-Company-ID header."))
 		return
 	}
 
-	// Call service
-	companyData, err := h.companyService.GetCompanyByTenantID(c.Request.Context(), tenantID.(string))
+	// Call service to get company by ID
+	companyData, err := h.multiCompanyService.GetCompanyByID(c.Request.Context(), companyID.(string))
 	if err != nil {
 		h.handleError(c, err)
 		return
@@ -58,11 +63,12 @@ func (h *CompanyHandler) GetCompanyProfile(c *gin.Context) {
 // UpdateCompanyProfile updates company profile
 // PUT /api/v1/company
 // Reference: ANALYSIS-01-TENANT-COMPANY-SETUP.md lines 50-132
+// PHASE 5: Updated to use company_id from CompanyContextMiddleware
 func (h *CompanyHandler) UpdateCompanyProfile(c *gin.Context) {
-	// Get tenant ID from context
-	tenantID, exists := c.Get("tenant_id")
+	// Get company ID from context (set by CompanyContextMiddleware)
+	companyID, exists := c.Get("company_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, errors.NewAuthenticationError("Tenant context not found"))
+		c.JSON(http.StatusBadRequest, errors.NewBadRequestError("Company context not found. Please provide X-Company-ID header."))
 		return
 	}
 
@@ -79,6 +85,9 @@ func (h *CompanyHandler) UpdateCompanyProfile(c *gin.Context) {
 	}
 	if req.LegalName != nil {
 		updates["legal_name"] = *req.LegalName
+	}
+	if req.EntityType != nil {
+		updates["entity_type"] = *req.EntityType
 	}
 	if req.NPWP != nil {
 		updates["npwp"] = *req.NPWP
@@ -129,8 +138,8 @@ func (h *CompanyHandler) UpdateCompanyProfile(c *gin.Context) {
 		updates["sppkp_number"] = *req.SPPKPNumber
 	}
 
-	// Call service
-	updatedCompany, err := h.companyService.UpdateCompany(c.Request.Context(), tenantID.(string), updates)
+	// Call service with company ID (using MultiCompanyService for PHASE 5)
+	updatedCompany, err := h.multiCompanyService.UpdateCompany(c.Request.Context(), companyID.(string), updates)
 	if err != nil {
 		h.handleError(c, err)
 		return
@@ -149,11 +158,12 @@ func (h *CompanyHandler) UpdateCompanyProfile(c *gin.Context) {
 // AddBankAccount adds a new bank account
 // POST /api/v1/company/banks
 // Reference: ANALYSIS-01-TENANT-COMPANY-SETUP.md Issue #10
+// PHASE 5: Updated to use company_id from CompanyContextMiddleware
 func (h *CompanyHandler) AddBankAccount(c *gin.Context) {
-	// Get tenant ID from context
-	tenantID, exists := c.Get("tenant_id")
+	// Get company ID from context (set by CompanyContextMiddleware)
+	companyID, exists := c.Get("company_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, errors.NewAuthenticationError("Tenant context not found"))
+		c.JSON(http.StatusBadRequest, errors.NewBadRequestError("Company context not found. Please provide X-Company-ID header."))
 		return
 	}
 
@@ -173,8 +183,8 @@ func (h *CompanyHandler) AddBankAccount(c *gin.Context) {
 		CheckPrefix:   req.CheckPrefix,
 	}
 
-	// Call service
-	bank, err := h.companyService.AddBankAccount(c.Request.Context(), tenantID.(string), serviceReq)
+	// Call service with company ID
+	bank, err := h.companyService.AddBankAccount(c.Request.Context(), companyID.(string), serviceReq)
 	if err != nil {
 		h.handleError(c, err)
 		return
@@ -193,11 +203,12 @@ func (h *CompanyHandler) AddBankAccount(c *gin.Context) {
 // UpdateBankAccount updates an existing bank account
 // PUT /api/v1/company/banks/:id
 // Reference: ANALYSIS-01-TENANT-COMPANY-SETUP.md Issue #10
+// PHASE 5: Updated to use company_id from CompanyContextMiddleware
 func (h *CompanyHandler) UpdateBankAccount(c *gin.Context) {
-	// Get tenant ID from context
-	tenantID, exists := c.Get("tenant_id")
+	// Get company ID from context (set by CompanyContextMiddleware)
+	companyID, exists := c.Get("company_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, errors.NewAuthenticationError("Tenant context not found"))
+		c.JSON(http.StatusBadRequest, errors.NewBadRequestError("Company context not found. Please provide X-Company-ID header."))
 		return
 	}
 
@@ -235,8 +246,8 @@ func (h *CompanyHandler) UpdateBankAccount(c *gin.Context) {
 		updates["check_prefix"] = *req.CheckPrefix
 	}
 
-	// Call service
-	updatedBank, err := h.companyService.UpdateBankAccount(c.Request.Context(), tenantID.(string), bankID, updates)
+	// Call service with company ID
+	updatedBank, err := h.companyService.UpdateBankAccount(c.Request.Context(), companyID.(string), bankID, updates)
 	if err != nil {
 		h.handleError(c, err)
 		return
@@ -255,11 +266,12 @@ func (h *CompanyHandler) UpdateBankAccount(c *gin.Context) {
 // DeleteBankAccount soft deletes a bank account
 // DELETE /api/v1/company/banks/:id
 // Reference: ANALYSIS-01-TENANT-COMPANY-SETUP.md Issue #4
+// PHASE 5: Updated to use company_id from CompanyContextMiddleware
 func (h *CompanyHandler) DeleteBankAccount(c *gin.Context) {
-	// Get tenant ID from context
-	tenantID, exists := c.Get("tenant_id")
+	// Get company ID from context (set by CompanyContextMiddleware)
+	companyID, exists := c.Get("company_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, errors.NewAuthenticationError("Tenant context not found"))
+		c.JSON(http.StatusBadRequest, errors.NewBadRequestError("Company context not found. Please provide X-Company-ID header."))
 		return
 	}
 
@@ -270,8 +282,8 @@ func (h *CompanyHandler) DeleteBankAccount(c *gin.Context) {
 		return
 	}
 
-	// Call service
-	err := h.companyService.DeleteBankAccount(c.Request.Context(), tenantID.(string), bankID)
+	// Call service with company ID
+	err := h.companyService.DeleteBankAccount(c.Request.Context(), companyID.(string), bankID)
 	if err != nil {
 		h.handleError(c, err)
 		return
@@ -283,18 +295,19 @@ func (h *CompanyHandler) DeleteBankAccount(c *gin.Context) {
 	})
 }
 
-// GetBankAccounts retrieves all bank accounts for current tenant
+// GetBankAccounts retrieves all bank accounts for current company
 // GET /api/v1/company/banks
+// PHASE 5: Updated to use company_id from CompanyContextMiddleware
 func (h *CompanyHandler) GetBankAccounts(c *gin.Context) {
-	// Get tenant ID from context
-	tenantID, exists := c.Get("tenant_id")
+	// Get company ID from context (set by CompanyContextMiddleware)
+	companyID, exists := c.Get("company_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, errors.NewAuthenticationError("Tenant context not found"))
+		c.JSON(http.StatusBadRequest, errors.NewBadRequestError("Company context not found. Please provide X-Company-ID header."))
 		return
 	}
 
-	// Call service
-	banks, err := h.companyService.GetBankAccounts(c.Request.Context(), tenantID.(string))
+	// Call service with company ID
+	banks, err := h.companyService.GetBankAccounts(c.Request.Context(), companyID.(string))
 	if err != nil {
 		h.handleError(c, err)
 		return
@@ -314,11 +327,12 @@ func (h *CompanyHandler) GetBankAccounts(c *gin.Context) {
 
 // GetBankAccount retrieves a single bank account by ID
 // GET /api/v1/company/banks/:id
+// PHASE 5: Updated to use company_id from CompanyContextMiddleware
 func (h *CompanyHandler) GetBankAccount(c *gin.Context) {
-	// Get tenant ID from context
-	tenantID, exists := c.Get("tenant_id")
+	// Get company ID from context (set by CompanyContextMiddleware)
+	companyID, exists := c.Get("company_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, errors.NewAuthenticationError("Tenant context not found"))
+		c.JSON(http.StatusBadRequest, errors.NewBadRequestError("Company context not found. Please provide X-Company-ID header."))
 		return
 	}
 
@@ -329,8 +343,8 @@ func (h *CompanyHandler) GetBankAccount(c *gin.Context) {
 		return
 	}
 
-	// Call service
-	bank, err := h.companyService.GetBankAccountByID(c.Request.Context(), tenantID.(string), bankID)
+	// Call service with company ID
+	bank, err := h.companyService.GetBankAccountByID(c.Request.Context(), companyID.(string), bankID)
 	if err != nil {
 		h.handleError(c, err)
 		return
@@ -360,6 +374,7 @@ func (h *CompanyHandler) mapCompanyToResponse(companyData interface{}) *dto.Comp
 		ID:            companyModel.ID,
 		Name:          companyModel.Name,
 		LegalName:     companyModel.LegalName,
+		EntityType:    companyModel.EntityType,
 		Address:       companyModel.Address,
 		City:          companyModel.City,
 		Province:      companyModel.Province,

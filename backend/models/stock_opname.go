@@ -4,19 +4,20 @@ package models
 import (
 	"time"
 
-	"github.com/lucsky/cuid"
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
 // StockOpname - Physical inventory count header
 type StockOpname struct {
-	ID          string            `gorm:"type:varchar(255);primaryKey"`
-	TenantID    string            `gorm:"type:varchar(255);not null;index"`
-	OpnameNumber string            `gorm:"type:varchar(100);not null;uniqueIndex"`
-	OpnameDate  time.Time         `gorm:"type:timestamp;not null;index"`
-	WarehouseID string            `gorm:"type:varchar(255);not null;index"`
-	Status      StockOpnameStatus `gorm:"type:varchar(20);default:'DRAFT';index"`
+	ID           string            `gorm:"type:varchar(255);primaryKey"`
+	TenantID     string            `gorm:"type:varchar(255);not null;index"`
+	CompanyID    string            `gorm:"type:varchar(255);not null;index:idx_company_stock_opname;uniqueIndex:idx_company_opname_number"`
+	OpnameNumber string            `gorm:"type:varchar(100);not null;uniqueIndex:idx_company_opname_number"`
+	OpnameDate   time.Time         `gorm:"type:timestamp;not null;index"`
+	WarehouseID  string            `gorm:"type:varchar(255);not null;index"`
+	Status       StockOpnameStatus `gorm:"type:varchar(20);default:'DRAFT';index"`
 	CountedBy   *string           `gorm:"type:varchar(255)"` // User who performed count
 	ApprovedBy  *string           `gorm:"type:varchar(255)"` // User who approved adjustments
 	ApprovedAt  *time.Time        `gorm:"type:timestamp"`
@@ -26,6 +27,7 @@ type StockOpname struct {
 
 	// Relations
 	Tenant    Tenant            `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE"`
+	Company   Company           `gorm:"foreignKey:CompanyID;constraint:OnDelete:CASCADE"`
 	Warehouse Warehouse         `gorm:"foreignKey:WarehouseID;constraint:OnDelete:RESTRICT"`
 	Items     []StockOpnameItem `gorm:"foreignKey:StockOpnameID"`
 }
@@ -35,10 +37,10 @@ func (StockOpname) TableName() string {
 	return "stock_opnames"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (so *StockOpname) BeforeCreate(tx *gorm.DB) error {
 	if so.ID == "" {
-		so.ID = cuid.New()
+		so.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -67,10 +69,10 @@ func (StockOpnameItem) TableName() string {
 	return "stock_opname_items"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (soi *StockOpnameItem) BeforeCreate(tx *gorm.DB) error {
 	if soi.ID == "" {
-		soi.ID = cuid.New()
+		soi.ID = uuid.New().String()
 	}
 	return nil
 }

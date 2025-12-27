@@ -4,22 +4,23 @@ package models
 import (
 	"time"
 
-	"github.com/lucsky/cuid"
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
 // Delivery - Delivery order header
 type Delivery struct {
-	ID                string          `gorm:"type:varchar(255);primaryKey"`
-	TenantID          string          `gorm:"type:varchar(255);not null;index"`
-	DeliveryNumber    string          `gorm:"type:varchar(100);not null;uniqueIndex"`
-	DeliveryDate      time.Time       `gorm:"type:timestamp;not null;index"`
-	SalesOrderID      string          `gorm:"type:varchar(255);not null;index"`
-	WarehouseID       string          `gorm:"type:varchar(255);not null;index"` // Source warehouse
-	CustomerID        string          `gorm:"type:varchar(255);not null;index"`
-	Type              DeliveryType    `gorm:"type:varchar(20);default:'NORMAL';index"`
-	Status            DeliveryStatus  `gorm:"type:varchar(20);default:'PREPARED';index"`
+	ID                string         `gorm:"type:varchar(255);primaryKey"`
+	TenantID          string         `gorm:"type:varchar(255);not null;index"`
+	CompanyID         string         `gorm:"type:varchar(255);not null;index:idx_company_delivery;uniqueIndex:idx_company_delivery_number"`
+	DeliveryNumber    string         `gorm:"type:varchar(100);not null;uniqueIndex:idx_company_delivery_number"`
+	DeliveryDate      time.Time      `gorm:"type:timestamp;not null;index"`
+	SalesOrderID      string         `gorm:"type:varchar(255);not null;index"`
+	WarehouseID       string         `gorm:"type:varchar(255);not null;index"` // Source warehouse
+	CustomerID        string         `gorm:"type:varchar(255);not null;index"`
+	Type              DeliveryType   `gorm:"type:varchar(20);default:'NORMAL';index"`
+	Status            DeliveryStatus `gorm:"type:varchar(20);default:'PREPARED';index"`
 	DeliveryAddress   *string         `gorm:"type:text"`
 	DriverName        *string         `gorm:"type:varchar(255)"`
 	VehicleNumber     *string         `gorm:"type:varchar(50)"`
@@ -36,11 +37,12 @@ type Delivery struct {
 	UpdatedAt         time.Time       `gorm:"autoUpdateTime"`
 
 	// Relations
-	Tenant      Tenant          `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE"`
-	SalesOrder  SalesOrder      `gorm:"foreignKey:SalesOrderID;constraint:OnDelete:RESTRICT"`
-	Warehouse   Warehouse       `gorm:"foreignKey:WarehouseID;constraint:OnDelete:RESTRICT"`
-	Customer    Customer        `gorm:"foreignKey:CustomerID;constraint:OnDelete:RESTRICT"`
-	Items       []DeliveryItem  `gorm:"foreignKey:DeliveryID"`
+	Tenant      Tenant         `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE"`
+	Company     Company        `gorm:"foreignKey:CompanyID;constraint:OnDelete:CASCADE"`
+	SalesOrder  SalesOrder     `gorm:"foreignKey:SalesOrderID;constraint:OnDelete:RESTRICT"`
+	Warehouse   Warehouse      `gorm:"foreignKey:WarehouseID;constraint:OnDelete:RESTRICT"`
+	Customer    Customer       `gorm:"foreignKey:CustomerID;constraint:OnDelete:RESTRICT"`
+	Items       []DeliveryItem `gorm:"foreignKey:DeliveryID"`
 	// Note: Invoices may reference this delivery
 }
 
@@ -49,10 +51,10 @@ func (Delivery) TableName() string {
 	return "deliveries"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (d *Delivery) BeforeCreate(tx *gorm.DB) error {
 	if d.ID == "" {
-		d.ID = cuid.New()
+		d.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -83,10 +85,10 @@ func (DeliveryItem) TableName() string {
 	return "delivery_items"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (di *DeliveryItem) BeforeCreate(tx *gorm.DB) error {
 	if di.ID == "" {
-		di.ID = cuid.New()
+		di.ID = uuid.New().String()
 	}
 	return nil
 }

@@ -55,6 +55,9 @@ export function CompanyProfileForm({
     defaultValues: {
       name: company.name || "",
       legalName: company.legalName || "",
+      entityType: (company.entityType && ENTITY_TYPES.includes(company.entityType as (typeof ENTITY_TYPES)[number]))
+        ? (company.entityType as (typeof ENTITY_TYPES)[number])
+        : undefined,
       address: company.address || "",
       city: company.city || "",
       province: (company.province && INDONESIAN_PROVINCES.includes(company.province as (typeof INDONESIAN_PROVINCES)[number]))

@@ -38,11 +38,17 @@ func createPhase4TestData(t *testing.T, db *gorm.DB) (*Tenant, *Warehouse, *Prod
 
 	// Create tenant
 	tenant := &Tenant{
-		CompanyID:   company.ID,
+		Name:        "Test Tenant Phase 4",
+		Subdomain:   "test-tenant-phase4",
 		Status:      TenantStatusActive,
 		TrialEndsAt: timePtr(time.Now().Add(14 * 24 * time.Hour)),
 	}
 	err = db.Create(tenant).Error
+	assert.NoError(t, err)
+
+	// Link company to tenant
+	company.TenantID = tenant.ID
+	err = db.Save(company).Error
 	assert.NoError(t, err)
 
 	// Create warehouse
@@ -354,10 +360,16 @@ func TestCashTransactionCreation(t *testing.T) {
 	assert.NoError(t, err)
 
 	tenant := &Tenant{
-		CompanyID: company.ID,
+		Name:      "Test Tenant",
+		Subdomain: "test-tenant",
 		Status:    TenantStatusActive,
 	}
 	err = db.Create(tenant).Error
+	assert.NoError(t, err)
+
+	// Link company to tenant
+	company.TenantID = tenant.ID
+	err = db.Save(company).Error
 	assert.NoError(t, err)
 
 	// Create cash IN transaction (sales payment)
@@ -431,10 +443,16 @@ func TestSettingCreation(t *testing.T) {
 	assert.NoError(t, err)
 
 	tenant := &Tenant{
-		CompanyID: company.ID,
+		Name:      "Test Tenant",
+		Subdomain: "test-tenant",
 		Status:    TenantStatusActive,
 	}
 	err = db.Create(tenant).Error
+	assert.NoError(t, err)
+
+	// Link company to tenant
+	company.TenantID = tenant.ID
+	err = db.Save(company).Error
 	assert.NoError(t, err)
 
 	// Create system-wide setting (NULL tenantID)
@@ -488,10 +506,16 @@ func TestAuditLogCreation(t *testing.T) {
 	assert.NoError(t, err)
 
 	tenant := &Tenant{
-		CompanyID: company.ID,
+		Name:      "Test Tenant",
+		Subdomain: "test-tenant",
 		Status:    TenantStatusActive,
 	}
 	err = db.Create(tenant).Error
+	assert.NoError(t, err)
+
+	// Link company to tenant
+	company.TenantID = tenant.ID
+	err = db.Save(company).Error
 	assert.NoError(t, err)
 
 	user := &User{

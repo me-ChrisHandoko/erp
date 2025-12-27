@@ -4,19 +4,20 @@ package models
 import (
 	"time"
 
-	"github.com/lucsky/cuid"
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
 // PurchaseOrder - Purchase order header
 type PurchaseOrder struct {
-	ID                 string          `gorm:"type:varchar(255);primaryKey"`
-	TenantID           string          `gorm:"type:varchar(255);not null;index"`
-	PONumber           string          `gorm:"type:varchar(100);not null;uniqueIndex"`
-	PODate             time.Time       `gorm:"type:timestamp;not null;index"`
-	SupplierID         string          `gorm:"type:varchar(255);not null;index"`
-	WarehouseID        string          `gorm:"type:varchar(255);not null;index"` // Destination warehouse
+	ID                 string              `gorm:"type:varchar(255);primaryKey"`
+	TenantID           string              `gorm:"type:varchar(255);not null;index"`
+	CompanyID          string              `gorm:"type:varchar(255);not null;index:idx_company_purchase_order;uniqueIndex:idx_company_po_number"`
+	PONumber           string              `gorm:"type:varchar(100);not null;uniqueIndex:idx_company_po_number"`
+	PODate             time.Time           `gorm:"type:timestamp;not null;index"`
+	SupplierID         string              `gorm:"type:varchar(255);not null;index"`
+	WarehouseID        string              `gorm:"type:varchar(255);not null;index"` // Destination warehouse
 	Status             PurchaseOrderStatus `gorm:"type:varchar(20);default:'DRAFT';index"`
 	Subtotal           decimal.Decimal `gorm:"type:decimal(15,2);default:0"`
 	DiscountAmount     decimal.Decimal `gorm:"type:decimal(15,2);default:0"`
@@ -35,6 +36,7 @@ type PurchaseOrder struct {
 
 	// Relations
 	Tenant      Tenant              `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE"`
+	Company     Company             `gorm:"foreignKey:CompanyID;constraint:OnDelete:CASCADE"`
 	Supplier    Supplier            `gorm:"foreignKey:SupplierID;constraint:OnDelete:RESTRICT"`
 	Warehouse   Warehouse           `gorm:"foreignKey:WarehouseID;constraint:OnDelete:RESTRICT"`
 	Requester   *User               `gorm:"foreignKey:RequestedBy"`
@@ -47,10 +49,10 @@ func (PurchaseOrder) TableName() string {
 	return "purchase_orders"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (po *PurchaseOrder) BeforeCreate(tx *gorm.DB) error {
 	if po.ID == "" {
-		po.ID = cuid.New()
+		po.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -82,10 +84,10 @@ func (PurchaseOrderItem) TableName() string {
 	return "purchase_order_items"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (poi *PurchaseOrderItem) BeforeCreate(tx *gorm.DB) error {
 	if poi.ID == "" {
-		poi.ID = cuid.New()
+		poi.ID = uuid.New().String()
 	}
 	return nil
 }

@@ -11,6 +11,7 @@ import (
 	"backend/internal/middleware"
 	"backend/internal/service/auth"
 	"backend/internal/service/company"
+	"backend/internal/service/permission"
 	"backend/internal/service/tenant"
 	"backend/pkg/email"
 	"backend/pkg/jwt"
@@ -119,6 +120,7 @@ func setupProtectedRoutes(
 			authGroup.POST("/logout", authHandler.Logout)
 			authGroup.POST("/change-password", authHandler.ChangePassword)
 			authGroup.POST("/switch-tenant", authHandler.SwitchTenant)
+			authGroup.POST("/switch-company", authHandler.SwitchCompany) // PHASE 3: Company switching
 			authGroup.GET("/me", authHandler.GetCurrentUser)
 			authGroup.GET("/tenants", authHandler.GetUserTenants)
 		}
@@ -173,12 +175,21 @@ func setupProtectedRoutes(
 			}
 		}
 
+		// ============================================================================
+		// MULTI-COMPANY SERVICES (PHASE 5)
+		// Created early so it can be used by multiple handlers
+		// ============================================================================
+		multiCompanyService := company.NewMultiCompanyService(db)
+		permissionService := permission.NewPermissionService(db)
+
 		// Company profile routes
 		// Reference: ANALYSIS-01-TENANT-COMPANY-SETUP.md Day 1-4 Tasks
+		// PHASE 5: Updated to use CompanyContextMiddleware for multi-company support
 		companyService := company.NewCompanyService(db)
-		companyHandler := handler.NewCompanyHandler(companyService)
+		companyHandler := handler.NewCompanyHandler(companyService, multiCompanyService)
 
 		companyGroup := businessProtected.Group("/company")
+		companyGroup.Use(middleware.CompanyContextMiddleware(db)) // PHASE 5: Add company context
 		{
 			// Company profile endpoints (OWNER/ADMIN only for updates)
 			companyGroup.GET("", companyHandler.GetCompanyProfile)
@@ -196,6 +207,75 @@ func setupProtectedRoutes(
 				bankGroup.PUT("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), companyHandler.UpdateBankAccount)
 				bankGroup.DELETE("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), companyHandler.DeleteBankAccount)
 			}
+
+			// ============================================================================
+			// COMPANY USER MANAGEMENT ROUTES (Company-scoped)
+			// Returns users with UserCompanyRole for the active company only
+			// Respects X-Company-ID header via CompanyContextMiddleware
+			// ============================================================================
+			companyUserHandler := handler.NewCompanyUserHandler(tenantService, cfg)
+
+			// GET /api/v1/company/users - List users in active company (all authenticated users)
+			companyGroup.GET("/users", companyUserHandler.ListCompanyUsers)
+
+			// Company user management routes (OWNER/ADMIN only)
+			companyUserAdminGroup := companyGroup.Group("/users")
+			companyUserAdminGroup.Use(middleware.RequireRoleMiddleware("OWNER", "ADMIN"))
+			{
+				// POST /api/v1/company/users/invite - Invite user to company
+				inviteGroup := companyUserAdminGroup.Group("/invite")
+				inviteGroup.Use(middleware.RateLimitMiddleware(redisClient, 5)) // 5 invites per minute
+				{
+					inviteGroup.POST("", companyUserHandler.InviteCompanyUser)
+				}
+
+				// PUT /api/v1/company/users/:userTenantId/role - Update user role in company
+				companyUserAdminGroup.PUT("/:userTenantId/role", companyUserHandler.UpdateCompanyUserRole)
+
+				// DELETE /api/v1/company/users/:userTenantId - Remove user from company
+				companyUserAdminGroup.DELETE("/:userTenantId", companyUserHandler.RemoveCompanyUser)
+			}
+		}
+
+		// ============================================================================
+		// MULTI-COMPANY MANAGEMENT ROUTES (PHASE 3)
+		// Reference: multi-company-architecture-analysis.md - PHASE 3
+		// ============================================================================
+		multiCompanyHandler := handler.NewMultiCompanyHandler(multiCompanyService, permissionService)
+
+		companiesGroup := businessProtected.Group("/companies")
+		{
+			// List accessible companies (all authenticated users)
+			// Uses optional company context middleware - no specific company required
+			companiesGroup.GET("",
+				middleware.OptionalCompanyContextMiddleware(db),
+				multiCompanyHandler.ListCompanies,
+			)
+
+			// Create company (OWNER only)
+			companiesGroup.POST("",
+				middleware.RequireTier1Access(),
+				multiCompanyHandler.CreateCompany,
+			)
+
+			// Get company details (requires access to that company)
+			companiesGroup.GET("/:id",
+				middleware.CompanyContextMiddleware(db),
+				multiCompanyHandler.GetCompany,
+			)
+
+			// Update company (requires ADMIN or Tier 1)
+			companiesGroup.PATCH("/:id",
+				middleware.CompanyContextMiddleware(db),
+				middleware.RequireCompanyAdmin(),
+				multiCompanyHandler.UpdateCompany,
+			)
+
+			// Deactivate company (OWNER only)
+			companiesGroup.DELETE("/:id",
+				middleware.RequireTier1Access(),
+				multiCompanyHandler.DeactivateCompany,
+			)
 		}
 
 		// Example of role-based routes

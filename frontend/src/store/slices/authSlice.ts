@@ -113,9 +113,12 @@ const authSlice = createSlice({
       state.error = null;
       state.isLoading = false;
 
-      // Clear localStorage (only access token, preserve rememberEmail for convenience)
+      // Clear localStorage (access token and company context)
+      // Note: rememberEmail is preserved for "Remember Me" functionality
+      // Note: activeCompanyId is also cleared in middleware for defense in depth
       if (typeof window !== 'undefined') {
         localStorage.removeItem('accessToken');
+        localStorage.removeItem('activeCompanyId'); // Prevent cross-user company context leak
       }
     },
   },

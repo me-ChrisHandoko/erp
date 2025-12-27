@@ -2,6 +2,7 @@
 package db
 
 import (
+	"backend/internal/service/auth"
 	"backend/models"
 
 	"gorm.io/gorm"
@@ -86,6 +87,11 @@ func AutoMigratePhase3(db *gorm.DB) error {
 // AutoMigrate runs GORM auto-migration for all models
 // This will be used when all phases are implemented
 func AutoMigrate(db *gorm.DB) error {
+	// Auth models (must run first as users table is referenced by other tables)
+	if err := AutoMigrateAuth(db); err != nil {
+		return err
+	}
+
 	// Phase 1: Core models
 	if err := AutoMigratePhase1(db); err != nil {
 		return err
@@ -107,6 +113,18 @@ func AutoMigrate(db *gorm.DB) error {
 	}
 
 	return nil
+}
+
+// AutoMigrateAuth runs GORM auto-migration for authentication models
+// Auth models: User, RefreshToken, EmailVerification, PasswordReset, LoginAttempt
+// CRITICAL: Must run before other phases as users table is referenced
+func AutoMigrateAuth(db *gorm.DB) error {
+	return db.AutoMigrate(
+		&auth.RefreshToken{},
+		&auth.EmailVerification{},
+		&auth.PasswordReset{},
+		&auth.LoginAttempt{},
+	)
 }
 
 // AutoMigratePhase4 runs GORM auto-migration for Phase 4 models

@@ -1,15 +1,20 @@
 package dto
 
-import "time"
+import (
+	"time"
+
+	"backend/models"
+)
 
 // GetTenantDetailsResponse represents tenant details response
 // Reference: 01-TENANT-COMPANY-SETUP.md lines 744-771
+// Updated for PHASE 3: Company field is omitted in multi-company architecture
 type GetTenantDetailsResponse struct {
 	ID          string                 `json:"id"`
 	Status      string                 `json:"status"`
 	TrialEndsAt *time.Time             `json:"trialEndsAt,omitempty"`
 	Subscription *SubscriptionInfo     `json:"subscription,omitempty"`
-	Company     *CompanyBasicInfo      `json:"company"`
+	Company     *CompanyBasicInfo      `json:"company,omitempty"` // Deprecated: Use /companies endpoint
 	CreatedAt   time.Time              `json:"createdAt"`
 	UpdatedAt   time.Time              `json:"updatedAt"`
 }
@@ -113,4 +118,12 @@ type UpdateUserRoleResponse struct {
 // Reference: 01-TENANT-COMPANY-SETUP.md lines 918-922
 type RemoveUserResponse struct {
 	Message string `json:"message"`
+}
+
+// GetUsersFilters represents optional filters for listing users
+type GetUsersFilters struct {
+	Role     *models.UserRole `json:"role,omitempty"`
+	IsActive *bool            `json:"isActive,omitempty"`
+	Page     *int             `json:"page,omitempty"`
+	Limit    *int             `json:"limit,omitempty"`
 }

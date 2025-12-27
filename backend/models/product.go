@@ -4,7 +4,7 @@ package models
 import (
 	"time"
 
-	"github.com/lucsky/cuid"
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
@@ -12,8 +12,9 @@ import (
 // Product - Product master with multi-unit support
 type Product struct {
 	ID             string          `gorm:"type:varchar(255);primaryKey"`
-	TenantID       string          `gorm:"type:varchar(255);not null;index;uniqueIndex:idx_product_tenant_code"`
-	Code           string          `gorm:"type:varchar(100);not null;index;uniqueIndex:idx_product_tenant_code"` // SKU
+	TenantID       string          `gorm:"type:varchar(255);not null;index"`
+	CompanyID      string          `gorm:"type:varchar(255);not null;index:idx_company_product;uniqueIndex:idx_company_product_code"`
+	Code           string          `gorm:"type:varchar(100);not null;index;uniqueIndex:idx_company_product_code"` // SKU
 	Name           string          `gorm:"type:varchar(255);not null;index"`
 	Category       *string         `gorm:"type:varchar(100)"`
 	BaseUnit       string          `gorm:"type:varchar(20);default:'PCS'"` // Unit terkecil
@@ -31,6 +32,7 @@ type Product struct {
 
 	// Relations
 	Tenant             Tenant            `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE"`
+	Company            Company           `gorm:"foreignKey:CompanyID;constraint:OnDelete:CASCADE"`
 	Units              []ProductUnit     `gorm:"foreignKey:ProductID"`
 	PriceList          []PriceList       `gorm:"foreignKey:ProductID"`
 	Batches            []ProductBatch    `gorm:"foreignKey:ProductID"`
@@ -44,10 +46,10 @@ func (Product) TableName() string {
 	return "products"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (p *Product) BeforeCreate(tx *gorm.DB) error {
 	if p.ID == "" {
-		p.ID = cuid.New()
+		p.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -83,10 +85,10 @@ func (ProductBatch) TableName() string {
 	return "product_batches"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (pb *ProductBatch) BeforeCreate(tx *gorm.DB) error {
 	if pb.ID == "" {
-		pb.ID = cuid.New()
+		pb.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -119,10 +121,10 @@ func (ProductUnit) TableName() string {
 	return "product_units"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (pu *ProductUnit) BeforeCreate(tx *gorm.DB) error {
 	if pu.ID == "" {
-		pu.ID = cuid.New()
+		pu.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -151,10 +153,10 @@ func (PriceList) TableName() string {
 	return "price_list"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (pl *PriceList) BeforeCreate(tx *gorm.DB) error {
 	if pl.ID == "" {
-		pl.ID = cuid.New()
+		pl.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -181,10 +183,10 @@ func (ProductSupplier) TableName() string {
 	return "product_suppliers"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (ps *ProductSupplier) BeforeCreate(tx *gorm.DB) error {
 	if ps.ID == "" {
-		ps.ID = cuid.New()
+		ps.ID = uuid.New().String()
 	}
 	return nil
 }

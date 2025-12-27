@@ -4,15 +4,17 @@ package models
 import (
 	"time"
 
-	"github.com/lucsky/cuid"
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
-// Tenant - Represents 1 PT/CV subscription instance
+// Tenant - Represents a tenant subscription (can have multiple PT/CV companies)
+// CORRECT ARCHITECTURE: 1 Tenant → N Companies
 type Tenant struct {
 	ID             string       `gorm:"type:varchar(255);primaryKey"`
-	CompanyID      string       `gorm:"type:varchar(255);uniqueIndex;not null;index"`
+	Name           string       `gorm:"type:varchar(255);not null"` // Tenant business name (e.g., "PT Multi Bisnis Group")
+	Subdomain      string       `gorm:"type:varchar(100);uniqueIndex;not null"` // Subdomain for tenant (e.g., "multi-bisnis")
 	SubscriptionID *string      `gorm:"type:varchar(255);index"`
 	Status         TenantStatus `gorm:"type:varchar(20);default:'TRIAL';index"`
 	TrialEndsAt    *time.Time   `gorm:"type:timestamp"`
@@ -21,7 +23,7 @@ type Tenant struct {
 	UpdatedAt      time.Time    `gorm:"autoUpdateTime"`
 
 	// Relations
-	Company      Company       `gorm:"foreignKey:CompanyID;constraint:OnDelete:CASCADE"`
+	Companies    []Company     `gorm:"foreignKey:TenantID"` // 1 Tenant → N Companies
 	Subscription *Subscription `gorm:"foreignKey:SubscriptionID"`
 	Users        []UserTenant  `gorm:"foreignKey:TenantID"`
 	// Note: Other relations (SalesOrders, Invoices, etc.) will be added in their respective model files
@@ -32,10 +34,10 @@ func (Tenant) TableName() string {
 	return "tenants"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (t *Tenant) BeforeCreate(tx *gorm.DB) error {
 	if t.ID == "" {
-		t.ID = cuid.New()
+		t.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -69,10 +71,10 @@ func (Subscription) TableName() string {
 	return "subscriptions"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (s *Subscription) BeforeCreate(tx *gorm.DB) error {
 	if s.ID == "" {
-		s.ID = cuid.New()
+		s.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -103,10 +105,10 @@ func (SubscriptionPayment) TableName() string {
 	return "subscription_payments"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (sp *SubscriptionPayment) BeforeCreate(tx *gorm.DB) error {
 	if sp.ID == "" {
-		sp.ID = cuid.New()
+		sp.ID = uuid.New().String()
 	}
 	return nil
 }

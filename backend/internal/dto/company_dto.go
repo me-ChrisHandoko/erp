@@ -6,6 +6,7 @@ type CompanyResponse struct {
 	ID             string             `json:"id"`
 	Name           string             `json:"name"`
 	LegalName      string             `json:"legalName,omitempty"`
+	EntityType     string             `json:"entityType,omitempty"`
 	NPWP           string             `json:"npwp,omitempty"`
 	NIB            string             `json:"nib,omitempty"`
 	Address        string             `json:"address,omitempty"`
@@ -40,6 +41,7 @@ type CompanyBankInfo struct {
 type UpdateCompanyRequest struct {
 	Name                 *string  `json:"name" binding:"omitempty,min=2,max=255" validate:"omitempty,min=2,max=255"`
 	LegalName            *string  `json:"legalName" binding:"omitempty,min=2,max=255" validate:"omitempty,min=2,max=255"`
+	EntityType           *string  `json:"entityType" binding:"omitempty,oneof=PT CV UD Firma" validate:"omitempty,oneof=PT CV UD Firma"`
 	NPWP                 *string  `json:"npwp" binding:"omitempty,min=15,max=20" validate:"omitempty,min=15,max=20"`
 	NIB                  *string  `json:"nib" binding:"omitempty,max=50" validate:"omitempty,max=50"`
 	Address              *string  `json:"address" binding:"omitempty,max=500" validate:"omitempty,max=500"`

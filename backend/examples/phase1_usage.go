@@ -99,11 +99,13 @@ func ExampleCreateCompany(database *gorm.DB) {
 }
 
 // ExampleCreateTenantWithTrial shows how to create a tenant with 14-day trial
-func ExampleCreateTenantWithTrial(database *gorm.DB, companyID string) {
+// Updated for PHASE 3: Multi-company architecture
+func ExampleCreateTenantWithTrial(database *gorm.DB) {
 	trialEnds := time.Now().AddDate(0, 0, 14) // 14 days from now
 
 	tenant := &models.Tenant{
-		CompanyID:   companyID,
+		Name:        "PT Distribusi Nusantara",
+		Subdomain:   "distribusi-nusantara",
 		Status:      models.TenantStatusTrial,
 		TrialEndsAt: &trialEnds,
 	}
@@ -195,8 +197,8 @@ func ExampleQueryUserTenants(database *gorm.DB, userID string) {
 
 	fmt.Printf("✅ User has access to %d tenant(s):\n", len(userTenants))
 	for _, ut := range userTenants {
-		fmt.Printf("   - %s (Role: %s, Status: %s)\n",
-			ut.Tenant.Company.Name,
+		fmt.Printf("   - Tenant: %s (Role: %s, Status: %s)\n",
+			ut.Tenant.Name,
 			ut.Role,
 			ut.Tenant.Status)
 	}
@@ -277,11 +279,15 @@ func ExampleFullOnboardingFlow(database *gorm.DB) {
 	// 2. Create Tenant with Trial
 	trialEnds := time.Now().AddDate(0, 0, 14)
 	tenant := &models.Tenant{
-		CompanyID:   company.ID,
+		Name:        "PT Distribusi Sejahtera",
+		Subdomain:   "distribusi-sejahtera",
 		Status:      models.TenantStatusTrial,
 		TrialEndsAt: &trialEnds,
 	}
 	database.Create(tenant)
+	// Link company to tenant
+	company.TenantID = tenant.ID
+	database.Save(company)
 	fmt.Printf("2️⃣ Tenant created (Trial until: %s)\n", trialEnds.Format("2006-01-02"))
 
 	// 3. Create Owner User

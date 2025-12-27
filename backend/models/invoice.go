@@ -4,7 +4,7 @@ package models
 import (
 	"time"
 
-	"github.com/lucsky/cuid"
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
@@ -13,7 +13,8 @@ import (
 type Invoice struct {
 	ID              string          `gorm:"type:varchar(255);primaryKey"`
 	TenantID        string          `gorm:"type:varchar(255);not null;index"`
-	InvoiceNumber   string          `gorm:"type:varchar(100);not null;uniqueIndex"`
+	CompanyID       string          `gorm:"type:varchar(255);not null;index:idx_company_invoice;uniqueIndex:idx_company_invoice_number"`
+	InvoiceNumber   string          `gorm:"type:varchar(100);not null;uniqueIndex:idx_company_invoice_number"`
 	InvoiceDate     time.Time       `gorm:"type:timestamp;not null;index"`
 	DueDate         time.Time       `gorm:"type:timestamp;not null;index"`
 	CustomerID      string          `gorm:"type:varchar(255);not null;index"`
@@ -33,6 +34,7 @@ type Invoice struct {
 
 	// Relations
 	Tenant      Tenant         `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE"`
+	Company     Company        `gorm:"foreignKey:CompanyID;constraint:OnDelete:CASCADE"`
 	Customer    Customer       `gorm:"foreignKey:CustomerID;constraint:OnDelete:RESTRICT"`
 	SalesOrder  *SalesOrder    `gorm:"foreignKey:SalesOrderID"`
 	Delivery    *Delivery      `gorm:"foreignKey:DeliveryID"`
@@ -45,10 +47,10 @@ func (Invoice) TableName() string {
 	return "invoices"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (i *Invoice) BeforeCreate(tx *gorm.DB) error {
 	if i.ID == "" {
-		i.ID = cuid.New()
+		i.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -83,10 +85,10 @@ func (InvoiceItem) TableName() string {
 	return "invoice_items"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (ii *InvoiceItem) BeforeCreate(tx *gorm.DB) error {
 	if ii.ID == "" {
-		ii.ID = cuid.New()
+		ii.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -122,10 +124,10 @@ func (Payment) TableName() string {
 	return "payments"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (p *Payment) BeforeCreate(tx *gorm.DB) error {
 	if p.ID == "" {
-		p.ID = cuid.New()
+		p.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -157,10 +159,10 @@ func (PaymentCheck) TableName() string {
 	return "payment_checks"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (pc *PaymentCheck) BeforeCreate(tx *gorm.DB) error {
 	if pc.ID == "" {
-		pc.ID = cuid.New()
+		pc.ID = uuid.New().String()
 	}
 	return nil
 }

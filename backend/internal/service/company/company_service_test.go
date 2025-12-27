@@ -26,15 +26,11 @@ func setupCompanyTestDB(t *testing.T) *gorm.DB {
 func createTestCompany(t *testing.T, db *gorm.DB, tenant *models.Tenant) *models.Company {
 	company := &models.Company{
 		ID:       "company-1",
+		TenantID: tenant.ID,
 		Name:     "Test Company",
 		IsActive: true,
 	}
 	err := db.Create(company).Error
-	require.NoError(t, err)
-
-	// Link tenant to company
-	tenant.CompanyID = company.ID
-	err = db.Save(tenant).Error
 	require.NoError(t, err)
 
 	return company
@@ -157,23 +153,21 @@ func TestUpdateCompany_TransactionConsistency_NPWPUniqueness(t *testing.T) {
 
 	company1 := &models.Company{
 		ID:       "company-1",
+		TenantID: tenant1.ID,
 		Name:     "Company 1",
 		NPWP:     &npwp1,
 		IsActive: true,
 	}
 	db.Create(company1)
-	tenant1.CompanyID = company1.ID
-	db.Save(tenant1)
 
 	company2 := &models.Company{
 		ID:       "company-2",
+		TenantID: tenant2.ID,
 		Name:     "Company 2",
 		NPWP:     &npwp2,
 		IsActive: true,
 	}
 	db.Create(company2)
-	tenant2.CompanyID = company2.ID
-	db.Save(tenant2)
 
 	// Try to update company2 to use company1's NPWP - should fail atomically
 	updates := map[string]interface{}{"npwp": npwp1}

@@ -4,19 +4,21 @@ package models
 import (
 	"time"
 
-	"github.com/lucsky/cuid"
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
-// Company - Legal entity profile & settings
+// Company - Legal entity profile & settings (PT, CV, UD, Firma)
+// CORRECT ARCHITECTURE: Company belongs to 1 Tenant (N Companies → 1 Tenant)
 type Company struct {
-	ID string `gorm:"type:varchar(255);primaryKey"`
+	ID       string `gorm:"type:varchar(255);primaryKey"`
+	TenantID string `gorm:"type:varchar(255);not null;index:idx_company_tenant"` // FK to tenants table
 
 	// Legal Entity Information
-	Name       string `gorm:"type:varchar(255);not null"`
+	Name       string `gorm:"type:varchar(255);not null;uniqueIndex:idx_tenant_company"` // Unique per tenant
 	LegalName  string `gorm:"type:varchar(255);not null"`
-	EntityType string `gorm:"type:varchar(255);default:'CV'"` // CV, PT, UD, Firma
+	EntityType string `gorm:"type:varchar(50);default:'CV';check:entity_type IN ('PT','CV','UD','Firma')"` // CV, PT, UD, Firma
 
 	// Address
 	Address    string  `gorm:"type:text;not null"`
@@ -67,13 +69,14 @@ type Company struct {
 	BusinessHoursEnd   *string `gorm:"type:varchar(10);default:'17:00'"`
 	WorkingDays        *string `gorm:"type:varchar(50);default:'1,2,3,4,5'"` // 0=Sunday, 1=Monday
 
-	IsActive  bool      `gorm:"default:true"`
+	IsActive  bool      `gorm:"default:true;index:idx_company_active"`
 	CreatedAt time.Time `gorm:"autoCreateTime"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime"`
 
 	// Relations
-	Tenant *Tenant       `gorm:"foreignKey:CompanyID"` // One-to-one
-	Banks  []CompanyBank `gorm:"foreignKey:CompanyID"`
+	Tenant           Tenant            `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE"` // N Companies → 1 Tenant
+	Banks            []CompanyBank     `gorm:"foreignKey:CompanyID"`
+	UserCompanyRoles []UserCompanyRole `gorm:"foreignKey:CompanyID"` // User access mapping per company
 }
 
 // TableName specifies the table name for Company model
@@ -81,10 +84,10 @@ func (Company) TableName() string {
 	return "companies"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (c *Company) BeforeCreate(tx *gorm.DB) error {
 	if c.ID == "" {
-		c.ID = cuid.New()
+		c.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -112,10 +115,10 @@ func (CompanyBank) TableName() string {
 	return "company_banks"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (cb *CompanyBank) BeforeCreate(tx *gorm.DB) error {
 	if cb.ID == "" {
-		cb.ID = cuid.New()
+		cb.ID = uuid.New().String()
 	}
 	return nil
 }

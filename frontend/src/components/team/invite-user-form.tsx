@@ -28,7 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { useInviteUserMutation } from "@/store/services/tenantApi";
+import { useInviteCompanyUserMutation } from "@/store/services/companyUserApi";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
 
 interface InviteUserFormProps {
@@ -37,7 +37,7 @@ interface InviteUserFormProps {
 }
 
 export function InviteUserForm({ onSuccess, onCancel }: InviteUserFormProps) {
-  const [inviteUser, { isLoading }] = useInviteUserMutation();
+  const [inviteUser, { isLoading }] = useInviteCompanyUserMutation();
 
   const {
     register,

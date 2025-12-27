@@ -24,28 +24,26 @@ func NewCompanyService(db *gorm.DB) *CompanyService {
 	}
 }
 
-// GetCompanyByTenantID retrieves company profile for the current tenant
-func (s *CompanyService) GetCompanyByTenantID(ctx context.Context, tenantID string) (*models.Company, error) {
-	var tenant models.Tenant
+// GetCompanyByTenantID retrieves company profile for the given company ID within tenant context
+// DEPRECATED: This method is for backward compatibility. Use GetCompanyByID instead.
+// In multi-company architecture, tenants can have multiple companies.
+func (s *CompanyService) GetCompanyByTenantID(ctx context.Context, companyID string) (*models.Company, error) {
+	var company models.Company
 
-	// Get tenant with company
+	// Get company with banks
 	err := s.db.WithContext(ctx).
-		Preload("Company.Banks", "is_active = ?", true).
-		Where("id = ?", tenantID).
-		First(&tenant).Error
+		Preload("Banks", "is_active = ?", true).
+		Where("id = ?", companyID).
+		First(&company).Error
 
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, pkgerrors.NewNotFoundError("tenant not found")
+			return nil, pkgerrors.NewNotFoundError("company not found")
 		}
-		return nil, fmt.Errorf("failed to get tenant: %w", err)
+		return nil, fmt.Errorf("failed to get company: %w", err)
 	}
 
-	if tenant.CompanyID == "" {
-		return nil, pkgerrors.NewNotFoundError("company profile not found for tenant")
-	}
-
-	return &tenant.Company, nil
+	return &company, nil
 }
 
 // UpdateCompany updates company profile with transaction safety
@@ -91,13 +89,9 @@ func (s *CompanyService) UpdateCompany(ctx context.Context, tenantID string, upd
 
 // AddBankAccount adds a new bank account with transaction safety
 // Issue #6 Fix: Uses transaction to ensure atomic unset primary + create new
-func (s *CompanyService) AddBankAccount(ctx context.Context, tenantID string, req *AddBankRequest) (*models.CompanyBank, error) {
-	// Get company
-	company, err := s.GetCompanyByTenantID(ctx, tenantID)
-	if err != nil {
-		return nil, err
-	}
-
+// AddBankAccount adds a new bank account to a company
+// PHASE 5: Updated to accept companyID directly instead of tenantID
+func (s *CompanyService) AddBankAccount(ctx context.Context, companyID string, req *AddBankRequest) (*models.CompanyBank, error) {
 	// Validate request
 	if err := req.Validate(); err != nil {
 		return nil, pkgerrors.NewBadRequestError(err.Error())
@@ -107,13 +101,13 @@ func (s *CompanyService) AddBankAccount(ctx context.Context, tenantID string, re
 
 	// Use transaction to ensure atomic operation
 	// Issue #10 Fix: Add SELECT FOR UPDATE to prevent race conditions on primary bank selection
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// If isPrimary = true, lock and unset other primary banks FIRST (within transaction)
 		if req.IsPrimary {
 			// SELECT FOR UPDATE locks the rows, preventing concurrent modifications
 			var existingPrimaryBanks []models.CompanyBank
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-				Where("company_id = ? AND is_primary = ? AND is_active = ?", company.ID, true, true).
+				Where("company_id = ? AND is_primary = ? AND is_active = ?", companyID, true, true).
 				Find(&existingPrimaryBanks).Error; err != nil {
 				return fmt.Errorf("failed to lock primary banks: %w", err)
 			}
@@ -121,7 +115,7 @@ func (s *CompanyService) AddBankAccount(ctx context.Context, tenantID string, re
 			// Unset all locked primary banks
 			if len(existingPrimaryBanks) > 0 {
 				if err := tx.Model(&models.CompanyBank{}).
-					Where("company_id = ? AND is_primary = ? AND is_active = ?", company.ID, true, true).
+					Where("company_id = ? AND is_primary = ? AND is_active = ?", companyID, true, true).
 					Update("is_primary", false).Error; err != nil {
 					return fmt.Errorf("failed to unset primary banks: %w", err)
 				}
@@ -130,7 +124,7 @@ func (s *CompanyService) AddBankAccount(ctx context.Context, tenantID string, re
 
 		// Create bank account
 		bank = &models.CompanyBank{
-			CompanyID:     company.ID,
+			CompanyID:     companyID,
 			BankName:      req.BankName,
 			AccountNumber: req.AccountNumber,
 			AccountName:   req.AccountName,
@@ -156,16 +150,11 @@ func (s *CompanyService) AddBankAccount(ctx context.Context, tenantID string, re
 
 // UpdateBankAccount updates bank account with transaction safety
 // Issue #6 Fix: Uses transaction for atomic primary bank updates
-func (s *CompanyService) UpdateBankAccount(ctx context.Context, tenantID, bankID string, updates map[string]interface{}) (*models.CompanyBank, error) {
-	// Get company
-	company, err := s.GetCompanyByTenantID(ctx, tenantID)
-	if err != nil {
-		return nil, err
-	}
-
+// PHASE 5: Updated to accept companyID directly instead of tenantID
+func (s *CompanyService) UpdateBankAccount(ctx context.Context, companyID, bankID string, updates map[string]interface{}) (*models.CompanyBank, error) {
 	// Get existing bank
 	var bank models.CompanyBank
-	if err := s.db.WithContext(ctx).Where("id = ? AND company_id = ?", bankID, company.ID).First(&bank).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("id = ? AND company_id = ?", bankID, companyID).First(&bank).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, pkgerrors.NewNotFoundError("bank account not found")
 		}
@@ -174,14 +163,14 @@ func (s *CompanyService) UpdateBankAccount(ctx context.Context, tenantID, bankID
 
 	// Use transaction for atomic update
 	// Issue #10 Fix: Add SELECT FOR UPDATE to prevent race conditions on primary bank selection
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// If setting as primary, lock and unset others first (within transaction)
 		if isPrimary, ok := updates["is_primary"]; ok {
 			if isPrimaryBool, ok := isPrimary.(bool); ok && isPrimaryBool {
 				// SELECT FOR UPDATE locks the rows, preventing concurrent modifications
 				var existingPrimaryBanks []models.CompanyBank
 				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-					Where("company_id = ? AND id != ? AND is_primary = ? AND is_active = ?", company.ID, bankID, true, true).
+					Where("company_id = ? AND id != ? AND is_primary = ? AND is_active = ?", companyID, bankID, true, true).
 					Find(&existingPrimaryBanks).Error; err != nil {
 					return fmt.Errorf("failed to lock primary banks: %w", err)
 				}
@@ -189,7 +178,7 @@ func (s *CompanyService) UpdateBankAccount(ctx context.Context, tenantID, bankID
 				// Unset all locked primary banks
 				if len(existingPrimaryBanks) > 0 {
 					if err := tx.Model(&models.CompanyBank{}).
-						Where("company_id = ? AND id != ? AND is_primary = ? AND is_active = ?", company.ID, bankID, true, true).
+						Where("company_id = ? AND id != ? AND is_primary = ? AND is_active = ?", companyID, bankID, true, true).
 						Update("is_primary", false).Error; err != nil {
 						return fmt.Errorf("failed to unset primary banks: %w", err)
 					}
@@ -219,22 +208,17 @@ func (s *CompanyService) UpdateBankAccount(ctx context.Context, tenantID, bankID
 
 // DeleteBankAccount deletes (soft delete) a bank account with validation
 // Issue #6 Fix: Validates minimum bank account requirement
-func (s *CompanyService) DeleteBankAccount(ctx context.Context, tenantID, bankID string) error {
-	// Get company
-	company, err := s.GetCompanyByTenantID(ctx, tenantID)
-	if err != nil {
-		return err
-	}
-
+// PHASE 5: Updated to accept companyID directly instead of tenantID
+func (s *CompanyService) DeleteBankAccount(ctx context.Context, companyID, bankID string) error {
 	// Validate minimum bank account requirement
-	if err := s.businessValidator.ValidateMinimumBankAccount(ctx, company.ID, bankID); err != nil {
+	if err := s.businessValidator.ValidateMinimumBankAccount(ctx, companyID, bankID); err != nil {
 		return err
 	}
 
 	// Soft delete bank account
 	result := s.db.WithContext(ctx).
 		Model(&models.CompanyBank{}).
-		Where("id = ? AND company_id = ?", bankID, company.ID).
+		Where("id = ? AND company_id = ?", bankID, companyID).
 		Update("is_active", false)
 
 	if result.Error != nil {
@@ -248,18 +232,13 @@ func (s *CompanyService) DeleteBankAccount(ctx context.Context, tenantID, bankID
 	return nil
 }
 
-// GetBankAccounts retrieves all active bank accounts for the current tenant
-func (s *CompanyService) GetBankAccounts(ctx context.Context, tenantID string) ([]*models.CompanyBank, error) {
-	// Get company
-	company, err := s.GetCompanyByTenantID(ctx, tenantID)
-	if err != nil {
-		return nil, err
-	}
-
+// GetBankAccounts retrieves all active bank accounts for the current company
+// PHASE 5: Updated to accept companyID directly instead of tenantID
+func (s *CompanyService) GetBankAccounts(ctx context.Context, companyID string) ([]*models.CompanyBank, error) {
 	// Get all active bank accounts
 	var banks []*models.CompanyBank
 	if err := s.db.WithContext(ctx).
-		Where("company_id = ? AND is_active = ?", company.ID, true).
+		Where("company_id = ? AND is_active = ?", companyID, true).
 		Order("is_primary DESC, created_at ASC").
 		Find(&banks).Error; err != nil {
 		return nil, fmt.Errorf("failed to get bank accounts: %w", err)
@@ -268,18 +247,13 @@ func (s *CompanyService) GetBankAccounts(ctx context.Context, tenantID string) (
 	return banks, nil
 }
 
-// GetBankAccountByID retrieves a single bank account by ID for the current tenant
-func (s *CompanyService) GetBankAccountByID(ctx context.Context, tenantID, bankID string) (*models.CompanyBank, error) {
-	// Get company
-	company, err := s.GetCompanyByTenantID(ctx, tenantID)
-	if err != nil {
-		return nil, err
-	}
-
+// GetBankAccountByID retrieves a single bank account by ID for the current company
+// PHASE 5: Updated to accept companyID directly instead of tenantID
+func (s *CompanyService) GetBankAccountByID(ctx context.Context, companyID, bankID string) (*models.CompanyBank, error) {
 	// Get bank account
 	var bank models.CompanyBank
 	if err := s.db.WithContext(ctx).
-		Where("id = ? AND company_id = ? AND is_active = ?", bankID, company.ID, true).
+		Where("id = ? AND company_id = ? AND is_active = ?", bankID, companyID, true).
 		First(&bank).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, pkgerrors.NewNotFoundError("bank account not found")

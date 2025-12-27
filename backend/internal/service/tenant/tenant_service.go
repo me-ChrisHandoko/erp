@@ -253,13 +253,13 @@ func (s *TenantService) AddUserToTenant(ctx context.Context, tenantID, userID st
 
 // GetTenantDetails retrieves complete tenant information
 // Reference: 01-TENANT-COMPANY-SETUP.md lines 736-771
+// Updated for PHASE 3: Multi-company architecture (tenant.Company relationship removed)
 func (s *TenantService) GetTenantDetails(ctx context.Context, tenantID string) (*dto.GetTenantDetailsResponse, error) {
 	var tenant models.Tenant
 
-	// Fetch tenant with subscription and company relations
+	// Fetch tenant with subscription
 	err := s.db.WithContext(ctx).
 		Preload("Subscription").
-		Preload("Company").
 		Where("id = ?", tenantID).
 		First(&tenant).Error
 
@@ -274,10 +274,7 @@ func (s *TenantService) GetTenantDetails(ctx context.Context, tenantID string) (
 		ID:          tenant.ID,
 		Status:      string(tenant.Status),
 		TrialEndsAt: tenant.TrialEndsAt,
-		Company: &dto.CompanyBasicInfo{
-			ID:   tenant.Company.ID,
-			Name: tenant.Company.Name,
-		},
+		// Company field removed - use /api/v1/companies endpoint to get tenant's companies
 		CreatedAt: tenant.CreatedAt,
 		UpdatedAt: tenant.UpdatedAt,
 	}
@@ -533,4 +530,233 @@ func generateVerificationToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(token), nil
+}
+
+// ============================================================================
+// COMPANY-SCOPED USER MANAGEMENT METHODS
+// These methods work with UserCompanyRole for multi-company isolation
+// ============================================================================
+
+// ListCompanyUsers retrieves users for a specific company
+// Filters users via UserCompanyRole junction table
+func (s *TenantService) ListCompanyUsers(ctx context.Context, companyID, tenantID string, filters dto.GetUsersFilters) ([]dto.TenantUserInfo, error) {
+	var users []dto.TenantUserInfo
+
+	// Build query with UserCompanyRole join
+	// Note: ID is from user_company_roles (the junction table), not users table
+	query := s.db.WithContext(ctx).
+		Table("user_company_roles").
+		Select(`
+			user_company_roles.id,
+			user_company_roles.tenant_id,
+			users.email,
+			users.name as name,
+			user_company_roles.role,
+			user_company_roles.is_active,
+			user_company_roles.created_at,
+			user_company_roles.updated_at
+		`).
+		Joins("INNER JOIN users ON user_company_roles.user_id = users.id").
+		Where("user_company_roles.company_id = ?", companyID).
+		Where("user_company_roles.tenant_id = ?", tenantID)
+
+	// Apply filters
+	if filters.Role != nil {
+		query = query.Where("user_company_roles.role = ?", *filters.Role)
+	}
+	if filters.IsActive != nil {
+		query = query.Where("user_company_roles.is_active = ?", *filters.IsActive)
+	}
+
+	// Execute query
+	if err := query.Find(&users).Error; err != nil {
+		return nil, fmt.Errorf("failed to list company users: %w", err)
+	}
+
+	return users, nil
+}
+
+// InviteUserToCompany invites a user to a specific company
+// Creates User (if new) and UserCompanyRole
+func (s *TenantService) InviteUserToCompany(ctx context.Context, tenantID, companyID string, req dto.InviteUserRequest) (*dto.TenantUserInfo, error) {
+	// Validate role - cannot invite OWNER at company level
+	if req.Role == "OWNER" {
+		return nil, pkgerrors.NewBadRequestError("Cannot invite OWNER at company level. OWNER is tenant-level only.")
+	}
+
+	// Check if user already exists
+	var existingUser models.User
+	userExists := s.db.WithContext(ctx).Where("email = ?", req.Email).First(&existingUser).Error == nil
+
+	var user models.User
+	var userCompanyRole models.UserCompanyRole
+
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if userExists {
+			// User exists - check if already has role in this company
+			var existingRole models.UserCompanyRole
+			roleExists := tx.Where("user_id = ? AND company_id = ?", existingUser.ID, companyID).
+				First(&existingRole).Error == nil
+
+			if roleExists && existingRole.IsActive {
+				return pkgerrors.NewBadRequestError("User already has access to this company")
+			}
+
+			if roleExists && !existingRole.IsActive {
+				// Reactivate existing role
+				existingRole.IsActive = true
+				existingRole.Role = models.UserRole(req.Role)
+				if err := tx.Save(&existingRole).Error; err != nil {
+					return pkgerrors.NewInternalError(err)
+				}
+				userCompanyRole = existingRole
+			} else {
+				// Create new UserCompanyRole
+				userCompanyRole = models.UserCompanyRole{
+					UserID:    existingUser.ID,
+					CompanyID: companyID,
+					TenantID:  tenantID,
+					Role:      models.UserRole(req.Role),
+					IsActive:  true,
+				}
+
+				if err := tx.Create(&userCompanyRole).Error; err != nil {
+					return pkgerrors.NewInternalError(err)
+				}
+			}
+
+			user = existingUser
+		} else {
+			// Create new user
+			tempPassword := generateRandomPassword(16)
+			hashedPassword, err := s.passwordHasher.HashPassword(tempPassword)
+			if err != nil {
+				return pkgerrors.NewInternalError(err)
+			}
+
+			user = models.User{
+				Email:        req.Email,
+				Username:     req.Email,
+				PasswordHash: hashedPassword,
+				FullName:     req.Name,
+				IsActive:     false, // Activated after email verification
+			}
+
+			if err := tx.Create(&user).Error; err != nil {
+				return pkgerrors.NewInternalError(err)
+			}
+
+			// Create UserCompanyRole
+			userCompanyRole = models.UserCompanyRole{
+				UserID:    user.ID,
+				CompanyID: companyID,
+				TenantID:  tenantID,
+				Role:      models.UserRole(req.Role),
+				IsActive:  true,
+			}
+
+			if err := tx.Create(&userCompanyRole).Error; err != nil {
+				return pkgerrors.NewInternalError(err)
+			}
+
+			// TODO: Send invitation email
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Return user info
+	response := &dto.TenantUserInfo{
+		ID:          userCompanyRole.ID,
+		TenantID:    tenantID,
+		Email:       user.Email,
+		Name:        user.FullName,
+		Role:        string(userCompanyRole.Role),
+		IsActive:    userCompanyRole.IsActive,
+		CreatedAt:   userCompanyRole.CreatedAt,
+		UpdatedAt:   userCompanyRole.UpdatedAt,
+		LastLoginAt: nil, // User model doesn't track last login yet
+	}
+
+	return response, nil
+}
+
+// UpdateUserRoleInCompany updates user's role in a specific company
+// Modifies UserCompanyRole for the given company
+func (s *TenantService) UpdateUserRoleInCompany(ctx context.Context, tenantID, companyID, userCompanyRoleID string, newRole models.UserRole) (*dto.TenantUserInfo, error) {
+	// Cannot set OWNER at company level
+	if newRole == models.UserRoleOwner {
+		return nil, pkgerrors.NewBadRequestError("Cannot assign OWNER role at company level")
+	}
+
+	var userCompanyRole models.UserCompanyRole
+
+	// Get existing role
+	err := s.db.WithContext(ctx).
+		Where("id = ? AND company_id = ? AND tenant_id = ?", userCompanyRoleID, companyID, tenantID).
+		First(&userCompanyRole).Error
+
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, pkgerrors.NewNotFoundError("user role in company not found")
+		}
+		return nil, fmt.Errorf("failed to get user company role: %w", err)
+	}
+
+	// Update role
+	userCompanyRole.Role = newRole
+	if err := s.db.WithContext(ctx).Save(&userCompanyRole).Error; err != nil {
+		return nil, fmt.Errorf("failed to update user role: %w", err)
+	}
+
+	// Get user details
+	var user models.User
+	if err := s.db.WithContext(ctx).Where("id = ?", userCompanyRole.UserID).First(&user).Error; err != nil {
+		return nil, fmt.Errorf("failed to get user details: %w", err)
+	}
+
+	// Return updated user info
+	response := &dto.TenantUserInfo{
+		ID:          userCompanyRole.ID,
+		TenantID:    tenantID,
+		Email:       user.Email,
+		Name:        user.FullName,
+		Role:        string(userCompanyRole.Role),
+		IsActive:    userCompanyRole.IsActive,
+		CreatedAt:   userCompanyRole.CreatedAt,
+		UpdatedAt:   userCompanyRole.UpdatedAt,
+		LastLoginAt: nil, // User model doesn't track last login yet
+	}
+
+	return response, nil
+}
+
+// RemoveUserFromCompany removes user's access to a specific company
+// Soft deletes UserCompanyRole (sets is_active = false)
+func (s *TenantService) RemoveUserFromCompany(ctx context.Context, tenantID, companyID, userCompanyRoleID string) error {
+	var userCompanyRole models.UserCompanyRole
+
+	// Get existing role
+	err := s.db.WithContext(ctx).
+		Where("id = ? AND company_id = ? AND tenant_id = ?", userCompanyRoleID, companyID, tenantID).
+		First(&userCompanyRole).Error
+
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return pkgerrors.NewNotFoundError("user role in company not found")
+		}
+		return fmt.Errorf("failed to get user company role: %w", err)
+	}
+
+	// Soft delete by setting is_active to false
+	userCompanyRole.IsActive = false
+	if err := s.db.WithContext(ctx).Save(&userCompanyRole).Error; err != nil {
+		return fmt.Errorf("failed to remove user from company: %w", err)
+	}
+
+	return nil
 }

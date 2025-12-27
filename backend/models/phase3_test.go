@@ -70,10 +70,15 @@ func createPhase3TestData(t *testing.T, database *gorm.DB) (tenant *Tenant, cust
 	database.Create(company)
 
 	tenant = &Tenant{
-		CompanyID: company.ID,
+		Name:      "Test Tenant Phase 3",
+		Subdomain: "test-tenant-phase3",
 		Status:    TenantStatusActive,
 	}
 	database.Create(tenant)
+
+	// Link company to tenant
+	company.TenantID = tenant.ID
+	database.Save(company)
 
 	// Create customer
 	customer = &Customer{

@@ -30,8 +30,31 @@ func CORSMiddleware(cfg *config.Config) gin.HandlerFunc {
 
 		// Set CORS headers
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, X-CSRF-Token")
+		// Use configured allowed methods
+		allowedMethods := "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+		if len(cfg.CORS.AllowedMethods) > 0 {
+			allowedMethods = ""
+			for i, method := range cfg.CORS.AllowedMethods {
+				if i > 0 {
+					allowedMethods += ","
+				}
+				allowedMethods += method
+			}
+		}
+		c.Writer.Header().Set("Access-Control-Allow-Methods", allowedMethods)
+
+		// Use configured allowed headers
+		allowedHeaders := "Content-Type,Authorization,X-Requested-With,X-CSRF-Token,X-Company-ID"
+		if len(cfg.CORS.AllowedHeaders) > 0 {
+			allowedHeaders = ""
+			for i, header := range cfg.CORS.AllowedHeaders {
+				if i > 0 {
+					allowedHeaders += ","
+				}
+				allowedHeaders += header
+			}
+		}
+		c.Writer.Header().Set("Access-Control-Allow-Headers", allowedHeaders)
 		c.Writer.Header().Set("Access-Control-Max-Age", "86400") // 24 hours
 
 		// Handle preflight requests

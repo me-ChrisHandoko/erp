@@ -4,17 +4,18 @@ package models
 import (
 	"time"
 
-	"github.com/lucsky/cuid"
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
 // Customer - Customer master with outstanding tracking
 type Customer struct {
-	ID                 string          `gorm:"type:varchar(255);primaryKey"`
-	TenantID           string          `gorm:"type:varchar(255);not null;index;uniqueIndex:idx_customer_tenant_code"`
-	Code               string          `gorm:"type:varchar(100);not null;index;uniqueIndex:idx_customer_tenant_code"`
-	Name               string          `gorm:"type:varchar(255);not null;index"`
+	ID        string `gorm:"type:varchar(255);primaryKey"`
+	TenantID  string `gorm:"type:varchar(255);not null;index"`
+	CompanyID string `gorm:"type:varchar(255);not null;index:idx_company_customer;uniqueIndex:idx_company_customer_code"`
+	Code      string `gorm:"type:varchar(100);not null;index;uniqueIndex:idx_company_customer_code"`
+	Name      string `gorm:"type:varchar(255);not null;index"`
 	Type               *string         `gorm:"type:varchar(50)"` // RETAIL, WHOLESALE, DISTRIBUTOR
 	Phone              *string         `gorm:"type:varchar(50)"`
 	Email              *string         `gorm:"type:varchar(255)"`
@@ -37,7 +38,8 @@ type Customer struct {
 	UpdatedAt          time.Time       `gorm:"autoUpdateTime"`
 
 	// Relations
-	Tenant Tenant `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE"`
+	Tenant  Tenant  `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE"`
+	Company Company `gorm:"foreignKey:CompanyID;constraint:OnDelete:CASCADE"`
 	// Note: SalesOrders, Invoices, Payments, PriceList will be added in Phase 3
 }
 
@@ -46,20 +48,21 @@ func (Customer) TableName() string {
 	return "customers"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (c *Customer) BeforeCreate(tx *gorm.DB) error {
 	if c.ID == "" {
-		c.ID = cuid.New()
+		c.ID = uuid.New().String()
 	}
 	return nil
 }
 
 // Supplier - Supplier master with outstanding tracking
 type Supplier struct {
-	ID                 string          `gorm:"type:varchar(255);primaryKey"`
-	TenantID           string          `gorm:"type:varchar(255);not null;index;uniqueIndex:idx_supplier_tenant_code"`
-	Code               string          `gorm:"type:varchar(100);not null;index;uniqueIndex:idx_supplier_tenant_code"`
-	Name               string          `gorm:"type:varchar(255);not null;index"`
+	ID        string `gorm:"type:varchar(255);primaryKey"`
+	TenantID  string `gorm:"type:varchar(255);not null;index"`
+	CompanyID string `gorm:"type:varchar(255);not null;index:idx_company_supplier;uniqueIndex:idx_company_supplier_code"`
+	Code      string `gorm:"type:varchar(100);not null;index;uniqueIndex:idx_company_supplier_code"`
+	Name      string `gorm:"type:varchar(255);not null;index"`
 	Type               *string         `gorm:"type:varchar(50)"` // MANUFACTURER, DISTRIBUTOR, WHOLESALER
 	Phone              *string         `gorm:"type:varchar(50)"`
 	Email              *string         `gorm:"type:varchar(255)"`
@@ -82,7 +85,8 @@ type Supplier struct {
 	UpdatedAt          time.Time       `gorm:"autoUpdateTime"`
 
 	// Relations
-	Tenant          Tenant            `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE"`
+	Tenant           Tenant            `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE"`
+	Company          Company           `gorm:"foreignKey:CompanyID;constraint:OnDelete:CASCADE"`
 	ProductSuppliers []ProductSupplier `gorm:"foreignKey:SupplierID"`
 	// Note: PurchaseOrders, GoodsReceipts, SupplierPayments will be added in Phase 3
 }
@@ -92,10 +96,10 @@ func (Supplier) TableName() string {
 	return "suppliers"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (s *Supplier) BeforeCreate(tx *gorm.DB) error {
 	if s.ID == "" {
-		s.ID = cuid.New()
+		s.ID = uuid.New().String()
 	}
 	return nil
 }

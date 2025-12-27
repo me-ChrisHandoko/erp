@@ -22,12 +22,21 @@ type TokenService struct {
 	publicKey  *rsa.PublicKey  // For RS256
 }
 
+// CompanyAccess represents accessible company information for JWT
+type CompanyAccess struct {
+	CompanyID string `json:"company_id"`
+	Role      string `json:"role"`
+}
+
 // Claims represents JWT claims for authentication
+// PHASE 3: Enhanced with multi-company support
 type Claims struct {
-	UserID   string `json:"user_id"`
-	Email    string `json:"email"`
-	TenantID string `json:"tenant_id"`
-	Role     string `json:"role"`
+	UserID          string          `json:"user_id"`
+	Email           string          `json:"email"`
+	TenantID        string          `json:"tenant_id"`
+	Role            string          `json:"role"` // Tenant-level role (OWNER, TENANT_ADMIN, ADMIN)
+	ActiveCompanyID string          `json:"active_company_id,omitempty"` // Currently selected company
+	CompanyAccess   []CompanyAccess `json:"company_access,omitempty"`    // All accessible companies with their roles
 	jwt.RegisteredClaims
 }
 
@@ -49,13 +58,16 @@ func NewTokenService(cfg config.JWTConfig) (*TokenService, error) {
 
 // GenerateAccessToken generates a new access token
 // Expiry is configured via JWT.Expiry (default: 30 minutes)
-func (s *TokenService) GenerateAccessToken(userID, email, tenantID, role string) (string, error) {
+// PHASE 3: Support for multi-company with optional activeCompanyID and companyAccess
+func (s *TokenService) GenerateAccessToken(userID, email, tenantID, role string, activeCompanyID string, companyAccess []CompanyAccess) (string, error) {
 	now := time.Now()
 	claims := Claims{
-		UserID:   userID,
-		Email:    email,
-		TenantID: tenantID,
-		Role:     role,
+		UserID:          userID,
+		Email:           email,
+		TenantID:        tenantID,
+		Role:            role,
+		ActiveCompanyID: activeCompanyID,
+		CompanyAccess:   companyAccess,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(s.config.Expiry)),
 			IssuedAt:  jwt.NewNumericDate(now),

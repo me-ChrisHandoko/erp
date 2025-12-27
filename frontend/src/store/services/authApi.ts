@@ -35,18 +35,24 @@ function getCSRFToken(): string | null {
 }
 
 /**
- * Base query configuration with authentication headers
+ * Base query configuration with authentication and company context headers
  */
 const baseQuery = fetchBaseQuery({
   baseUrl: `${process.env.NEXT_PUBLIC_API_URL}/api/v1`,
   credentials: 'include', // CRITICAL: Send cookies (refresh_token, csrf_token)
   prepareHeaders: (headers, { getState }) => {
-    // Get access token from Redux state
-    const token = (getState() as any).auth.accessToken;
+    const state = getState() as any;
 
     // Add Authorization header if token exists
+    const token = state.auth.accessToken;
     if (token) {
       headers.set('authorization', `Bearer ${token}`);
+    }
+
+    // Add X-Company-ID header for multi-company context
+    const activeCompanyId = state.company?.activeCompany?.id;
+    if (activeCompanyId) {
+      headers.set('X-Company-ID', activeCompanyId);
     }
 
     // Add CSRF token header for POST/PUT/DELETE requests
@@ -188,7 +194,7 @@ export { baseQueryWithReauth };
 export const authApi = createApi({
   reducerPath: 'authApi',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['User', 'Tenants'],
+  tagTypes: ['User', 'Tenants', 'AvailableCompanies', 'Company', 'Banks', 'CompanyUsers'],
   endpoints: (builder) => ({
     /**
      * Login endpoint
@@ -242,8 +248,11 @@ export const authApi = createApi({
         } catch (err) {
           console.error('[Auth] Logout API call failed:', err);
         } finally {
-          // Always logout on client side, even if API call fails
+          // Always logout on client side first, even if API call fails
+          // This will trigger the resetAllApiStates middleware to clear all RTK Query cache
           dispatch(logout());
+
+          console.log('[Auth] Logout dispatched, cache will be cleared by middleware');
         }
       },
       invalidatesTags: ['User', 'Tenants'],

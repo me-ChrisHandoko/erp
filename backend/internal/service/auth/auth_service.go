@@ -14,6 +14,7 @@ import (
 
 	"backend/internal/config"
 	"backend/internal/dto"
+	"backend/models"
 	"backend/pkg/errors"
 	"backend/pkg/jwt"
 	"backend/pkg/security"
@@ -109,7 +110,7 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 	//     return nil, errors.NewAuthenticationError("Email not verified")
 	// }
 
-	// Get user's tenants
+	// Get user's tenant access - Support both Tier 1 (user_tenants) and Tier 2 (user_company_roles)
 	// IMPORTANT: Bypass tenant isolation for authentication - we don't have tenant context yet!
 	fmt.Println("🔍 DEBUG: Getting user tenants...")
 	var userTenants []UserTenant
@@ -117,25 +118,49 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 		fmt.Println("🚨 DEBUG: Error getting tenants:", err)
 		return nil, errors.NewInternalError(err)
 	}
-	fmt.Printf("✅ DEBUG: Found %d tenants\n", len(userTenants))
+	fmt.Printf("✅ DEBUG: Found %d user_tenants records (Tier 1)\n", len(userTenants))
 
-	if len(userTenants) == 0 {
-		fmt.Println("🚨 DEBUG: No active tenants for user")
-		// Record failed attempt - no tenant access
-		reason := FailureReasonNoTenantAccess
-		s.recordLoginAttempt(ctx, req.Email, req.IPAddress, req.UserAgent, false, &reason)
-		return nil, errors.NewAuthorizationError("User has no active tenant access")
+	var tenantID string
+	var userRole string
+
+	// Tier 1: Check user_tenants (OWNER, TENANT_ADMIN, etc.)
+	if len(userTenants) > 0 {
+		// User has Tier 1 access - use first tenant as default
+		defaultUserTenant := userTenants[0]
+		tenantID = defaultUserTenant.TenantID
+		userRole = defaultUserTenant.Role
+		fmt.Printf("✅ DEBUG: Using Tier 1 access - Tenant: %s, Role: %s\n", tenantID, userRole)
+	} else {
+		// Tier 2: Check user_company_roles (SALES, FINANCE, WAREHOUSE, etc.)
+		fmt.Println("🔍 DEBUG: No Tier 1 access, checking user_company_roles (Tier 2)...")
+		var userCompanyRoles []models.UserCompanyRole
+		if err := s.db.Set("bypass_tenant", true).
+			Where("user_id = ? AND is_active = ?", user.ID, true).
+			Find(&userCompanyRoles).Error; err != nil {
+			fmt.Println("🚨 DEBUG: Error getting user_company_roles:", err)
+			return nil, errors.NewInternalError(err)
+		}
+		fmt.Printf("✅ DEBUG: Found %d user_company_roles records (Tier 2)\n", len(userCompanyRoles))
+
+		if len(userCompanyRoles) == 0 {
+			// No access at all - neither Tier 1 nor Tier 2
+			fmt.Println("🚨 DEBUG: No Tier 1 or Tier 2 access for user")
+			reason := FailureReasonNoTenantAccess
+			s.recordLoginAttempt(ctx, req.Email, req.IPAddress, req.UserAgent, false, &reason)
+			return nil, errors.NewAuthorizationError("User has no active tenant access")
+		}
+
+		// User has Tier 2 access - get tenant_id from first company role
+		tenantID = userCompanyRoles[0].TenantID
+		userRole = string(userCompanyRoles[0].Role)
+		fmt.Printf("✅ DEBUG: Using Tier 2 access - Tenant: %s, Role: %s\n", tenantID, userRole)
 	}
-
-	// Use first tenant as default (in real app, user might select tenant)
-	defaultUserTenant := userTenants[0]
-	fmt.Printf("✅ DEBUG: Using tenant: %s (role: %s)\n", defaultUserTenant.TenantID, defaultUserTenant.Role)
 
 	// Get tenant details
 	// IMPORTANT: Bypass tenant isolation - we're validating tenant before setting context
 	fmt.Println("🔍 DEBUG: Getting tenant details...")
 	var tenant Tenant
-	if err := s.db.Set("bypass_tenant", true).Where("id = ?", defaultUserTenant.TenantID).First(&tenant).Error; err != nil {
+	if err := s.db.Set("bypass_tenant", true).Where("id = ?", tenantID).First(&tenant).Error; err != nil {
 		fmt.Println("🚨 DEBUG: Error getting tenant details:", err)
 		return nil, errors.NewInternalError(err)
 	}
@@ -159,13 +184,22 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 		return nil, errors.NewSubscriptionError("Trial period has expired")
 	}
 
+	// Build company access list for JWT (PHASE 3)
+	companyAccess, err := s.buildCompanyAccess(user.ID, tenantID)
+	if err != nil {
+		// Log but don't fail - fallback to no company access
+		companyAccess = []jwt.CompanyAccess{}
+	}
+
 	// Generate JWT tokens
 	fmt.Println("🔍 DEBUG: Generating access token...")
 	accessToken, err := s.tokenService.GenerateAccessToken(
 		user.ID,
 		user.Email,
-		defaultUserTenant.TenantID,
-		defaultUserTenant.Role,
+		tenantID,
+		userRole,
+		"", // No active company on login - user must select
+		companyAccess,
 	)
 	if err != nil {
 		fmt.Println("🚨 DEBUG: Error generating access token:", err)
@@ -206,10 +240,10 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 			Phone:    user.Phone,
 			IsActive: user.IsActive,
 			CurrentTenant: &dto.TenantInfo{
-				ID:     defaultUserTenant.TenantID,
+				ID:     tenantID,
 				Name:   tenant.Name,
 				Status: tenant.Status,
-				Role:   defaultUserTenant.Role,
+				Role:   userRole,
 			},
 		},
 	}, nil
@@ -340,6 +374,13 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *dto.RefreshTokenReq
 		return nil, errors.NewSubscriptionError("Trial period has expired")
 	}
 
+	// Build company access list for JWT (PHASE 3)
+	companyAccess, err := s.buildCompanyAccess(user.ID, defaultUserTenant.TenantID)
+	if err != nil {
+		// Log but don't fail - fallback to no company access
+		companyAccess = []jwt.CompanyAccess{}
+	}
+
 	// Generate new access token (token generation is stateless, no rollback needed)
 	fmt.Println("🔍 DEBUG [RefreshToken]: Generating new access token...")
 	accessToken, err := s.tokenService.GenerateAccessToken(
@@ -347,6 +388,8 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *dto.RefreshTokenReq
 		user.Email,
 		defaultUserTenant.TenantID,
 		defaultUserTenant.Role,
+		"", // No active company on refresh - maintain session continuity
+		companyAccess,
 	)
 	if err != nil {
 		tx.Rollback()
@@ -983,18 +1026,188 @@ func (s *AuthService) SwitchTenant(userID string, newTenantID string) (string, *
 		return "", nil, errors.NewInternalError(err)
 	}
 
-	// 6. Generate new access token with new tenantID
+	// 6. Get user's accessible companies for JWT (PHASE 3)
+	companyAccess, err := s.buildCompanyAccess(userID, newTenantID)
+	if err != nil {
+		// Log but don't fail - fallback to no company access
+		companyAccess = []jwt.CompanyAccess{}
+	}
+
+	// 7. Generate new access token with new tenantID and company access
 	accessToken, err := s.tokenService.GenerateAccessToken(
 		user.ID,
 		user.Email,
 		newTenantID,
 		userTenant.Role,
+		"", // No active company on tenant switch
+		companyAccess,
 	)
 	if err != nil {
 		return "", nil, errors.NewInternalError(err)
 	}
 
 	return accessToken, &tenant, nil
+}
+
+// SwitchCompany switches user's active company within current tenant (PHASE 3)
+// Returns new access token with updated activeCompanyID claim
+func (s *AuthService) SwitchCompany(userID, tenantID, newCompanyID string) (string, *models.Company, error) {
+	fmt.Printf("🔄 [SwitchCompany] START - UserID: %s, TenantID: %s, CompanyID: %s\n", userID, tenantID, newCompanyID)
+
+	// 1. Validate company exists and belongs to tenant
+	var company models.Company
+	// IMPORTANT: Bypass tenant isolation because we're manually filtering by tenant_id
+	// and the session doesn't have tenant context set yet (chicken-and-egg problem)
+	err := s.db.Set("bypass_tenant", true).Where("id = ? AND tenant_id = ? AND is_active = ?",
+		newCompanyID, tenantID, true).First(&company).Error
+	if err != nil {
+		fmt.Printf("❌ [SwitchCompany] Company not found: %v\n", err)
+		if err == gorm.ErrRecordNotFound {
+			return "", nil, errors.NewNotFoundError("Company")
+		}
+		return "", nil, errors.NewInternalError(err)
+	}
+	fmt.Printf("✅ [SwitchCompany] Company found: %s\n", company.Name)
+
+	// 2. Validate user has access to this company
+	// Check Tier 1 access (OWNER/TENANT_ADMIN)
+	var userTenant UserTenant
+	fmt.Printf("🔍 [SwitchCompany] Checking Tier 1 access...\n")
+	// Bypass tenant isolation - we're checking access during switch operation
+	err = s.db.Set("bypass_tenant", true).Where("user_id = ? AND tenant_id = ? AND is_active = ? AND role IN ?",
+		userID, tenantID, true, []string{"OWNER", "TENANT_ADMIN"}).First(&userTenant).Error
+
+	if err != nil {
+		fmt.Printf("⚠️ [SwitchCompany] Tier 1 check error: %v\n", err)
+	} else {
+		fmt.Printf("✅ [SwitchCompany] Tier 1 access granted - Role: %s\n", userTenant.Role)
+	}
+
+	hasTier1Access := err == nil
+
+	// If no Tier 1 access, check Tier 2 access (UserCompanyRole)
+	if !hasTier1Access {
+		fmt.Printf("🔍 [SwitchCompany] Checking Tier 2 access...\n")
+		var userCompanyRole models.UserCompanyRole
+		// Bypass tenant isolation - we're checking access during switch operation
+		err = s.db.Set("bypass_tenant", true).Where("user_id = ? AND company_id = ? AND is_active = ?",
+			userID, newCompanyID, true).First(&userCompanyRole).Error
+		if err != nil {
+			fmt.Printf("❌ [SwitchCompany] Tier 2 check error: %v\n", err)
+			if err == gorm.ErrRecordNotFound {
+				return "", nil, errors.NewAuthorizationError("You don't have access to this company")
+			}
+			return "", nil, errors.NewInternalError(err)
+		}
+		fmt.Printf("✅ [SwitchCompany] Tier 2 access granted\n")
+	}
+
+	// 3. Get user details for token generation
+	fmt.Printf("🔍 [SwitchCompany] Getting user details...\n")
+	var user User
+	// Bypass tenant isolation - users table doesn't have tenant_id but middleware might still block
+	err = s.db.Set("bypass_tenant", true).Where("id = ?", userID).First(&user).Error
+	if err != nil {
+		fmt.Printf("❌ [SwitchCompany] User not found: %v\n", err)
+		return "", nil, errors.NewInternalError(err)
+	}
+	fmt.Printf("✅ [SwitchCompany] User found: %s\n", user.Email)
+
+	// 4. Determine user's role based on access tier
+	var userRole string
+	if hasTier1Access {
+		// Tier 1: Use role from user_tenants
+		userRole = userTenant.Role
+		fmt.Printf("✅ [SwitchCompany] Using Tier 1 role: %s\n", userRole)
+	} else {
+		// Tier 2: Get role from user_company_roles for the specific company
+		fmt.Printf("🔍 [SwitchCompany] Getting Tier 2 role for company...\n")
+		var userCompanyRole models.UserCompanyRole
+		err = s.db.Set("bypass_tenant", true).Where("user_id = ? AND company_id = ? AND is_active = ?",
+			userID, newCompanyID, true).First(&userCompanyRole).Error
+		if err != nil {
+			fmt.Printf("❌ [SwitchCompany] Failed to get company role: %v\n", err)
+			return "", nil, errors.NewInternalError(err)
+		}
+		userRole = string(userCompanyRole.Role)
+		fmt.Printf("✅ [SwitchCompany] Using Tier 2 role: %s\n", userRole)
+	}
+
+	// 5. Build company access list for JWT
+	companyAccess, err := s.buildCompanyAccess(userID, tenantID)
+	if err != nil {
+		// Log but don't fail - fallback to current company only
+		companyAccess = []jwt.CompanyAccess{
+			{CompanyID: newCompanyID, Role: ""},
+		}
+	}
+
+	// 6. Generate new access token with active company
+	accessToken, err := s.tokenService.GenerateAccessToken(
+		user.ID,
+		user.Email,
+		tenantID,
+		userRole,
+		newCompanyID, // Set active company
+		companyAccess,
+	)
+	if err != nil {
+		return "", nil, errors.NewInternalError(err)
+	}
+
+	return accessToken, &company, nil
+}
+
+// buildCompanyAccess builds company access list for JWT claims (PHASE 3)
+// Returns all companies user has access to with their respective roles
+func (s *AuthService) buildCompanyAccess(userID, tenantID string) ([]jwt.CompanyAccess, error) {
+	var companyAccess []jwt.CompanyAccess
+
+	// 1. Check if user has Tier 1 access (OWNER/TENANT_ADMIN)
+	var userTenant UserTenant
+	// Bypass tenant isolation - we're building access list during token generation
+	err := s.db.Set("bypass_tenant", true).Where("user_id = ? AND tenant_id = ? AND is_active = ? AND role IN ?",
+		userID, tenantID, true, []string{"OWNER", "TENANT_ADMIN"}).First(&userTenant).Error
+
+	if err == nil {
+		// User has Tier 1 access - get ALL companies in tenant
+		var companies []models.Company
+		// Bypass tenant isolation - we're fetching all companies for this tenant
+		err = s.db.Set("bypass_tenant", true).Where("tenant_id = ? AND is_active = ?", tenantID, true).Find(&companies).Error
+		if err != nil {
+			return nil, err
+		}
+
+		for _, company := range companies {
+			companyAccess = append(companyAccess, jwt.CompanyAccess{
+				CompanyID: company.ID,
+				Role:      userTenant.Role, // Use tenant-level role
+			})
+		}
+		return companyAccess, nil
+	}
+
+	// 2. No Tier 1 access - get companies via Tier 2 (UserCompanyRole)
+	var userCompanyRoles []models.UserCompanyRole
+	// Bypass tenant isolation - we're fetching company roles for access list
+	err = s.db.Set("bypass_tenant", true).Preload("Company").
+		Where("user_company_roles.user_id = ? AND user_company_roles.is_active = ?", userID, true).
+		Joins("JOIN companies ON companies.id = user_company_roles.company_id").
+		Where("companies.tenant_id = ? AND companies.is_active = ?", tenantID, true).
+		Find(&userCompanyRoles).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	for _, ucr := range userCompanyRoles {
+		companyAccess = append(companyAccess, jwt.CompanyAccess{
+			CompanyID: ucr.CompanyID,
+			Role:      string(ucr.Role),
+		})
+	}
+
+	return companyAccess, nil
 }
 
 // GetUserTenants returns all tenants accessible to user

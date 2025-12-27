@@ -4,7 +4,7 @@ package models
 import (
 	"time"
 
-	"github.com/lucsky/cuid"
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
@@ -13,7 +13,8 @@ import (
 type SalesOrder struct {
 	ID               string            `gorm:"type:varchar(255);primaryKey"`
 	TenantID         string            `gorm:"type:varchar(255);not null;index"`
-	SONumber         string            `gorm:"type:varchar(100);not null;uniqueIndex"`
+	CompanyID        string            `gorm:"type:varchar(255);not null;index:idx_company_sales_order;uniqueIndex:idx_company_so_number"`
+	SONumber         string            `gorm:"type:varchar(100);not null;uniqueIndex:idx_company_so_number"`
 	SODate           time.Time         `gorm:"type:timestamp;not null;index"`
 	CustomerID       string            `gorm:"type:varchar(255);not null;index"`
 	Status           SalesOrderStatus  `gorm:"type:varchar(20);default:'DRAFT';index"`
@@ -35,6 +36,7 @@ type SalesOrder struct {
 
 	// Relations
 	Tenant      Tenant            `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE"`
+	Company     Company           `gorm:"foreignKey:CompanyID;constraint:OnDelete:CASCADE"`
 	Customer    Customer          `gorm:"foreignKey:CustomerID;constraint:OnDelete:RESTRICT"`
 	Salesperson *User             `gorm:"foreignKey:SalespersonID"`
 	Items       []SalesOrderItem  `gorm:"foreignKey:SalesOrderID"`
@@ -46,10 +48,10 @@ func (SalesOrder) TableName() string {
 	return "sales_orders"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (so *SalesOrder) BeforeCreate(tx *gorm.DB) error {
 	if so.ID == "" {
-		so.ID = cuid.New()
+		so.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -80,10 +82,10 @@ func (SalesOrderItem) TableName() string {
 	return "sales_order_items"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (soi *SalesOrderItem) BeforeCreate(tx *gorm.DB) error {
 	if soi.ID == "" {
-		soi.ID = cuid.New()
+		soi.ID = uuid.New().String()
 	}
 	return nil
 }

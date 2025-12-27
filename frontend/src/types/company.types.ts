@@ -267,3 +267,102 @@ export const INDONESIAN_PROVINCES = [
   "Papua Selatan",
   "Papua Barat Daya"
 ] as const;
+
+// ============================================================================
+// PHASE 5: Multi-Company State Management Types
+// ============================================================================
+
+/**
+ * Company role types for role-based access control
+ * Maps to backend user_company_role.role field
+ */
+export type CompanyRole = 'OWNER' | 'ADMIN' | 'FINANCE' | 'SALES' | 'WAREHOUSE' | 'STAFF';
+
+/**
+ * Access tier levels for multi-company system
+ * 0 = No access
+ * 1 = Tenant-level access (all companies in tenant)
+ * 2 = Company-specific access
+ */
+export type AccessTier = 0 | 1 | 2;
+
+/**
+ * Company access information
+ * Represents user's permissions and role for a specific company
+ */
+export interface CompanyAccess {
+  companyId: string;
+  tenantId: string;
+  role: CompanyRole;
+  accessTier: AccessTier;
+  hasAccess: boolean;
+  // Granular permissions
+  canView: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+  canApprove: boolean;
+}
+
+/**
+ * Available company for user
+ * Combines company basic info with user's access information
+ */
+export interface AvailableCompany {
+  id: string;
+  tenantId: string;
+  name: string;
+  legalName?: string;
+  npwp?: string;
+  city?: string;
+  province?: string;
+  isPKP: boolean;
+  isActive: boolean;
+  logoUrl?: string | null;
+  // User access info
+  role: CompanyRole;
+  accessTier: AccessTier;
+}
+
+/**
+ * Active company context
+ * Full information about currently active company
+ */
+export interface ActiveCompany extends AvailableCompany {
+  access: CompanyAccess;
+}
+
+/**
+ * Company state for Redux
+ */
+export interface CompanyState {
+  activeCompany: ActiveCompany | null;
+  availableCompanies: AvailableCompany[];
+  loading: boolean;
+  error: string | null;
+  initialized: boolean;
+}
+
+/**
+ * Switch company request
+ */
+export interface SwitchCompanyRequest {
+  company_id: string;
+}
+
+/**
+ * Switch company response
+ */
+export interface SwitchCompanyResponse {
+  access_token: string;
+  refresh_token?: string;
+  company_id: string;
+  company_name: string;
+  message: string;
+}
+
+/**
+ * Get available companies response
+ */
+export interface GetAvailableCompaniesResponse {
+  companies: AvailableCompany[];
+}

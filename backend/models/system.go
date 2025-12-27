@@ -4,7 +4,7 @@ package models
 import (
 	"time"
 
-	"github.com/lucsky/cuid"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -28,10 +28,10 @@ func (Setting) TableName() string {
 	return "settings"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (s *Setting) BeforeCreate(tx *gorm.DB) error {
 	if s.ID == "" {
-		s.ID = cuid.New()
+		s.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -61,10 +61,10 @@ func (AuditLog) TableName() string {
 	return "audit_logs"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (al *AuditLog) BeforeCreate(tx *gorm.DB) error {
 	if al.ID == "" {
-		al.ID = cuid.New()
+		al.ID = uuid.New().String()
 	}
 	return nil
 }

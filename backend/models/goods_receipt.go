@@ -4,7 +4,7 @@ package models
 import (
 	"time"
 
-	"github.com/lucsky/cuid"
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
@@ -13,7 +13,8 @@ import (
 type GoodsReceipt struct {
 	ID               string             `gorm:"type:varchar(255);primaryKey"`
 	TenantID         string             `gorm:"type:varchar(255);not null;index"`
-	GRNNumber        string             `gorm:"type:varchar(100);not null;uniqueIndex"`
+	CompanyID        string             `gorm:"type:varchar(255);not null;index:idx_company_goods_receipt;uniqueIndex:idx_company_grn_number"`
+	GRNNumber        string             `gorm:"type:varchar(100);not null;uniqueIndex:idx_company_grn_number"`
 	GRNDate          time.Time          `gorm:"type:timestamp;not null;index"`
 	PurchaseOrderID  string             `gorm:"type:varchar(255);not null;index"`
 	WarehouseID      string             `gorm:"type:varchar(255);not null;index"` // Destination warehouse
@@ -31,6 +32,7 @@ type GoodsReceipt struct {
 
 	// Relations
 	Tenant        Tenant             `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE"`
+	Company       Company            `gorm:"foreignKey:CompanyID;constraint:OnDelete:CASCADE"`
 	PurchaseOrder PurchaseOrder      `gorm:"foreignKey:PurchaseOrderID;constraint:OnDelete:RESTRICT"`
 	Warehouse     Warehouse          `gorm:"foreignKey:WarehouseID;constraint:OnDelete:RESTRICT"`
 	Supplier      Supplier           `gorm:"foreignKey:SupplierID;constraint:OnDelete:RESTRICT"`
@@ -42,10 +44,10 @@ func (GoodsReceipt) TableName() string {
 	return "goods_receipts"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (gr *GoodsReceipt) BeforeCreate(tx *gorm.DB) error {
 	if gr.ID == "" {
-		gr.ID = cuid.New()
+		gr.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -82,10 +84,10 @@ func (GoodsReceiptItem) TableName() string {
 	return "goods_receipt_items"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (gri *GoodsReceiptItem) BeforeCreate(tx *gorm.DB) error {
 	if gri.ID == "" {
-		gri.ID = cuid.New()
+		gri.ID = uuid.New().String()
 	}
 	return nil
 }

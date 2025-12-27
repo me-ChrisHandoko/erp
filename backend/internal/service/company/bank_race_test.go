@@ -21,17 +21,23 @@ func setupRaceTestDB(t *testing.T) (*gorm.DB, *models.Tenant, *models.Company) {
 	err = db.AutoMigrate(&models.Company{}, &models.CompanyBank{}, &models.Tenant{})
 	require.NoError(t, err)
 
-	// Create company first
+	// Create tenant first
+	tenant := &models.Tenant{
+		ID:        "tenant-1",
+		Name:      "Test Tenant",
+		Subdomain: "test-tenant",
+		Status:    models.TenantStatusTrial,
+	}
+	db.Create(tenant)
+
+	// Create company and link to tenant
 	company := &models.Company{
 		ID:       "company-1",
+		TenantID: tenant.ID,
 		Name:     "Test Company",
 		IsActive: true,
 	}
 	db.Create(company)
-
-	// Create tenant and link to company
-	tenant := &models.Tenant{ID: "tenant-1", Status: models.TenantStatusTrial, CompanyID: company.ID}
-	db.Create(tenant)
 
 	return db, tenant, company
 }

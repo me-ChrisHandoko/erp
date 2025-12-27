@@ -115,7 +115,7 @@ func TestGenerateAccessToken_HS256(t *testing.T) {
 	tenantID := "tenant-456"
 	role := "ADMIN"
 
-	token, err := service.GenerateAccessToken(userID, email, tenantID, role)
+	token, err := service.GenerateAccessToken(userID, email, tenantID, role, "", nil)
 	require.NoError(t, err, "Should generate access token")
 	assert.NotEmpty(t, token, "Token should not be empty")
 
@@ -141,7 +141,7 @@ func TestValidateAccessToken_ValidToken(t *testing.T) {
 	tenantID := "tenant-456"
 	role := "ADMIN"
 
-	token, err := service.GenerateAccessToken(userID, email, tenantID, role)
+	token, err := service.GenerateAccessToken(userID, email, tenantID, role, "", nil)
 	require.NoError(t, err)
 
 	// Validate and extract claims
@@ -168,7 +168,7 @@ func TestValidateAccessToken_ExpiredToken(t *testing.T) {
 	require.NoError(t, err)
 
 	// Generate token
-	token, err := service.GenerateAccessToken("user-123", "test@example.com", "tenant-456", "ADMIN")
+	token, err := service.GenerateAccessToken("user-123", "test@example.com", "tenant-456", "ADMIN", "", nil)
 	require.NoError(t, err)
 
 	// Wait for token to expire
@@ -194,7 +194,7 @@ func TestValidateAccessToken_InvalidSignature(t *testing.T) {
 	require.NoError(t, err)
 
 	// Generate valid token
-	token, err := service.GenerateAccessToken("user-123", "test@example.com", "tenant-456", "ADMIN")
+	token, err := service.GenerateAccessToken("user-123", "test@example.com", "tenant-456", "ADMIN", "", nil)
 	require.NoError(t, err)
 
 	// Tamper with token signature
@@ -219,7 +219,7 @@ func TestValidateAccessToken_WrongSecret(t *testing.T) {
 	require.NoError(t, err)
 
 	// Generate token
-	token, err := service.GenerateAccessToken("user-123", "test@example.com", "tenant-456", "ADMIN")
+	token, err := service.GenerateAccessToken("user-123", "test@example.com", "tenant-456", "ADMIN", "", nil)
 	require.NoError(t, err)
 
 	// Create service with different secret
@@ -420,7 +420,7 @@ func TestRS256_FullWorkflow(t *testing.T) {
 	tenantID := "tenant-456"
 	role := "ADMIN"
 
-	token, err := service.GenerateAccessToken(userID, email, tenantID, role)
+	token, err := service.GenerateAccessToken(userID, email, tenantID, role, "", nil)
 	require.NoError(t, err, "Should generate RS256 access token")
 	assert.NotEmpty(t, token)
 
@@ -488,7 +488,7 @@ func TestRS256_InvalidPublicKey(t *testing.T) {
 	require.NoError(t, err)
 
 	// Generate token (signed with privateKey1)
-	token, err := service.GenerateAccessToken("user-123", "test@example.com", "tenant-456", "ADMIN")
+	token, err := service.GenerateAccessToken("user-123", "test@example.com", "tenant-456", "ADMIN", "", nil)
 	require.NoError(t, err)
 
 	// Validate with publicKey2 - should fail
@@ -510,7 +510,7 @@ func TestTokenExpiry_TimingPrecision(t *testing.T) {
 	require.NoError(t, err)
 
 	// Generate token
-	token, err := service.GenerateAccessToken("user-123", "test@example.com", "tenant-456", "ADMIN")
+	token, err := service.GenerateAccessToken("user-123", "test@example.com", "tenant-456", "ADMIN", "", nil)
 	require.NoError(t, err)
 
 	// Validate immediately - should pass
@@ -549,7 +549,7 @@ func TestClaims_AllFieldsExtraction(t *testing.T) {
 	tenantID := "tenant-67890"
 	role := "FINANCE"
 
-	token, err := service.GenerateAccessToken(userID, email, tenantID, role)
+	token, err := service.GenerateAccessToken(userID, email, tenantID, role, "", nil)
 	require.NoError(t, err)
 
 	// Validate and extract all claims
@@ -586,7 +586,7 @@ func TestGenerateToken_EmptyClaims(t *testing.T) {
 	require.NoError(t, err)
 
 	// Generate token with empty claims
-	token, err := service.GenerateAccessToken("", "", "", "")
+	token, err := service.GenerateAccessToken("", "", "", "", "", nil)
 	require.NoError(t, err, "Should allow empty claims")
 
 	// Validate and verify empty claims are preserved

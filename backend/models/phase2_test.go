@@ -75,11 +75,18 @@ func createTestTenant(t *testing.T, database *gorm.DB) *Tenant {
 	}
 
 	tenant := &Tenant{
-		CompanyID: company.ID,
+		Name:      "Test Tenant",
+		Subdomain: "test-tenant",
 		Status:    TenantStatusActive,
 	}
 	if err := database.Create(tenant).Error; err != nil {
 		t.Fatalf("Failed to create test tenant: %v", err)
+	}
+
+	// Link company to tenant
+	company.TenantID = tenant.ID
+	if err := database.Save(company).Error; err != nil {
+		t.Fatalf("Failed to link company to tenant: %v", err)
 	}
 
 	return tenant

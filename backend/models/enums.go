@@ -2,17 +2,48 @@
 // All enum values ensure database compatibility and type safety
 package models
 
-// UserRole - User roles with per-tenant assignment
+// UserRole - Dual-tier permission system for multi-company support
+// Tier 1 (tenant_users): OWNER, TENANT_ADMIN - Superuser access to all companies within tenant
+// Tier 2 (user_company_roles): ADMIN, FINANCE, SALES, WAREHOUSE, STAFF - Per-company granular access
 type UserRole string
 
 const (
-	UserRoleOwner     UserRole = "OWNER"
-	UserRoleAdmin     UserRole = "ADMIN"
-	UserRoleFinance   UserRole = "FINANCE"
-	UserRoleSales     UserRole = "SALES"
-	UserRoleWarehouse UserRole = "WAREHOUSE"
-	UserRoleStaff     UserRole = "STAFF"
+	// Tier 1: Tenant-level roles (superuser - full access to all companies in tenant)
+	UserRoleOwner       UserRole = "OWNER"        // Full control: tenant, all companies, billing, subscription
+	UserRoleTenantAdmin UserRole = "TENANT_ADMIN" // Tenant admin: full operational control across all companies
+
+	// Tier 2: Company-level roles (per-company granular access)
+	UserRoleAdmin     UserRole = "ADMIN"     // Company admin: full operational control within specific company
+	UserRoleFinance   UserRole = "FINANCE"   // Finance-focused access within specific company
+	UserRoleSales     UserRole = "SALES"     // Sales-focused access within specific company
+	UserRoleWarehouse UserRole = "WAREHOUSE" // Inventory/warehouse-focused access within specific company
+	UserRoleStaff     UserRole = "STAFF"     // General operational access within specific company
 )
+
+// IsTenantLevel returns true if the role is a tenant-level superuser role (Tier 1)
+func (r UserRole) IsTenantLevel() bool {
+	return r == UserRoleOwner || r == UserRoleTenantAdmin
+}
+
+// IsCompanyLevel returns true if the role is a company-level role (Tier 2)
+func (r UserRole) IsCompanyLevel() bool {
+	switch r {
+	case UserRoleAdmin, UserRoleFinance, UserRoleSales, UserRoleWarehouse, UserRoleStaff:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsValid checks if the role is a valid UserRole
+func (r UserRole) IsValid() bool {
+	return r.IsTenantLevel() || r.IsCompanyLevel()
+}
+
+// String returns the string representation of UserRole
+func (r UserRole) String() string {
+	return string(r)
+}
 
 // TenantStatus - Subscription lifecycle states
 type TenantStatus string

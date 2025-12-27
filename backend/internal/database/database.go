@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	dbmigration "backend/db"
 	"backend/internal/config"
 )
 
@@ -46,6 +47,14 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	// Test connection
 	if err := sqlDB.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	// Run auto-migration for all models
+	// This will create tables if they don't exist
+	if err := dbmigration.AutoMigrate(db); err != nil {
+		log.Printf("Warning: Auto-migration failed: %v", err)
+	} else {
+		log.Println("Auto-migration completed successfully")
 	}
 
 	// Register tenant isolation callbacks with configuration

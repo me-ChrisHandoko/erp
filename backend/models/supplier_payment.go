@@ -4,7 +4,7 @@ package models
 import (
 	"time"
 
-	"github.com/lucsky/cuid"
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
@@ -13,7 +13,8 @@ import (
 type SupplierPayment struct {
 	ID              string          `gorm:"type:varchar(255);primaryKey"`
 	TenantID        string          `gorm:"type:varchar(255);not null;index"`
-	PaymentNumber   string          `gorm:"type:varchar(100);not null;uniqueIndex"`
+	CompanyID       string          `gorm:"type:varchar(255);not null;index:idx_company_supplier_payment;uniqueIndex:idx_company_payment_number"`
+	PaymentNumber   string          `gorm:"type:varchar(100);not null;uniqueIndex:idx_company_payment_number"`
 	PaymentDate     time.Time       `gorm:"type:timestamp;not null;index"`
 	SupplierID      string          `gorm:"type:varchar(255);not null;index"`
 	PurchaseOrderID *string         `gorm:"type:varchar(255);index"` // Optional PO reference
@@ -29,6 +30,7 @@ type SupplierPayment struct {
 
 	// Relations
 	Tenant        Tenant        `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE"`
+	Company       Company       `gorm:"foreignKey:CompanyID;constraint:OnDelete:CASCADE"`
 	Supplier      Supplier      `gorm:"foreignKey:SupplierID;constraint:OnDelete:RESTRICT"`
 	PurchaseOrder *PurchaseOrder `gorm:"foreignKey:PurchaseOrderID"`
 	BankAccount   *CompanyBank  `gorm:"foreignKey:BankAccountID"`
@@ -39,10 +41,10 @@ func (SupplierPayment) TableName() string {
 	return "supplier_payments"
 }
 
-// BeforeCreate hook to generate CUID for ID field
+// BeforeCreate hook to generate UUID for ID field
 func (sp *SupplierPayment) BeforeCreate(tx *gorm.DB) error {
 	if sp.ID == "" {
-		sp.ID = cuid.New()
+		sp.ID = uuid.New().String()
 	}
 	return nil
 }

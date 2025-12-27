@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { useUpdateUserRoleMutation } from "@/store/services/tenantApi";
+import { useUpdateCompanyUserRoleMutation } from "@/store/services/companyUserApi";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import type { TenantUser } from "@/types/tenant.types";
 import { ShieldCheck } from "lucide-react";
@@ -42,7 +42,7 @@ interface EditRoleFormProps {
 }
 
 export function EditRoleForm({ user, onSuccess, onCancel }: EditRoleFormProps) {
-  const [updateUserRole, { isLoading }] = useUpdateUserRoleMutation();
+  const [updateUserRole, { isLoading }] = useUpdateCompanyUserRoleMutation();
 
   const {
     handleSubmit,
