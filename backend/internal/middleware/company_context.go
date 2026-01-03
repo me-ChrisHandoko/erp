@@ -71,6 +71,7 @@ func CompanyContextMiddleware(db *gorm.DB) gin.HandlerFunc {
 		// Verify user has access to this company
 		accessInfo, err := companyService.CheckUserCompanyAccess(c.Request.Context(), userIDStr, companyID)
 		if err != nil {
+			fmt.Printf("❌ ERROR [CompanyContextMiddleware]: %v\n", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
 				"error":   err,
@@ -79,8 +80,12 @@ func CompanyContextMiddleware(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		fmt.Printf("✅ DEBUG [CompanyContextMiddleware]: CheckUserCompanyAccess succeeded - HasAccess: %v, Role: %v, Tier: %d\n",
+			accessInfo.HasAccess, accessInfo.Role, accessInfo.AccessTier)
+
 		// Check if user has access
 		if !accessInfo.HasAccess {
+			fmt.Printf("❌ ERROR [CompanyContextMiddleware]: Access denied - HasAccess is false\n")
 			c.JSON(http.StatusForbidden, gin.H{
 				"success": false,
 				"error":   errors.NewAuthorizationError("Access denied: user does not have access to this company"),
@@ -89,15 +94,31 @@ func CompanyContextMiddleware(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		fmt.Printf("🔧 DEBUG [CompanyContextMiddleware]: Setting company context...\n")
+
 		// Set company context
 		companyCtx.SetCompanyID(c, companyID)
+		fmt.Printf("  ✅ SetCompanyID done\n")
+
 		companyCtx.SetTenantID(c, accessInfo.TenantID)
+		fmt.Printf("  ✅ SetTenantID done\n")
+
 		companyCtx.SetUserID(c, userIDStr)
-		companyCtx.SetUserRole(c, string(accessInfo.Role))
+		fmt.Printf("  ✅ SetUserID done\n")
+
+		fmt.Printf("  🔍 About to convert Role: %v (type: %T)\n", accessInfo.Role, accessInfo.Role)
+		roleStr := string(accessInfo.Role)
+		fmt.Printf("  ✅ Role converted to string: %s\n", roleStr)
+
+		companyCtx.SetUserRole(c, roleStr)
+		fmt.Printf("  ✅ SetUserRole done\n")
+
 		companyCtx.SetCompanyAccess(c, accessInfo)
+		fmt.Printf("  ✅ SetCompanyAccess done\n")
 
 		// Store access info for downstream use
 		c.Set("access_tier", accessInfo.AccessTier)
+		fmt.Printf("✅ DEBUG [CompanyContextMiddleware]: All context set successfully, calling c.Next()\n")
 
 		c.Next()
 	}

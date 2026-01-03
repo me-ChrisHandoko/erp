@@ -7,6 +7,7 @@ import type { FetchBaseQueryError } from '@reduxjs/toolkit/query';
 import { setAccessToken } from '../slices/authSlice';
 import { setActiveCompany, setAvailableCompanies, setLoading } from '../slices/companySlice';
 import type { RootState } from '../index';
+import { productApi } from './productApi';
 import type {
   ApiSuccessResponse,
 } from '@/types/api';
@@ -217,8 +218,9 @@ export const multiCompanyApi = createApi({
           // Invalidate company-related caches to force refetch with new company context
           dispatch(companyApi.util.invalidateTags(['Company', 'Banks']));
           dispatch(companyUserApi.util.invalidateTags(['CompanyUsers']));
+          dispatch(productApi.util.invalidateTags(['Product', 'ProductList']));
 
-          console.log('✅ Company switched, invalidated Company, Banks, and CompanyUsers cache');
+          console.log('✅ Company switched, invalidated Company, Banks, CompanyUsers, and Products cache');
         } catch (error) {
           dispatch(setLoading(false));
           console.error('Failed to switch company:', error);

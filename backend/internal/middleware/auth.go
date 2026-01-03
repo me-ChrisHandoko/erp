@@ -57,6 +57,13 @@ func JWTAuthMiddleware(tokenService *jwt.TokenService) gin.HandlerFunc {
 		c.Set("tenant_id", claims.TenantID)
 		c.Set("role", claims.Role)
 
+		// 🔐 REVERTED FIX #2 Option B - Caused 403 cascade failures
+		// Problem: Regenerating CSRF on every request breaks subsequent requests
+		// because frontend still sends old token. Only FIX #1 (regen on refresh) is kept.
+		// if err := RegenerateCSRFToken(c); err != nil {
+		// 	c.Error(err)
+		// }
+
 		c.Next()
 	}
 }

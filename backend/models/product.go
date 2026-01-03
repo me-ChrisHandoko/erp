@@ -174,8 +174,8 @@ type ProductSupplier struct {
 	UpdatedAt     time.Time       `gorm:"autoUpdateTime"`
 
 	// Relations
-	Product Product `gorm:"foreignKey:ProductID;constraint:OnDelete:CASCADE"`
-	// Note: Supplier relation will be added in master.go
+	Product  Product  `gorm:"foreignKey:ProductID;constraint:OnDelete:CASCADE"`
+	Supplier Supplier `gorm:"foreignKey:SupplierID;constraint:OnDelete:CASCADE"`
 }
 
 // TableName specifies the table name for ProductSupplier model

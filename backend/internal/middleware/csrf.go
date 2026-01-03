@@ -110,6 +110,27 @@ func ClearCSRFCookie(c *gin.Context, secure bool) {
 	)
 }
 
+// RegenerateCSRFToken generates and sets a new CSRF token
+// 🔐 FIX #2 Option B: Called on every authenticated request to prevent
+// 403 errors after long sleep when CSRF expires but refresh token is still valid
+// Reference: Analysis showing CSRF (24h) vs Refresh token (7d) lifetime mismatch
+func RegenerateCSRFToken(c *gin.Context) error {
+	// Generate new CSRF token
+	token, err := GenerateCSRFToken()
+	if err != nil {
+		return err
+	}
+
+	// Determine if we should use secure flag
+	// Use HTTPS in production, allow HTTP in development
+	secure := c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https"
+
+	// Set new CSRF cookie
+	SetCSRFCookie(c, token, secure)
+
+	return nil
+}
+
 // secureCompare performs constant-time comparison of two strings
 // This prevents timing attacks where an attacker could measure
 // how long the comparison takes to guess the token character by character

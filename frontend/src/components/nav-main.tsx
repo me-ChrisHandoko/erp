@@ -42,8 +42,12 @@ export function NavMain({
       <SidebarMenu>
         {items.map((item) => {
           // Check if current path matches this item or any of its sub-items
+          // Support nested routes by checking if pathname starts with the URL
           const isItemActive = pathname === item.url ||
-            item.items?.some(subItem => pathname === subItem.url)
+            pathname.startsWith(item.url + '/') ||
+            item.items?.some(subItem =>
+              pathname === subItem.url || pathname.startsWith(subItem.url + '/')
+            )
 
           // If item has no sub-items, render as a simple link
           if (!item.items || item.items.length === 0) {
@@ -52,7 +56,7 @@ export function NavMain({
                 <SidebarMenuButton
                   asChild
                   tooltip={item.title}
-                  isActive={pathname === item.url}
+                  isActive={pathname === item.url || pathname.startsWith(item.url + '/')}
                 >
                   <Link href={item.url}>
                     {item.icon && <item.icon />}
@@ -75,7 +79,7 @@ export function NavMain({
                 <CollapsibleTrigger asChild>
                   <SidebarMenuButton
                     tooltip={item.title}
-                    isActive={pathname === item.url}
+                    isActive={pathname === item.url || pathname.startsWith(item.url + '/')}
                   >
                     {item.icon && <item.icon />}
                     <span>{item.title}</span>
@@ -88,7 +92,7 @@ export function NavMain({
                       <SidebarMenuSubItem key={subItem.title}>
                         <SidebarMenuSubButton
                           asChild
-                          isActive={pathname === subItem.url}
+                          isActive={pathname === subItem.url || pathname.startsWith(subItem.url + '/')}
                         >
                           <Link href={subItem.url}>
                             <span>{subItem.title}</span>

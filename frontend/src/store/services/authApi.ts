@@ -164,16 +164,122 @@ const baseQueryWithReauth: BaseQueryFn<
 
           console.log('[Auth] Redux state updated with user data after refresh');
         } else {
+          // 🔐 FIX #3 Option A: /auth/me returned no data
           console.warn('[Auth] User data fetch returned no data');
+          console.log('[Auth] Attempting fallback to existing user data...');
+
+          const currentState = api.getState() as any;
+          if (currentState.auth.user) {
+            console.log('[Auth] Using existing user data from state');
+            api.dispatch(setCredentials({
+              user: currentState.auth.user,
+              accessToken: newAccessToken,
+              activeTenant: currentState.auth.activeTenant,
+              availableTenants: currentState.auth.availableTenants,
+            }));
+          } else {
+            console.error('[Auth] No existing user data available, forcing logout');
+            api.dispatch(logout());
+          }
         }
       } catch (err) {
         console.error('[Auth] Failed to fetch user data after refresh:', err);
-        // Continue anyway - token refresh was successful
+
+        // 🔐 FIX #3 Option A: Fallback to existing user data
+        // Token refresh was successful, so user IS authenticated
+        // Use existing user data to maintain session continuity
+        console.log('[Auth] Attempting fallback to existing user data...');
+        const currentState = api.getState() as any;
+        if (currentState.auth.user) {
+          console.log('[Auth] Using existing user data from state');
+          api.dispatch(setCredentials({
+            user: currentState.auth.user,
+            accessToken: newAccessToken,
+            activeTenant: currentState.auth.activeTenant,
+            availableTenants: currentState.auth.availableTenants,
+          }));
+        } else {
+          console.error('[Auth] No existing user data available, forcing logout');
+          api.dispatch(logout());
+        }
       }
 
-      // Retry the original request with new token
-      console.log('[Auth] Retrying original request with new token');
-      result = await baseQuery(args, api, extraOptions);
+      // 🔐 FIX #4 Option B: Smart retry with company context check
+      // Check if company context is available before retrying
+      console.log('[Auth] Preparing to retry original request with new token');
+
+      const currentState = api.getState() as any;
+      let activeCompanyId = currentState.company?.activeCompany?.id;
+
+      // If no company in state, try localStorage fallback (for returning users)
+      if (!activeCompanyId && typeof window !== 'undefined') {
+        try {
+          const storedCompanyId = localStorage.getItem('activeCompanyId');
+
+          // Validate company ID format (alphanumeric, hyphens, underscores only)
+          if (storedCompanyId && /^[a-zA-Z0-9-_]+$/.test(storedCompanyId)) {
+            activeCompanyId = storedCompanyId;
+            console.log('[Auth] Using validated company ID from localStorage for retry');
+          } else if (storedCompanyId) {
+            // Invalid format - clear corrupted data (self-healing)
+            console.warn('[Auth] Invalid company ID format in localStorage, clearing:', storedCompanyId);
+            localStorage.removeItem('activeCompanyId');
+          }
+        } catch (error) {
+          // localStorage access failed (disabled, full, or other error)
+          console.warn('[Auth] localStorage access failed:', error);
+        }
+      }
+
+      // Decide whether to retry based on company context availability
+      if (!activeCompanyId) {
+        // No company context available - skip retry
+        // CompanyInitializer will run and user can navigate again after company selection
+        console.warn('[Auth] No company context available, skipping automatic retry');
+        console.log('[Auth] User should navigate again after company initialization completes');
+
+        // Return a special error that frontend can handle gracefully
+        // This is NOT a failure - it's expected for new users or first login
+        result = {
+          error: {
+            status: 'COMPANY_CONTEXT_PENDING',
+            data: {
+              success: false,
+              message: 'Company context is being initialized. Please retry your request after selecting a company.',
+              code: 'COMPANY_CONTEXT_PENDING',
+              shouldRetryAfterInit: true,
+            },
+          },
+        } as any;
+      } else {
+        // Company context available - safe to retry
+        console.log('[Auth] Company context available, retrying request with company ID:', activeCompanyId);
+
+        // Check if we need to manually inject X-Company-ID header
+        // (prepareHeaders will add it if company is in state, but might not be set yet)
+        const needsManualHeader = !currentState.company?.activeCompany?.id && activeCompanyId;
+
+        if (needsManualHeader) {
+          // Manually inject X-Company-ID header for this retry
+          // This handles the case where localStorage has company but Redux state doesn't yet
+          console.log('[Auth] Manually injecting X-Company-ID header for retry');
+
+          const argsWithCompanyHeader = typeof args === 'string'
+            ? { url: args, headers: { 'X-Company-ID': activeCompanyId } }
+            : {
+                ...args,
+                headers: {
+                  ...(args.headers || {}),
+                  'X-Company-ID': activeCompanyId,
+                },
+              };
+
+          result = await baseQuery(argsWithCompanyHeader, api, extraOptions);
+        } else {
+          // Company is in state, prepareHeaders will handle it
+          result = await baseQuery(args, api, extraOptions);
+        }
+      }
     } else {
       console.log('[Auth] Token refresh failed, logging out');
 

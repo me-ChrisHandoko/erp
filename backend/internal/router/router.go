@@ -11,8 +11,12 @@ import (
 	"backend/internal/middleware"
 	"backend/internal/service/auth"
 	"backend/internal/service/company"
+	"backend/internal/service/customer"
 	"backend/internal/service/permission"
+	"backend/internal/service/product"
+	"backend/internal/service/supplier"
 	"backend/internal/service/tenant"
+	"backend/internal/service/warehouse"
 	"backend/pkg/email"
 	"backend/pkg/jwt"
 	"backend/pkg/security"
@@ -276,6 +280,107 @@ func setupProtectedRoutes(
 				middleware.RequireTier1Access(),
 				multiCompanyHandler.DeactivateCompany,
 			)
+		}
+
+		// ============================================================================
+		// PRODUCT MANAGEMENT ROUTES (PHASE 2 - Master Data Management)
+		// Reference: 02-MASTER-DATA-MANAGEMENT.md Module 1: Product Management
+		// ============================================================================
+		productService := product.NewProductService(db)
+		productHandler := handler.NewProductHandler(productService)
+
+		productGroup := businessProtected.Group("/products")
+		productGroup.Use(middleware.CompanyContextMiddleware(db))
+		{
+			// GET endpoints - all authenticated users can view
+			productGroup.GET("", productHandler.ListProducts)
+			productGroup.GET("/:id", productHandler.GetProduct)
+
+			// POST/PUT/DELETE endpoints - OWNER/ADMIN only
+			productGroup.POST("", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), productHandler.CreateProduct)
+			productGroup.PUT("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), productHandler.UpdateProduct)
+			productGroup.DELETE("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), productHandler.DeleteProduct)
+
+			// Product units management - OWNER/ADMIN only
+			productGroup.POST("/:id/units", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), productHandler.AddProductUnit)
+			productGroup.PUT("/:id/units/:unitId", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), productHandler.UpdateProductUnit)
+			productGroup.DELETE("/:id/units/:unitId", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), productHandler.DeleteProductUnit)
+
+			// Product supplier management - OWNER/ADMIN only
+			productGroup.POST("/:id/suppliers", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), productHandler.AddProductSupplier)
+			productGroup.PUT("/:id/suppliers/:supplierId", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), productHandler.UpdateProductSupplier)
+			productGroup.DELETE("/:id/suppliers/:supplierId", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), productHandler.DeleteProductSupplier)
+		}
+
+		// ============================================================================
+		// CUSTOMER MANAGEMENT ROUTES (PHASE 2 - Master Data Management)
+		// Reference: 02-MASTER-DATA-MANAGEMENT.md Module 2: Customer Management
+		// ============================================================================
+		customerService := customer.NewCustomerService(db)
+		customerHandler := handler.NewCustomerHandler(customerService)
+
+		customerGroup := businessProtected.Group("/customers")
+		customerGroup.Use(middleware.CompanyContextMiddleware(db))
+		{
+			// GET endpoints - all authenticated users can view
+			customerGroup.GET("", customerHandler.ListCustomers)
+			customerGroup.GET("/:id", customerHandler.GetCustomer)
+
+			// POST/PUT/DELETE endpoints - OWNER/ADMIN only
+			customerGroup.POST("", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), customerHandler.CreateCustomer)
+			customerGroup.PUT("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), customerHandler.UpdateCustomer)
+			customerGroup.DELETE("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), customerHandler.DeleteCustomer)
+		}
+
+		// ============================================================================
+		// SUPPLIER MANAGEMENT ROUTES (PHASE 2 - Master Data Management)
+		// Reference: 02-MASTER-DATA-MANAGEMENT.md Module 3: Supplier Management
+		// ============================================================================
+		supplierService := supplier.NewSupplierService(db)
+		supplierHandler := handler.NewSupplierHandler(supplierService)
+
+		supplierGroup := businessProtected.Group("/suppliers")
+		supplierGroup.Use(middleware.CompanyContextMiddleware(db))
+		{
+			// GET endpoints - all authenticated users can view
+			supplierGroup.GET("", supplierHandler.ListSuppliers)
+			supplierGroup.GET("/:id", supplierHandler.GetSupplier)
+
+			// POST/PUT/DELETE endpoints - OWNER/ADMIN only
+			supplierGroup.POST("", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), supplierHandler.CreateSupplier)
+			supplierGroup.PUT("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), supplierHandler.UpdateSupplier)
+			supplierGroup.DELETE("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), supplierHandler.DeleteSupplier)
+		}
+
+		// ============================================================================
+		// WAREHOUSE MANAGEMENT ROUTES (PHASE 2 - Master Data Management)
+		// Reference: 02-MASTER-DATA-MANAGEMENT.md Module 4: Warehouse Management
+		// ============================================================================
+		warehouseService := warehouse.NewWarehouseService(db)
+		warehouseHandler := handler.NewWarehouseHandler(warehouseService)
+
+		warehouseGroup := businessProtected.Group("/warehouses")
+		warehouseGroup.Use(middleware.CompanyContextMiddleware(db))
+		{
+			// GET endpoints - all authenticated users can view
+			warehouseGroup.GET("", warehouseHandler.ListWarehouses)
+			warehouseGroup.GET("/:id", warehouseHandler.GetWarehouse)
+
+			// POST/PUT/DELETE endpoints - OWNER/ADMIN only
+			warehouseGroup.POST("", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), warehouseHandler.CreateWarehouse)
+			warehouseGroup.PUT("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), warehouseHandler.UpdateWarehouse)
+			warehouseGroup.DELETE("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), warehouseHandler.DeleteWarehouse)
+		}
+
+		// Warehouse Stock routes
+		warehouseStockGroup := businessProtected.Group("/warehouse-stocks")
+		warehouseStockGroup.Use(middleware.CompanyContextMiddleware(db))
+		{
+			// GET endpoints - all authenticated users can view
+			warehouseStockGroup.GET("", warehouseHandler.ListWarehouseStocks)
+
+			// PUT endpoint - OWNER/ADMIN only (update stock settings, not quantity)
+			warehouseStockGroup.PUT("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), warehouseHandler.UpdateWarehouseStock)
 		}
 
 		// Example of role-based routes

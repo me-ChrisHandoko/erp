@@ -118,6 +118,13 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	// Set new refresh token as httpOnly cookie
 	h.setRefreshTokenCookie(c, response.RefreshToken)
 
+	// 🔐 FIX #1: Regenerate CSRF token for renewed session security
+	// This prevents 403 errors after long sleep (>24h) when CSRF cookie expires
+	// but refresh token is still valid (7 days)
+	fmt.Println("🔐 DEBUG [RefreshToken]: Regenerating CSRF token...")
+	h.setCSRFToken(c)
+	fmt.Println("✅ DEBUG [RefreshToken]: CSRF token regenerated")
+
 	fmt.Println("✅ DEBUG [RefreshToken]: New cookie set successfully")
 
 	// Don't send refresh token in response body

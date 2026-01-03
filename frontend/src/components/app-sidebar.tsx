@@ -79,7 +79,7 @@ const staticData = {
         },
         {
           title: "Produk",
-          url: "/master/products",
+          url: "/products",
           resource: "products" as Resource,
         },
         {
