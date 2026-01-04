@@ -36,7 +36,7 @@ export default function ProductDetailPage() {
         <PageHeader
           breadcrumbs={[
             { label: "Dashboard", href: "/dashboard" },
-            { label: "Produk", href: "/products" },
+            { label: "Produk", href: "/master/products" },
             { label: "Detail Produk" },
           ]}
         />
@@ -61,7 +61,7 @@ export default function ProductDetailPage() {
         <PageHeader
           breadcrumbs={[
             { label: "Dashboard", href: "/dashboard" },
-            { label: "Produk", href: "/products" },
+            { label: "Produk", href: "/master/products" },
             { label: "Detail Produk" },
           ]}
         />
@@ -84,7 +84,7 @@ export default function ProductDetailPage() {
       <PageHeader
         breadcrumbs={[
           { label: "Dashboard", href: "/dashboard" },
-          { label: "Produk", href: "/products" },
+          { label: "Produk", href: "/master/products" },
           { label: "Detail Produk" },
         ]}
       />
@@ -108,14 +108,14 @@ export default function ProductDetailPage() {
             <Button
               variant="outline"
               className="shrink-0"
-              onClick={() => router.push("/products")}
+              onClick={() => router.push("/master/products")}
             >
               <ArrowLeft className="mr-2 h-4 w-4" />
               Kembali
             </Button>
             <Button
               className="shrink-0"
-              onClick={() => router.push(`/products/edit/${productId}`)}
+              onClick={() => router.push(`/master/products/edit/${productId}`)}
             >
               <Edit className="mr-2 h-4 w-4" />
               Edit Produk

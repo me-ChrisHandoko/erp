@@ -229,7 +229,7 @@ export function ProductsTable({
                         <DropdownMenuSeparator />
                         <DropdownMenuItem asChild>
                           <Link
-                            href={`/products/${product.id}`}
+                            href={`/master/products/${product.id}`}
                             className="cursor-pointer"
                           >
                             <Eye className="mr-2 h-4 w-4" />
