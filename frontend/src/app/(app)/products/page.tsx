@@ -11,6 +11,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSelector } from "react-redux";
+import { useRouter } from "next/navigation";
 import { Plus, Search, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,8 +33,10 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { ProductsTable } from "@/components/products/products-table";
 import { CreateProductDialog } from "@/components/products/create-product-dialog";
 import type { ProductFilters } from "@/types/product.types";
+import type { RootState } from "@/store";
 
 export default function ProductsPage() {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string | undefined>(
@@ -49,8 +53,37 @@ export default function ProductsPage() {
     sortOrder: "asc",
   });
 
-  // Check permissions
-  const { canEdit } = usePermissions();
+  // Get permissions hook
+  const permissions = usePermissions();
+
+  // Compute permission checks ONCE at top level (Option 2 Plus pattern)
+  const canCreateProducts = permissions.canCreate('products');
+  const canEditProducts = permissions.canEdit('products');
+  const canDeleteProducts = permissions.canDelete('products');
+
+  // 🔐 AUTH CHECK: Get authentication state
+  const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
+  const accessToken = useSelector((state: RootState) => state.auth.accessToken);
+
+  // 🔐 FIX #1: Get activeCompany from Redux to prevent race condition
+  // This ensures we only fetch products after company context is initialized
+  const activeCompanyId = useSelector(
+    (state: RootState) => state.company.activeCompany?.id
+  );
+
+  // 🔐 AUTH CHECK: Redirect to login if not authenticated
+  // This prevents infinite loading when accessing protected routes directly
+  useEffect(() => {
+    // Give auth system 2 seconds to restore from localStorage/cookie
+    const authTimeout = setTimeout(() => {
+      if (!isAuthenticated || !accessToken) {
+        console.log('[ProductsPage] Not authenticated, redirecting to login...');
+        router.push('/login');
+      }
+    }, 2000);
+
+    return () => clearTimeout(authTimeout);
+  }, [isAuthenticated, accessToken, router]);
 
   // Debounce search input (wait 500ms after user stops typing)
   useEffect(() => {
@@ -63,6 +96,7 @@ export default function ProductsPage() {
   }, [search]);
 
   // Fetch products with filters
+  // 🔐 FIX #1: Skip query until company context is ready to prevent 400 errors
   const {
     data: productsData,
     isLoading,
@@ -73,6 +107,8 @@ export default function ProductsPage() {
     search: debouncedSearch || undefined,
     category: categoryFilter,
     isActive: statusFilter,
+  }, {
+    skip: !activeCompanyId  // Skip query until company context is available
   });
 
   const handlePageChange = (newPage: number) => {
@@ -107,6 +143,36 @@ export default function ProductsPage() {
     setFilters((prev) => ({ ...prev, page: 1 }));
   };
 
+  // 🔐 FIX #1: Show loading state while company context is being initialized
+  // This prevents the race condition where products are fetched before company is selected
+  if (!activeCompanyId) {
+    return (
+      <ErrorBoundary>
+        <div className="flex flex-col">
+          <PageHeader
+            breadcrumbs={[
+              { label: "Dashboard", href: "/dashboard" },
+              { label: "Produk" },
+            ]}
+          />
+          <div className="flex flex-1 flex-col items-center justify-center min-h-[400px] gap-4 p-4">
+            <LoadingSpinner size="lg" />
+            <div className="text-center space-y-2">
+              <h3 className="text-lg font-semibold">
+                {!isAuthenticated ? "Checking authentication..." : "Initializing Company Context..."}
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                {!isAuthenticated
+                  ? "Verifying your session, you will be redirected to login if needed..."
+                  : "Please wait while we set up your company workspace"}
+              </p>
+            </div>
+          </div>
+        </div>
+      </ErrorBoundary>
+    );
+  }
+
   return (
     <ErrorBoundary>
       <div className="flex flex-col">
@@ -129,7 +195,7 @@ export default function ProductsPage() {
                 Kelola produk, unit, dan harga untuk distribusi
               </p>
             </div>
-            {canEdit && (
+            {canCreateProducts && (
               <Button
                 className="shrink-0"
                 onClick={() => setIsCreateDialogOpen(true)}
@@ -257,7 +323,7 @@ export default function ProductsPage() {
                       <p className="mb-4 text-sm text-muted-foreground">
                         Mulai dengan menambahkan produk pertama Anda
                       </p>
-                      {canEdit && (
+                      {canCreateProducts && (
                         <Button onClick={() => setIsCreateDialogOpen(true)}>
                           <Plus className="mr-2 h-4 w-4" />
                           Tambah Produk
@@ -272,7 +338,7 @@ export default function ProductsPage() {
                         sortBy={filters.sortBy}
                         sortOrder={filters.sortOrder}
                         onSortChange={handleSortChange}
-                        canEdit={canEdit}
+                        canEdit={canEditProducts}
                       />
 
                       {/* Pagination */}

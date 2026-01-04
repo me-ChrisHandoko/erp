@@ -183,7 +183,7 @@ const ROLE_PERMISSIONS: Record<CompanyRole, {
     // WAREHOUSE has full access to inventory modules
     customers: ['view'],
     suppliers: ['view'],
-    products: ['view', 'create', 'edit', 'export'],
+    products: ['view', 'export'], // Only view & export - create/edit restricted to OWNER/ADMIN
     warehouses: ['view'],
     stock: ['view', 'export'],
     'stock-transfers': ['view', 'create', 'edit'],

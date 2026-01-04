@@ -221,9 +221,53 @@ export const multiCompanyApi = createApi({
           dispatch(productApi.util.invalidateTags(['Product', 'ProductList']));
 
           console.log('✅ Company switched, invalidated Company, Banks, CompanyUsers, and Products cache');
-        } catch (error) {
+        } catch (error: any) {
           dispatch(setLoading(false));
-          console.error('Failed to switch company:', error);
+
+          // 🔐 FIX #2: Handle 403 CSRF errors by refreshing token and retrying
+          // This fixes the issue where CSRF token expires (24h) but refresh token is still valid (7d)
+          if (error?.status === 403) {
+            console.log('🔐 [switchCompany] 403 Forbidden - Likely CSRF token expired');
+            console.log('🔐 [switchCompany] Attempting to refresh CSRF token...');
+
+            try {
+              // Call /auth/refresh to get new CSRF token
+              // This will regenerate CSRF cookie on the backend (see auth_handler.go:125)
+              const refreshResponse = await fetch(
+                `${process.env.NEXT_PUBLIC_API_URL}/api/v1/auth/refresh`,
+                {
+                  method: 'POST',
+                  credentials: 'include', // Send refresh_token cookie
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                }
+              );
+
+              if (refreshResponse.ok) {
+                console.log('✅ [switchCompany] CSRF token refreshed successfully');
+                console.log('🔄 [switchCompany] Retrying switch-company request...');
+
+                // Retry switch-company with new CSRF token
+                await dispatch(
+                  multiCompanyApi.endpoints.switchCompany.initiate(companyId)
+                ).unwrap();
+
+                console.log('✅ [switchCompany] Retry successful after CSRF refresh');
+                return; // Success on retry
+              } else {
+                console.error('❌ [switchCompany] CSRF refresh failed:', refreshResponse.status);
+                throw new Error(`CSRF refresh failed with status ${refreshResponse.status}`);
+              }
+            } catch (refreshError) {
+              console.error('❌ [switchCompany] Failed to refresh CSRF token:', refreshError);
+              console.log('💡 [switchCompany] User may need to login again');
+              // Error will be caught by outer catch and logged
+              throw refreshError;
+            }
+          }
+
+          console.error('❌ [switchCompany] Failed to switch company:', error);
         }
       },
       invalidatesTags: ['ActiveCompany'],
