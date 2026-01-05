@@ -17,9 +17,9 @@ import (
 
 // validateCodeUniqueness validates customer code uniqueness per company
 // Reference: ANALYSIS-02-MASTER-DATA-MANAGEMENT.md Section 5.1 (Validation Rules)
-func (s *CustomerService) validateCodeUniqueness(companyID, code, excludeCustomerID string) error {
+func (s *CustomerService) validateCodeUniqueness(tenantID, companyID, code, excludeCustomerID string) error {
 	var existing models.Customer
-	query := s.db.Where("company_id = ? AND code = ?", companyID, code)
+	query := s.db.Set("tenant_id", tenantID).Where("company_id = ? AND code = ?", companyID, code)
 
 	if excludeCustomerID != "" {
 		query = query.Where("id != ?", excludeCustomerID)

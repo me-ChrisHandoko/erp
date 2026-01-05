@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -19,10 +20,19 @@ func NewAuditService(db *gorm.DB) *AuditService {
 	return &AuditService{db: db}
 }
 
+// Status constants for audit logging (MVP Phase 1)
+const (
+	StatusSuccess = "SUCCESS"
+	StatusFailed  = "FAILED"
+	StatusPartial = "PARTIAL"
+)
+
 // AuditContext contains contextual information for audit logging
 type AuditContext struct {
 	TenantID  *string
+	CompanyID *string // MVP Phase 1: Multi-company filtering
 	UserID    *string
+	RequestID *string // MVP Phase 1: Transaction grouping
 	IPAddress *string
 	UserAgent *string
 }
@@ -303,4 +313,355 @@ func (s *AuditService) GetAuditLogs(ctx context.Context, tenantID string, filter
 	}
 
 	return logs, total, nil
+}
+
+// ========================================
+// PRODUCT AUDIT METHODS (MVP Phase 1)
+// ========================================
+
+// LogProductCreated logs when a product is created
+func (s *AuditService) LogProductCreated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	productID string,
+	productData map[string]interface{},
+) error {
+	newValuesJSON, _ := json.Marshal(productData)
+	newValuesStr := string(newValuesJSON)
+	entityType := "PRODUCT"
+
+	// Create human-readable notes with created fields
+	// Filter out empty/default values to show only inputted fields
+	createdFields := []string{}
+	for key, value := range productData {
+		// Skip empty values and defaults
+		switch v := value.(type) {
+		case string:
+			if v != "" && v != "0" && v != "0.00" {
+				createdFields = append(createdFields, key)
+			}
+		case bool:
+			// Only include boolean fields if they are true (explicitly set by user)
+			// false is the default value and might not be intentional input
+			if v {
+				createdFields = append(createdFields, key)
+			}
+		default:
+			// Include other types (numbers, etc.)
+			createdFields = append(createdFields, key)
+		}
+	}
+
+	notes := ""
+	if len(createdFields) > 0 {
+		notes = fmt.Sprintf("Created fields: [%s]", strings.Join(createdFields, ", "))
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID, // MVP
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID, // MVP
+		Action:     "PRODUCT_CREATED",
+		EntityType: &entityType,
+		EntityID:   &productID,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess, // MVP
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	// Set tenant context for GORM tenant isolation
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogProductUpdated logs when a product is updated
+func (s *AuditService) LogProductUpdated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	productID string,
+	oldValues, newValues map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "PRODUCT"
+
+	// Create human-readable notes with changed fields
+	// Auto-detect all changed fields by comparing old and new values
+	changedFields := []string{}
+	for key, newValue := range newValues {
+		oldValue, exists := oldValues[key]
+		if !exists || oldValue != newValue {
+			changedFields = append(changedFields, key)
+		}
+	}
+
+	notes := ""
+	if len(changedFields) > 0 {
+		notes = fmt.Sprintf("Changed fields: [%s]", strings.Join(changedFields, ", "))
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID, // MVP
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID, // MVP
+		Action:     "PRODUCT_UPDATED",
+		EntityType: &entityType,
+		EntityID:   &productID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess, // MVP
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	// Set tenant context for GORM tenant isolation
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogProductDeleted logs when a product is deleted (soft delete)
+func (s *AuditService) LogProductDeleted(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	productID string,
+	productData map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(productData)
+	oldValuesStr := string(oldValuesJSON)
+	entityType := "PRODUCT"
+
+	// Create human-readable notes
+	notes := fmt.Sprintf("Product '%s' (code: %s) deactivated",
+		productData["name"],
+		productData["code"])
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID, // MVP
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID, // MVP
+		Action:     "PRODUCT_DELETED",
+		EntityType: &entityType,
+		EntityID:   &productID,
+		OldValues:  &oldValuesStr,
+		Status:     StatusSuccess, // MVP
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	// Set tenant context for GORM tenant isolation
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// ============================================================================
+// CUSTOMER AUDIT LOGS
+// ============================================================================
+
+// LogCustomerCreated logs when a customer is created
+func (s *AuditService) LogCustomerCreated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	customerID string,
+	customerData map[string]interface{},
+) error {
+	newValuesJSON, _ := json.Marshal(customerData)
+	newValuesStr := string(newValuesJSON)
+	entityType := "CUSTOMER"
+
+	// Create human-readable notes with created fields
+	// Filter out empty/default values to show only inputted fields
+	createdFields := []string{}
+	for key, value := range customerData {
+		// Skip empty values and defaults
+		switch v := value.(type) {
+		case string:
+			if v != "" && v != "0" && v != "0.00" {
+				createdFields = append(createdFields, key)
+			}
+		case bool:
+			// Only include boolean fields if they are true (explicitly set by user)
+			if v {
+				createdFields = append(createdFields, key)
+			}
+		case int:
+			// Only include integer fields if they are not zero (default value)
+			if v != 0 {
+				createdFields = append(createdFields, key)
+			}
+		default:
+			// Include other types (decimal, etc.)
+			createdFields = append(createdFields, key)
+		}
+	}
+
+	notes := ""
+	if len(createdFields) > 0 {
+		notes = fmt.Sprintf("Created fields: [%s]", strings.Join(createdFields, ", "))
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "CUSTOMER_CREATED",
+		EntityType: &entityType,
+		EntityID:   &customerID,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	// Set tenant context for GORM tenant isolation
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogCustomerUpdated logs when a customer is updated
+func (s *AuditService) LogCustomerUpdated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	customerID string,
+	oldValues, newValues map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "CUSTOMER"
+
+	// Create human-readable notes with changed fields
+	// Auto-detect all changed fields by comparing old and new values
+	changedFields := []string{}
+	for key, newValue := range newValues {
+		oldValue, exists := oldValues[key]
+		if !exists || oldValue != newValue {
+			changedFields = append(changedFields, key)
+		}
+	}
+
+	notes := ""
+	if len(changedFields) > 0 {
+		notes = fmt.Sprintf("Changed fields: [%s]", strings.Join(changedFields, ", "))
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "CUSTOMER_UPDATED",
+		EntityType: &entityType,
+		EntityID:   &customerID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	// Set tenant context for GORM tenant isolation
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogCustomerDeleted logs when a customer is deactivated (soft delete)
+func (s *AuditService) LogCustomerDeleted(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	customerID string,
+	customerData map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(customerData)
+	oldValuesStr := string(oldValuesJSON)
+	entityType := "CUSTOMER"
+
+	// Create human-readable notes
+	notes := fmt.Sprintf("Customer '%s' (code: %s) deactivated",
+		customerData["name"],
+		customerData["code"])
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "CUSTOMER_DELETED",
+		EntityType: &entityType,
+		EntityID:   &customerID,
+		OldValues:  &oldValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	// Set tenant context for GORM tenant isolation
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogProductOperationFailed logs when a product operation fails
+func (s *AuditService) LogProductOperationFailed(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	action string,
+	productID string,
+	errorMsg string,
+) error {
+	entityType := "PRODUCT"
+	notes := fmt.Sprintf("Operation failed: %s", errorMsg)
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID, // MVP
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID, // MVP
+		Action:     action,
+		EntityType: &entityType,
+		EntityID:   &productID,
+		Status:     StatusFailed, // MVP
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	// Set tenant context for GORM tenant isolation
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
 }

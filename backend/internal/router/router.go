@@ -9,6 +9,7 @@ import (
 	"backend/internal/handler"
 	"backend/internal/jobs"
 	"backend/internal/middleware"
+	"backend/internal/service/audit"
 	"backend/internal/service/auth"
 	"backend/internal/service/company"
 	"backend/internal/service/customer"
@@ -286,7 +287,8 @@ func setupProtectedRoutes(
 		// PRODUCT MANAGEMENT ROUTES (PHASE 2 - Master Data Management)
 		// Reference: 02-MASTER-DATA-MANAGEMENT.md Module 1: Product Management
 		// ============================================================================
-		productService := product.NewProductService(db)
+		auditService := audit.NewAuditService(db)
+		productService := product.NewProductService(db, auditService)
 		productHandler := handler.NewProductHandler(productService)
 
 		productGroup := businessProtected.Group("/products")
@@ -316,7 +318,7 @@ func setupProtectedRoutes(
 		// CUSTOMER MANAGEMENT ROUTES (PHASE 2 - Master Data Management)
 		// Reference: 02-MASTER-DATA-MANAGEMENT.md Module 2: Customer Management
 		// ============================================================================
-		customerService := customer.NewCustomerService(db)
+		customerService := customer.NewCustomerService(db, auditService)
 		customerHandler := handler.NewCustomerHandler(customerService)
 
 		customerGroup := businessProtected.Group("/customers")

@@ -13,7 +13,7 @@ import (
 type CreateCustomerRequest struct {
 	Code           string  `json:"code" binding:"required,min=1,max=100"`
 	Name           string  `json:"name" binding:"required,min=2,max=255"`
-	Type           *string `json:"type" binding:"omitempty,oneof=RETAIL WHOLESALE DISTRIBUTOR"`
+	Type           *string `json:"customerType" binding:"omitempty,oneof=Retail Grosir Distributor"`
 	Phone          *string `json:"phone" binding:"omitempty,max=50"`
 	Email          *string `json:"email" binding:"omitempty,email,max=255"`
 	Address        *string `json:"address" binding:"omitempty"`
@@ -24,7 +24,7 @@ type CreateCustomerRequest struct {
 	IsPKP          *bool   `json:"isPKP" binding:"omitempty"`
 	ContactPerson  *string `json:"contactPerson" binding:"omitempty,max=255"`
 	ContactPhone   *string `json:"contactPhone" binding:"omitempty,max=50"`
-	PaymentTerm    *int    `json:"paymentTerm" binding:"omitempty,min=0"`        // Days (0 = cash)
+	PaymentTerm    *int    `json:"creditTermDays" binding:"omitempty,min=0"`     // Days (0 = cash)
 	CreditLimit    *string `json:"creditLimit" binding:"omitempty"`              // decimal as string
 	Notes          *string `json:"notes" binding:"omitempty"`
 }
@@ -33,7 +33,7 @@ type CreateCustomerRequest struct {
 type UpdateCustomerRequest struct {
 	Code           *string `json:"code" binding:"omitempty,min=1,max=100"`
 	Name           *string `json:"name" binding:"omitempty,min=2,max=255"`
-	Type           *string `json:"type" binding:"omitempty,oneof=RETAIL WHOLESALE DISTRIBUTOR"`
+	Type           *string `json:"customerType" binding:"omitempty,oneof=Retail Grosir Distributor"`
 	Phone          *string `json:"phone" binding:"omitempty,max=50"`
 	Email          *string `json:"email" binding:"omitempty,email,max=255"`
 	Address        *string `json:"address" binding:"omitempty"`
@@ -44,7 +44,7 @@ type UpdateCustomerRequest struct {
 	IsPKP          *bool   `json:"isPKP" binding:"omitempty"`
 	ContactPerson  *string `json:"contactPerson" binding:"omitempty,max=255"`
 	ContactPhone   *string `json:"contactPhone" binding:"omitempty,max=50"`
-	PaymentTerm    *int    `json:"paymentTerm" binding:"omitempty,min=0"`
+	PaymentTerm    *int    `json:"creditTermDays" binding:"omitempty,min=0"`
 	CreditLimit    *string `json:"creditLimit" binding:"omitempty"`
 	Notes          *string `json:"notes" binding:"omitempty"`
 	IsActive       *bool   `json:"isActive" binding:"omitempty"`
@@ -55,7 +55,7 @@ type CustomerResponse struct {
 	ID                 string                   `json:"id"`
 	Code               string                   `json:"code"`
 	Name               string                   `json:"name"`
-	Type               *string                  `json:"type,omitempty"`
+	Type               *string                  `json:"customerType,omitempty"`
 	Phone              *string                  `json:"phone,omitempty"`
 	Email              *string                  `json:"email,omitempty"`
 	Address            *string                  `json:"address,omitempty"`
@@ -66,7 +66,7 @@ type CustomerResponse struct {
 	IsPKP              bool                     `json:"isPKP"`
 	ContactPerson      *string                  `json:"contactPerson,omitempty"`
 	ContactPhone       *string                  `json:"contactPhone,omitempty"`
-	PaymentTerm        int                      `json:"paymentTerm"`
+	PaymentTerm        int                      `json:"creditTermDays"`
 	CreditLimit        string                   `json:"creditLimit"`
 	CurrentOutstanding string                   `json:"currentOutstanding"`
 	OverdueAmount      string                   `json:"overdueAmount"`
@@ -89,16 +89,16 @@ type CustomerListResponse struct {
 // CustomerListQuery - Query parameters for listing customers
 type CustomerListQuery struct {
 	Page        int     `form:"page" binding:"omitempty,min=1"`
-	PageSize    int     `form:"pageSize" binding:"omitempty,min=1,max=100"`
+	PageSize    int     `form:"page_size" binding:"omitempty,min=1,max=100"`
 	Search      string  `form:"search" binding:"omitempty"`                                      // Search by code or name
 	Type        *string `form:"type" binding:"omitempty,oneof=RETAIL WHOLESALE DISTRIBUTOR"`
 	City        *string `form:"city" binding:"omitempty"`
 	Province    *string `form:"province" binding:"omitempty"`
-	IsPKP       *bool   `form:"isPKP" binding:"omitempty"`
-	IsActive    *bool   `form:"isActive" binding:"omitempty"`
-	HasOverdue  *bool   `form:"hasOverdue" binding:"omitempty"`  // Filter customers with overdue amounts > 0
-	SortBy      string  `form:"sortBy" binding:"omitempty,oneof=code name createdAt currentOutstanding overdueAmount"`
-	SortOrder   string  `form:"sortOrder" binding:"omitempty,oneof=asc desc"`
+	IsPKP       *bool   `form:"is_pkp" binding:"omitempty"`
+	IsActive    *bool   `form:"is_active" binding:"omitempty"`
+	HasOverdue  *bool   `form:"has_overdue" binding:"omitempty"`  // Filter customers with overdue amounts > 0
+	SortBy      string  `form:"sort_by" binding:"omitempty,oneof=code name createdAt currentOutstanding overdueAmount"`
+	SortOrder   string  `form:"sort_order" binding:"omitempty,oneof=asc desc"`
 }
 
 // ============================================================================

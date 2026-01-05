@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
 	"backend/internal/dto"
+	"backend/internal/service/audit"
 	"backend/models"
 	pkgerrors "backend/pkg/errors"
 )
@@ -16,12 +18,16 @@ import (
 // CustomerService - Business logic for customer management
 // Reference: ANALYSIS-02-MASTER-DATA-MANAGEMENT.md Module 2
 type CustomerService struct {
-	db *gorm.DB
+	db           *gorm.DB
+	auditService *audit.AuditService
 }
 
 // NewCustomerService creates a new customer service instance
-func NewCustomerService(db *gorm.DB) *CustomerService {
-	return &CustomerService{db: db}
+func NewCustomerService(db *gorm.DB, auditService *audit.AuditService) *CustomerService {
+	return &CustomerService{
+		db:           db,
+		auditService: auditService,
+	}
 }
 
 // ============================================================================
@@ -30,7 +36,7 @@ func NewCustomerService(db *gorm.DB) *CustomerService {
 
 // CreateCustomer creates a new customer
 // Reference: ANALYSIS-02-MASTER-DATA-MANAGEMENT.md Section 5.1 (Validation Rules)
-func (s *CustomerService) CreateCustomer(ctx context.Context, companyID string, req *dto.CreateCustomerRequest) (*models.Customer, error) {
+func (s *CustomerService) CreateCustomer(ctx context.Context, tenantID, companyID string, userID string, ipAddress string, userAgent string, req *dto.CreateCustomerRequest) (*models.Customer, error) {
 	// Parse credit limit
 	creditLimit := decimal.Zero
 	if req.CreditLimit != nil && *req.CreditLimit != "" {
@@ -50,7 +56,7 @@ func (s *CustomerService) CreateCustomer(ctx context.Context, companyID string, 
 	}
 
 	// Validate code uniqueness per company
-	if err := s.validateCodeUniqueness(companyID, req.Code, ""); err != nil {
+	if err := s.validateCodeUniqueness(tenantID, companyID, req.Code, ""); err != nil {
 		return nil, err
 	}
 
@@ -89,9 +95,45 @@ func (s *CustomerService) CreateCustomer(ctx context.Context, companyID string, 
 		IsActive:           true,
 	}
 
-	if err := s.db.WithContext(ctx).Create(customer).Error; err != nil {
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).Create(customer).Error; err != nil {
 		return nil, fmt.Errorf("failed to create customer: %w", err)
 	}
+
+	// Audit logging
+	requestID := uuid.New().String()
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		RequestID: &requestID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
+	// Prepare customer data for audit
+	customerData := map[string]interface{}{
+		"code":                customer.Code,
+		"name":                customer.Name,
+		"type":                stringPtrToValue(customer.Type),
+		"phone":               stringPtrToValue(customer.Phone),
+		"email":               stringPtrToValue(customer.Email),
+		"address":             stringPtrToValue(customer.Address),
+		"city":                stringPtrToValue(customer.City),
+		"province":            stringPtrToValue(customer.Province),
+		"postal_code":         stringPtrToValue(customer.PostalCode),
+		"npwp":                stringPtrToValue(customer.NPWP),
+		"is_pkp":              customer.IsPKP,
+		"contact_person":      stringPtrToValue(customer.ContactPerson),
+		"contact_phone":       stringPtrToValue(customer.ContactPhone),
+		"payment_term":        customer.PaymentTerm,
+		"credit_limit":        customer.CreditLimit.String(),
+		"current_outstanding": customer.CurrentOutstanding.String(),
+		"overdue_amount":      customer.OverdueAmount.String(),
+		"notes":               stringPtrToValue(customer.Notes),
+	}
+
+	// Log customer creation (async, don't block on audit failure)
+	go s.auditService.LogCustomerCreated(context.Background(), auditCtx, customer.ID, customerData)
 
 	return customer, nil
 }
@@ -101,7 +143,7 @@ func (s *CustomerService) CreateCustomer(ctx context.Context, companyID string, 
 // ============================================================================
 
 // ListCustomers retrieves customers with filtering, sorting, and pagination
-func (s *CustomerService) ListCustomers(ctx context.Context, companyID string, query *dto.CustomerListQuery) (*dto.CustomerListResponse, error) {
+func (s *CustomerService) ListCustomers(ctx context.Context, tenantID, companyID string, query *dto.CustomerListQuery) (*dto.CustomerListResponse, error) {
 	// Set defaults
 	page := 1
 	if query.Page > 0 {
@@ -123,8 +165,9 @@ func (s *CustomerService) ListCustomers(ctx context.Context, companyID string, q
 		sortOrder = query.SortOrder
 	}
 
-	// Build base query
-	baseQuery := s.db.WithContext(ctx).Model(&models.Customer{}).
+	// Build base query with tenant context set for GORM callbacks
+	// tenantID is explicitly passed from handler
+	baseQuery := s.db.WithContext(ctx).Set("tenant_id", tenantID).Model(&models.Customer{}).
 		Where("company_id = ?", companyID)
 
 	// Apply filters
@@ -151,10 +194,8 @@ func (s *CustomerService) ListCustomers(ctx context.Context, companyID string, q
 
 	if query.IsActive != nil {
 		baseQuery = baseQuery.Where("is_active = ?", *query.IsActive)
-	} else {
-		// Default: only show active customers
-		baseQuery = baseQuery.Where("is_active = ?", true)
 	}
+	// No default filter - show all customers (active and inactive)
 
 	if query.HasOverdue != nil && *query.HasOverdue {
 		baseQuery = baseQuery.Where("overdue_amount > 0")
@@ -201,9 +242,9 @@ func (s *CustomerService) ListCustomers(ctx context.Context, companyID string, q
 // ============================================================================
 
 // GetCustomerByID retrieves a customer by ID
-func (s *CustomerService) GetCustomerByID(ctx context.Context, companyID, customerID string) (*models.Customer, error) {
+func (s *CustomerService) GetCustomerByID(ctx context.Context, tenantID, companyID, customerID string) (*models.Customer, error) {
 	var customer models.Customer
-	err := s.db.WithContext(ctx).
+	err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
 		Where("company_id = ? AND id = ?", companyID, customerID).
 		First(&customer).Error
 
@@ -223,16 +264,39 @@ func (s *CustomerService) GetCustomerByID(ctx context.Context, companyID, custom
 // ============================================================================
 
 // UpdateCustomer updates an existing customer
-func (s *CustomerService) UpdateCustomer(ctx context.Context, companyID, customerID string, req *dto.UpdateCustomerRequest) (*models.Customer, error) {
+func (s *CustomerService) UpdateCustomer(ctx context.Context, tenantID, companyID, customerID string, userID string, ipAddress string, userAgent string, req *dto.UpdateCustomerRequest) (*models.Customer, error) {
 	// Get existing customer
-	customer, err := s.GetCustomerByID(ctx, companyID, customerID)
+	customer, err := s.GetCustomerByID(ctx, tenantID, companyID, customerID)
 	if err != nil {
 		return nil, err
 	}
 
+	// Capture old values for audit
+	oldValues := map[string]interface{}{
+		"code":                customer.Code,
+		"name":                customer.Name,
+		"type":                stringPtrToValue(customer.Type),
+		"phone":               stringPtrToValue(customer.Phone),
+		"email":               stringPtrToValue(customer.Email),
+		"address":             stringPtrToValue(customer.Address),
+		"city":                stringPtrToValue(customer.City),
+		"province":            stringPtrToValue(customer.Province),
+		"postal_code":         stringPtrToValue(customer.PostalCode),
+		"npwp":                stringPtrToValue(customer.NPWP),
+		"is_pkp":              customer.IsPKP,
+		"contact_person":      stringPtrToValue(customer.ContactPerson),
+		"contact_phone":       stringPtrToValue(customer.ContactPhone),
+		"payment_term":        customer.PaymentTerm,
+		"credit_limit":        customer.CreditLimit.String(),
+		"current_outstanding": customer.CurrentOutstanding.String(),
+		"overdue_amount":      customer.OverdueAmount.String(),
+		"notes":               stringPtrToValue(customer.Notes),
+		"is_active":           customer.IsActive,
+	}
+
 	// Validate code uniqueness if updating code
 	if req.Code != nil && *req.Code != customer.Code {
-		if err := s.validateCodeUniqueness(companyID, *req.Code, customerID); err != nil {
+		if err := s.validateCodeUniqueness(tenantID, companyID, *req.Code, customerID); err != nil {
 			return nil, err
 		}
 		customer.Code = *req.Code
@@ -311,9 +375,46 @@ func (s *CustomerService) UpdateCustomer(ctx context.Context, companyID, custome
 	}
 
 	// Save updates
-	if err := s.db.WithContext(ctx).Save(customer).Error; err != nil {
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).Save(customer).Error; err != nil {
 		return nil, fmt.Errorf("failed to update customer: %w", err)
 	}
+
+	// Capture new values for audit
+	newValues := map[string]interface{}{
+		"code":                customer.Code,
+		"name":                customer.Name,
+		"type":                stringPtrToValue(customer.Type),
+		"phone":               stringPtrToValue(customer.Phone),
+		"email":               stringPtrToValue(customer.Email),
+		"address":             stringPtrToValue(customer.Address),
+		"city":                stringPtrToValue(customer.City),
+		"province":            stringPtrToValue(customer.Province),
+		"postal_code":         stringPtrToValue(customer.PostalCode),
+		"npwp":                stringPtrToValue(customer.NPWP),
+		"is_pkp":              customer.IsPKP,
+		"contact_person":      stringPtrToValue(customer.ContactPerson),
+		"contact_phone":       stringPtrToValue(customer.ContactPhone),
+		"payment_term":        customer.PaymentTerm,
+		"credit_limit":        customer.CreditLimit.String(),
+		"current_outstanding": customer.CurrentOutstanding.String(),
+		"overdue_amount":      customer.OverdueAmount.String(),
+		"notes":               stringPtrToValue(customer.Notes),
+		"is_active":           customer.IsActive,
+	}
+
+	// Audit logging
+	requestID := uuid.New().String()
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		RequestID: &requestID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
+	// Log customer update (async, don't block on audit failure)
+	go s.auditService.LogCustomerUpdated(context.Background(), auditCtx, customer.ID, oldValues, newValues)
 
 	return customer, nil
 }
@@ -324,9 +425,9 @@ func (s *CustomerService) UpdateCustomer(ctx context.Context, companyID, custome
 
 // DeleteCustomer soft deletes a customer
 // Reference: ANALYSIS-02-MASTER-DATA-MANAGEMENT.md Section 5.3 (Soft Delete Rules)
-func (s *CustomerService) DeleteCustomer(ctx context.Context, companyID, customerID string) error {
+func (s *CustomerService) DeleteCustomer(ctx context.Context, tenantID, companyID, customerID string, userID string, ipAddress string, userAgent string) error {
 	// Get customer
-	customer, err := s.GetCustomerByID(ctx, companyID, customerID)
+	customer, err := s.GetCustomerByID(ctx, tenantID, companyID, customerID)
 	if err != nil {
 		return err
 	}
@@ -336,11 +437,48 @@ func (s *CustomerService) DeleteCustomer(ctx context.Context, companyID, custome
 		return err
 	}
 
+	// Prepare customer data for audit (before deletion)
+	customerData := map[string]interface{}{
+		"code":                customer.Code,
+		"name":                customer.Name,
+		"type":                stringPtrToValue(customer.Type),
+		"phone":               stringPtrToValue(customer.Phone),
+		"email":               stringPtrToValue(customer.Email),
+		"address":             stringPtrToValue(customer.Address),
+		"city":                stringPtrToValue(customer.City),
+		"province":            stringPtrToValue(customer.Province),
+		"postal_code":         stringPtrToValue(customer.PostalCode),
+		"npwp":                stringPtrToValue(customer.NPWP),
+		"is_pkp":              customer.IsPKP,
+		"contact_person":      stringPtrToValue(customer.ContactPerson),
+		"contact_phone":       stringPtrToValue(customer.ContactPhone),
+		"payment_term":        customer.PaymentTerm,
+		"credit_limit":        customer.CreditLimit.String(),
+		"current_outstanding": customer.CurrentOutstanding.String(),
+		"overdue_amount":      customer.OverdueAmount.String(),
+		"notes":               stringPtrToValue(customer.Notes),
+		"is_active":           customer.IsActive,
+	}
+
 	// Soft delete (set IsActive = false)
 	customer.IsActive = false
-	if err := s.db.WithContext(ctx).Save(customer).Error; err != nil {
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).Save(customer).Error; err != nil {
 		return fmt.Errorf("failed to delete customer: %w", err)
 	}
+
+	// Audit logging
+	requestID := uuid.New().String()
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		RequestID: &requestID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
+	// Log customer deletion (async, don't block on audit failure)
+	go s.auditService.LogCustomerDeleted(context.Background(), auditCtx, customer.ID, customerData)
 
 	return nil
 }
@@ -376,4 +514,12 @@ func mapCustomerToResponse(customer *models.Customer) dto.CustomerResponse {
 		CreatedAt:          customer.CreatedAt,
 		UpdatedAt:          customer.UpdatedAt,
 	}
+}
+
+// stringPtrToValue converts *string to string, returns empty string if nil
+func stringPtrToValue(ptr *string) string {
+	if ptr == nil {
+		return ""
+	}
+	return *ptr
 }

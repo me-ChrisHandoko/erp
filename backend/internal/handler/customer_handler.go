@@ -41,6 +41,13 @@ func NewCustomerHandler(customerService *customer.CustomerService) *CustomerHand
 // @Router /api/v1/customers [post]
 // @Security BearerAuth
 func (h *CustomerHandler) CreateCustomer(c *gin.Context) {
+	// Get tenant_id from context (set by middleware)
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
 	// Get company ID from context (set by CompanyContextMiddleware)
 	companyID, exists := c.Get("company_id")
 	if !exists {
@@ -55,8 +62,19 @@ func (h *CustomerHandler) CreateCustomer(c *gin.Context) {
 		return
 	}
 
+	// Get user ID from JWT middleware
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
+	// Get IP address and user agent
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	// Create customer
-	customerModel, err := h.customerService.CreateCustomer(c.Request.Context(), companyID.(string), &req)
+	customerModel, err := h.customerService.CreateCustomer(c.Request.Context(), tenantID.(string), companyID.(string), userIDStr, ipAddress, userAgent, &req)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -69,7 +87,11 @@ func (h *CustomerHandler) CreateCustomer(c *gin.Context) {
 	// Map to response DTO
 	response := mapCustomerToResponse(customerModel)
 
-	c.JSON(http.StatusCreated, response)
+	// Return response in standard API format (matching products endpoint)
+	c.JSON(http.StatusCreated, gin.H{
+		"success": true,
+		"data":    response,
+	})
 }
 
 // ============================================================================
@@ -98,6 +120,13 @@ func (h *CustomerHandler) CreateCustomer(c *gin.Context) {
 // @Router /api/v1/customers [get]
 // @Security BearerAuth
 func (h *CustomerHandler) ListCustomers(c *gin.Context) {
+	// Get tenant_id from context (set by middleware)
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
 	// Get company ID from context
 	companyID, exists := c.Get("company_id")
 	if !exists {
@@ -113,7 +142,7 @@ func (h *CustomerHandler) ListCustomers(c *gin.Context) {
 	}
 
 	// List customers
-	response, err := h.customerService.ListCustomers(c.Request.Context(), companyID.(string), &query)
+	response, err := h.customerService.ListCustomers(c.Request.Context(), tenantID.(string), companyID.(string), &query)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -123,7 +152,18 @@ func (h *CustomerHandler) ListCustomers(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, response)
+	// Return response in standard API format (matching products endpoint and frontend expectations)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    response.Customers,
+		"pagination": gin.H{
+			"page":       response.Page,
+			"pageSize":   response.PageSize,
+			"totalItems": response.TotalCount,
+			"totalPages": response.TotalPages,
+			"hasMore":    response.Page < response.TotalPages,
+		},
+	})
 }
 
 // ============================================================================
@@ -143,6 +183,13 @@ func (h *CustomerHandler) ListCustomers(c *gin.Context) {
 // @Router /api/v1/customers/{id} [get]
 // @Security BearerAuth
 func (h *CustomerHandler) GetCustomer(c *gin.Context) {
+	// Get tenant_id from context (set by middleware)
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
 	// Get company ID from context
 	companyID, exists := c.Get("company_id")
 	if !exists {
@@ -158,7 +205,7 @@ func (h *CustomerHandler) GetCustomer(c *gin.Context) {
 	}
 
 	// Get customer
-	customerModel, err := h.customerService.GetCustomerByID(c.Request.Context(), companyID.(string), customerID)
+	customerModel, err := h.customerService.GetCustomerByID(c.Request.Context(), tenantID.(string), companyID.(string), customerID)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -171,7 +218,11 @@ func (h *CustomerHandler) GetCustomer(c *gin.Context) {
 	// Map to response DTO
 	response := mapCustomerToResponse(customerModel)
 
-	c.JSON(http.StatusOK, response)
+	// Return response in standard API format (matching products endpoint)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    response,
+	})
 }
 
 // ============================================================================
@@ -192,6 +243,13 @@ func (h *CustomerHandler) GetCustomer(c *gin.Context) {
 // @Router /api/v1/customers/{id} [put]
 // @Security BearerAuth
 func (h *CustomerHandler) UpdateCustomer(c *gin.Context) {
+	// Get tenant_id from context (set by middleware)
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
 	// Get company ID from context
 	companyID, exists := c.Get("company_id")
 	if !exists {
@@ -213,8 +271,19 @@ func (h *CustomerHandler) UpdateCustomer(c *gin.Context) {
 		return
 	}
 
+	// Get user ID from JWT middleware
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
+	// Get IP address and user agent
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	// Update customer
-	customerModel, err := h.customerService.UpdateCustomer(c.Request.Context(), companyID.(string), customerID, &req)
+	customerModel, err := h.customerService.UpdateCustomer(c.Request.Context(), tenantID.(string), companyID.(string), customerID, userIDStr, ipAddress, userAgent, &req)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -227,7 +296,11 @@ func (h *CustomerHandler) UpdateCustomer(c *gin.Context) {
 	// Map to response DTO
 	response := mapCustomerToResponse(customerModel)
 
-	c.JSON(http.StatusOK, response)
+	// Return response in standard API format (matching products endpoint)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    response,
+	})
 }
 
 // ============================================================================
@@ -247,6 +320,13 @@ func (h *CustomerHandler) UpdateCustomer(c *gin.Context) {
 // @Router /api/v1/customers/{id} [delete]
 // @Security BearerAuth
 func (h *CustomerHandler) DeleteCustomer(c *gin.Context) {
+	// Get tenant_id from context (set by middleware)
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
 	// Get company ID from context
 	companyID, exists := c.Get("company_id")
 	if !exists {
@@ -261,8 +341,19 @@ func (h *CustomerHandler) DeleteCustomer(c *gin.Context) {
 		return
 	}
 
+	// Get user ID from JWT middleware
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
+	// Get IP address and user agent
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	// Delete customer
-	err := h.customerService.DeleteCustomer(c.Request.Context(), companyID.(string), customerID)
+	err := h.customerService.DeleteCustomer(c.Request.Context(), tenantID.(string), companyID.(string), customerID, userIDStr, ipAddress, userAgent)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)

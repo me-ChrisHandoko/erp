@@ -8,6 +8,7 @@ import { tenantApi } from './services/tenantApi';
 import { multiCompanyApi } from './services/multiCompanyApi';
 import { companyUserApi } from './services/companyUserApi';
 import { productApi } from './services/productApi';
+import { customerApi } from './services/customerApi';
 import authReducer, { logout } from './slices/authSlice';
 import companyReducer from './slices/companySlice';
 
@@ -30,6 +31,7 @@ const resetAllApiStatesOnLogout: Middleware = (storeAPI) => (next) => (action) =
     storeAPI.dispatch(multiCompanyApi.util.resetApiState());
     storeAPI.dispatch(companyUserApi.util.resetApiState());
     storeAPI.dispatch(productApi.util.resetApiState());
+    storeAPI.dispatch(customerApi.util.resetApiState());
 
     // CRITICAL: Clear company Redux state to prevent cross-user data exposure
     // Import clearCompanyState from companySlice
@@ -42,7 +44,7 @@ const resetAllApiStatesOnLogout: Middleware = (storeAPI) => (next) => (action) =
       localStorage.removeItem('activeCompanyId');
     }
 
-    console.log('[Middleware] All API caches cleared (authApi, companyApi, tenantApi, multiCompanyApi, companyUserApi, productApi)');
+    console.log('[Middleware] All API caches cleared (authApi, companyApi, tenantApi, multiCompanyApi, companyUserApi, productApi, customerApi)');
     console.log('[Middleware] Company Redux state cleared (activeCompany, availableCompanies)');
     console.log('[Middleware] localStorage.activeCompanyId cleared to prevent cross-user contamination');
   }
@@ -70,6 +72,7 @@ export const store = configureStore({
     [multiCompanyApi.reducerPath]: multiCompanyApi.reducer, // PHASE 5: Multi-company API
     [companyUserApi.reducerPath]: companyUserApi.reducer, // Company-scoped user API
     [productApi.reducerPath]: productApi.reducer, // Product management API
+    [customerApi.reducerPath]: customerApi.reducer, // Customer management API
   },
 
   // Add RTK Query middleware for caching, invalidation, etc.
@@ -81,6 +84,7 @@ export const store = configureStore({
       multiCompanyApi.middleware, // PHASE 5: Multi-company middleware
       companyUserApi.middleware, // Company-scoped user middleware
       productApi.middleware, // Product management middleware
+      customerApi.middleware, // Customer management middleware
       resetAllApiStatesOnLogout // CRITICAL: Reset all API caches on logout
     ),
 

@@ -189,10 +189,18 @@ export function EditProductForm({
         isPerishable: formData.isPerishable,
         isActive: formData.isActive,
         // Only include optional fields if they have values
-        ...(formData.category && formData.category.trim() !== "" && { category: formData.category }),
-        ...(formData.description && formData.description.trim() !== "" && { description: formData.description }),
-        ...(formData.barcode && formData.barcode.trim() !== "" && { barcode: formData.barcode }),
-        ...(formData.minimumStock && formData.minimumStock !== "0" && { minimumStock: formData.minimumStock }),
+        ...(formData.category &&
+          formData.category.trim() !== "" && { category: formData.category }),
+        ...(formData.description &&
+          formData.description.trim() !== "" && {
+            description: formData.description,
+          }),
+        ...(formData.barcode &&
+          formData.barcode.trim() !== "" && { barcode: formData.barcode }),
+        ...(formData.minimumStock &&
+          formData.minimumStock !== "0" && {
+            minimumStock: formData.minimumStock,
+          }),
       };
 
       const result = await updateProduct({
@@ -200,7 +208,7 @@ export function EditProductForm({
         data: cleanedData,
       }).unwrap();
 
-      toast.success("✓ Produk Berhasil Diperbarui", {
+      toast.success("Produk Berhasil Diperbarui", {
         description: `${result.name} telah diperbarui`,
       });
 
@@ -528,7 +536,8 @@ export function EditProductForm({
               <Alert className="bg-blue-50 border-blue-200 dark:bg-blue-900/10 dark:border-blue-900">
                 <Info className="h-4 w-4 text-blue-600" />
                 <AlertDescription className="text-blue-800 dark:text-blue-200 text-sm">
-                  Alert otomatis akan muncul ketika stok produk di bawah nilai ini
+                  Alert otomatis akan muncul ketika stok produk di bawah nilai
+                  ini
                 </AlertDescription>
               </Alert>
             </div>
@@ -552,12 +561,16 @@ export function EditProductForm({
                   <Checkbox
                     id="isBatchTracked"
                     checked={formData.isBatchTracked}
-                    onCheckedChange={(checked) => handleChange("isBatchTracked", checked)}
+                    onCheckedChange={(checked) =>
+                      handleChange("isBatchTracked", checked)
+                    }
                     className="mt-0.5"
                   />
                   <div
                     className="flex-1 cursor-pointer"
-                    onClick={() => handleChange("isBatchTracked", !formData.isBatchTracked)}
+                    onClick={() =>
+                      handleChange("isBatchTracked", !formData.isBatchTracked)
+                    }
                   >
                     <div className="flex items-center gap-2 mb-1">
                       <PackageCheck className="h-4 w-4 text-primary" />
@@ -569,7 +582,8 @@ export function EditProductForm({
                       </Label>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      Aktifkan untuk melacak nomor batch dan tanggal produksi setiap pengadaan
+                      Aktifkan untuk melacak nomor batch dan tanggal produksi
+                      setiap pengadaan
                     </p>
                   </div>
                 </div>
@@ -585,12 +599,16 @@ export function EditProductForm({
                   <Checkbox
                     id="isPerishable"
                     checked={formData.isPerishable}
-                    onCheckedChange={(checked) => handleChange("isPerishable", checked)}
+                    onCheckedChange={(checked) =>
+                      handleChange("isPerishable", checked)
+                    }
                     className="mt-0.5"
                   />
                   <div
                     className="flex-1 cursor-pointer"
-                    onClick={() => handleChange("isPerishable", !formData.isPerishable)}
+                    onClick={() =>
+                      handleChange("isPerishable", !formData.isPerishable)
+                    }
                   >
                     <div className="flex items-center gap-2 mb-1">
                       <Calendar className="h-4 w-4 text-orange-600" />
@@ -602,7 +620,8 @@ export function EditProductForm({
                       </Label>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      Aktifkan untuk produk yang memiliki tanggal kadaluarsa (makanan, obat, dll)
+                      Aktifkan untuk produk yang memiliki tanggal kadaluarsa
+                      (makanan, obat, dll)
                     </p>
                   </div>
                 </div>
@@ -611,7 +630,9 @@ export function EditProductForm({
                   <Alert className="border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-900/10">
                     <AlertCircle className="h-4 w-4 text-yellow-600" />
                     <AlertDescription className="text-yellow-800 dark:text-yellow-200">
-                      <span className="font-semibold">Metode FEFO Aktif:</span> Produk dengan tanggal kadaluarsa terdekat akan keluar terlebih dahulu (First Expired, First Out)
+                      <span className="font-semibold">Metode FEFO Aktif:</span>{" "}
+                      Produk dengan tanggal kadaluarsa terdekat akan keluar
+                      terlebih dahulu (First Expired, First Out)
                     </AlertDescription>
                   </Alert>
                 )}
@@ -627,7 +648,9 @@ export function EditProductForm({
                   <Checkbox
                     id="isActive"
                     checked={formData.isActive}
-                    onCheckedChange={(checked) => handleChange("isActive", checked)}
+                    onCheckedChange={(checked) =>
+                      handleChange("isActive", checked)
+                    }
                     className="mt-0.5"
                   />
                   <div
@@ -635,7 +658,11 @@ export function EditProductForm({
                     onClick={() => handleChange("isActive", !formData.isActive)}
                   >
                     <div className="flex items-center gap-2 mb-1">
-                      <Package className={`h-4 w-4 ${formData.isActive ? 'text-green-600' : 'text-red-600'}`} />
+                      <Package
+                        className={`h-4 w-4 ${
+                          formData.isActive ? "text-green-600" : "text-red-600"
+                        }`}
+                      />
                       <Label
                         htmlFor="isActive"
                         className="cursor-pointer font-semibold text-base"

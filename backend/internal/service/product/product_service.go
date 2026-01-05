@@ -4,21 +4,25 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
 	"backend/internal/dto"
+	"backend/internal/service/audit"
 	"backend/models"
 	pkgerrors "backend/pkg/errors"
 )
 
 type ProductService struct {
-	db *gorm.DB
+	db           *gorm.DB
+	auditService *audit.AuditService
 }
 
-func NewProductService(db *gorm.DB) *ProductService {
+func NewProductService(db *gorm.DB, auditService *audit.AuditService) *ProductService {
 	return &ProductService{
-		db: db,
+		db:           db,
+		auditService: auditService,
 	}
 }
 
@@ -29,7 +33,7 @@ func NewProductService(db *gorm.DB) *ProductService {
 // CreateProduct creates a new product with multi-unit support and warehouse stock initialization
 // Reference: 02-MASTER-DATA-MANAGEMENT.md lines 365-456 (Business Logic)
 // CRITICAL: Creates base unit entry and initializes warehouse stocks in transaction
-func (s *ProductService) CreateProduct(ctx context.Context, companyID string, tenantID string, req *dto.CreateProductRequest) (*models.Product, error) {
+func (s *ProductService) CreateProduct(ctx context.Context, companyID string, tenantID string, userID string, ipAddress string, userAgent string, req *dto.CreateProductRequest) (*models.Product, error) {
 	// Parse decimal fields
 	baseCost, err := decimal.NewFromString(req.BaseCost)
 	if err != nil {
@@ -175,7 +179,50 @@ func (s *ProductService) CreateProduct(ctx context.Context, companyID string, te
 	})
 
 	if err != nil {
+		// Audit: Log failed operation
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+		if auditErr := s.auditService.LogProductOperationFailed(ctx, auditCtx, "PRODUCT_CREATED", "", err.Error()); auditErr != nil {
+			fmt.Printf("WARNING: Failed to log failed product creation: %v\n", auditErr)
+		}
 		return nil, err
+	}
+
+	// Audit: Log successful creation
+	requestID := uuid.New().String()
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		RequestID: &requestID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
+	productData := map[string]interface{}{
+		"code":             product.Code,
+		"name":             product.Name,
+		"description":      stringPtrToValue(product.Description),
+		"barcode":          stringPtrToValue(product.Barcode),
+		"category":         stringPtrToValue(product.Category),
+		"base_unit":        product.BaseUnit,
+		"base_cost":        product.BaseCost.String(),
+		"base_price":       product.BasePrice.String(),
+		"minimum_stock":    product.MinimumStock.String(),
+		"is_batch_tracked": product.IsBatchTracked,
+		"is_perishable":    product.IsPerishable,
+	}
+
+	if err := s.auditService.LogProductCreated(ctx, auditCtx, product.ID, productData); err != nil {
+		// Log error but don't fail the create operation
+		fmt.Printf("WARNING: Failed to create audit log for product creation: %v\n", err)
 	}
 
 	// Reload product with relations
@@ -278,7 +325,7 @@ func (s *ProductService) ListProducts(ctx context.Context, tenantID, companyID s
 }
 
 // UpdateProduct updates a product
-func (s *ProductService) UpdateProduct(ctx context.Context, companyID, tenantID, productID string, req *dto.UpdateProductRequest) (*models.Product, error) {
+func (s *ProductService) UpdateProduct(ctx context.Context, companyID, tenantID, productID string, userID string, ipAddress string, userAgent string, req *dto.UpdateProductRequest) (*models.Product, error) {
 	// Get existing product
 	product, err := s.GetProduct(ctx, companyID, tenantID, productID)
 	if err != nil {
@@ -353,22 +400,102 @@ func (s *ProductService) UpdateProduct(ctx context.Context, companyID, tenantID,
 		updates["is_active"] = *req.IsActive
 	}
 
+	// Capture old values for audit
+	oldValues := map[string]interface{}{
+		"code":             product.Code,
+		"name":             product.Name,
+		"description":      stringPtrToValue(product.Description),
+		"barcode":          stringPtrToValue(product.Barcode),
+		"category":         stringPtrToValue(product.Category),
+		"base_unit":        product.BaseUnit,
+		"base_cost":        product.BaseCost.String(),
+		"base_price":       product.BasePrice.String(),
+		"minimum_stock":    product.MinimumStock.String(),
+		"is_batch_tracked": product.IsBatchTracked,
+		"is_perishable":    product.IsPerishable,
+		"is_active":        product.IsActive,
+	}
+
 	// Update product directly without preloaded associations
 	// Don't use the preloaded product object to avoid association auto-save issues
 	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
 		Model(&models.Product{}).
 		Where("id = ? AND company_id = ?", productID, companyID).
 		Updates(updates).Error; err != nil {
+
+		// Audit: Log failed operation
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+		if auditErr := s.auditService.LogProductOperationFailed(ctx, auditCtx, "PRODUCT_UPDATED", productID, err.Error()); auditErr != nil {
+			fmt.Printf("WARNING: Failed to log failed product update: %v\n", auditErr)
+		}
+
 		return nil, fmt.Errorf("failed to update product: %w", err)
 	}
 
 	// Reload product
-	return s.GetProduct(ctx, companyID, tenantID, productID)
+	updatedProduct, err := s.GetProduct(ctx, companyID, tenantID, productID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 🔍 DEBUG: Verify this code is running
+	fmt.Println("🔍 DEBUG: UpdateProduct - About to create audit log...")
+	fmt.Printf("🔍 DEBUG: Product ID: %s, TenantID: %s, CompanyID: %s\n", productID, tenantID, companyID)
+
+	// Audit: Log successful update
+	requestID := uuid.New().String()
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		RequestID: &requestID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
+	newValues := map[string]interface{}{
+		"code":             updatedProduct.Code,
+		"name":             updatedProduct.Name,
+		"description":      stringPtrToValue(updatedProduct.Description),
+		"barcode":          stringPtrToValue(updatedProduct.Barcode),
+		"category":         stringPtrToValue(updatedProduct.Category),
+		"base_unit":        updatedProduct.BaseUnit,
+		"base_cost":        updatedProduct.BaseCost.String(),
+		"base_price":       updatedProduct.BasePrice.String(),
+		"minimum_stock":    updatedProduct.MinimumStock.String(),
+		"is_batch_tracked": updatedProduct.IsBatchTracked,
+		"is_perishable":    updatedProduct.IsPerishable,
+		"is_active":        updatedProduct.IsActive,
+	}
+
+	// 🔍 DEBUG: Check if auditService is nil
+	if s.auditService == nil {
+		fmt.Println("❌ ERROR: auditService is NIL!")
+	} else {
+		fmt.Println("✅ DEBUG: auditService is NOT nil, calling LogProductUpdated...")
+	}
+
+	if err := s.auditService.LogProductUpdated(ctx, auditCtx, productID, oldValues, newValues); err != nil {
+		// Log error but don't fail the update operation
+		fmt.Printf("⚠️ WARNING: Failed to create audit log for product update: %v\n", err)
+	} else {
+		fmt.Println("✅ SUCCESS: Audit log created successfully!")
+	}
+
+	return updatedProduct, nil
 }
 
 // DeleteProduct soft deletes a product (sets is_active = false)
 // Reference: 02-MASTER-DATA-MANAGEMENT.md lines 328-343 (Business Logic)
-func (s *ProductService) DeleteProduct(ctx context.Context, companyID, productID string) error {
+func (s *ProductService) DeleteProduct(ctx context.Context, companyID, productID string, userID string, ipAddress string, userAgent string) error {
 	// Get product
 	product, err := s.GetProduct(ctx, companyID, "", productID)
 	if err != nil {
@@ -380,9 +507,51 @@ func (s *ProductService) DeleteProduct(ctx context.Context, companyID, productID
 		return err
 	}
 
+	// Capture product data for audit
+	productData := map[string]interface{}{
+		"code":             product.Code,
+		"name":             product.Name,
+		"category":         product.Category,
+		"base_unit":        product.BaseUnit,
+		"base_cost":        product.BaseCost.String(),
+		"base_price":       product.BasePrice.String(),
+		"is_batch_tracked": product.IsBatchTracked,
+		"is_perishable":    product.IsPerishable,
+	}
+
 	// Soft delete
 	if err := s.db.WithContext(ctx).Model(product).Update("is_active", false).Error; err != nil {
+		// Audit: Log failed operation
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &product.TenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+		if auditErr := s.auditService.LogProductOperationFailed(ctx, auditCtx, "PRODUCT_DELETED", productID, err.Error()); auditErr != nil {
+			fmt.Printf("WARNING: Failed to log failed product deletion: %v\n", auditErr)
+		}
+
 		return fmt.Errorf("failed to delete product: %w", err)
+	}
+
+	// Audit: Log successful deletion
+	requestID := uuid.New().String()
+	auditCtx := &audit.AuditContext{
+		TenantID:  &product.TenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		RequestID: &requestID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
+	if err := s.auditService.LogProductDeleted(ctx, auditCtx, productID, productData); err != nil {
+		// Log error but don't fail the delete operation
+		fmt.Printf("WARNING: Failed to create audit log for product deletion: %v\n", err)
 	}
 
 	return nil
@@ -778,4 +947,16 @@ func (s *ProductService) DeleteProductSupplier(ctx context.Context, companyID, p
 	}
 
 	return nil
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+// stringPtrToValue converts *string to string, returns empty string if nil
+func stringPtrToValue(ptr *string) string {
+	if ptr == nil {
+		return ""
+	}
+	return *ptr
 }

@@ -40,7 +40,9 @@ func (s *Setting) BeforeCreate(tx *gorm.DB) error {
 type AuditLog struct {
 	ID            string    `gorm:"type:varchar(255);primaryKey"`
 	TenantID      *string   `gorm:"type:varchar(255);index"` // NULL for system operations
+	CompanyID     *string   `gorm:"type:varchar(255);index"` // Company context (MVP Phase 1)
 	UserID        *string   `gorm:"type:varchar(255);index"` // NULL for system operations
+	RequestID     *string   `gorm:"type:varchar(100);index"` // Group related operations (MVP Phase 1)
 	Action        string    `gorm:"type:varchar(100);not null;index"` // CREATE, UPDATE, DELETE, LOGIN, etc.
 	EntityType    *string   `gorm:"type:varchar(100);index"` // Product, Invoice, User, etc.
 	EntityID      *string   `gorm:"type:varchar(255);index"` // ID of affected entity
@@ -48,12 +50,14 @@ type AuditLog struct {
 	NewValues     *string   `gorm:"type:text"` // JSON of new values
 	IPAddress     *string   `gorm:"type:varchar(45)"` // IPv4 or IPv6
 	UserAgent     *string   `gorm:"type:varchar(500)"`
+	Status        string    `gorm:"type:varchar(20);default:'SUCCESS';index"` // SUCCESS, FAILED, PARTIAL (MVP Phase 1)
 	Notes         *string   `gorm:"type:text"`
 	CreatedAt     time.Time `gorm:"autoCreateTime;index"`
 
 	// Relations
-	Tenant *Tenant `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE"`
-	User   *User   `gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL"`
+	Tenant  *Tenant  `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE"`
+	Company *Company `gorm:"foreignKey:CompanyID;constraint:OnDelete:CASCADE"`
+	User    *User    `gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL"`
 }
 
 // TableName specifies the table name for AuditLog model

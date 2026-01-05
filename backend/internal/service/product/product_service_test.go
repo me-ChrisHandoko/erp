@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"backend/internal/dto"
+	"backend/internal/service/audit"
 	"backend/internal/testutil"
 	"backend/models"
 	pkgerrors "backend/pkg/errors"
@@ -18,8 +19,14 @@ func TestProductService_CreateProduct(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.CleanupTestDB(db)
 
-	service := NewProductService(db)
+	auditService := audit.NewAuditService(db)
+	service := NewProductService(db, auditService)
 	ctx := context.Background()
+
+	// Test audit info
+	testUserID := "test-user-id"
+	testIPAddress := "127.0.0.1"
+	testUserAgent := "test-agent"
 
 	// Setup test data
 	company := testutil.CreateTestCompany(t, db, "tenant1", "COMP1")
@@ -36,7 +43,7 @@ func TestProductService_CreateProduct(t *testing.T) {
 			Category:     stringPtr("Electronics"),
 		}
 
-		product, err := service.CreateProduct(ctx, company.ID, company.TenantID, req)
+		product, err := service.CreateProduct(ctx, company.ID, company.TenantID, testUserID, testIPAddress, testUserAgent, req)
 
 		require.NoError(t, err)
 		assert.NotEmpty(t, product.ID)
@@ -79,7 +86,7 @@ func TestProductService_CreateProduct(t *testing.T) {
 			},
 		}
 
-		product, err := service.CreateProduct(ctx, company.ID, company.TenantID, req)
+		product, err := service.CreateProduct(ctx, company.ID, company.TenantID, testUserID, testIPAddress, testUserAgent, req)
 
 		require.NoError(t, err)
 
@@ -108,7 +115,7 @@ func TestProductService_CreateProduct(t *testing.T) {
 			BasePrice:    "1500",
 			MinimumStock: "10",
 		}
-		_, err := service.CreateProduct(ctx, company.ID, company.TenantID, req1)
+		_, err := service.CreateProduct(ctx, company.ID, company.TenantID, testUserID, testIPAddress, testUserAgent, req1)
 		require.NoError(t, err)
 
 		// Try to create duplicate
@@ -120,7 +127,7 @@ func TestProductService_CreateProduct(t *testing.T) {
 			BasePrice:    "1500",
 			MinimumStock: "10",
 		}
-		_, err = service.CreateProduct(ctx, company.ID, company.TenantID, req2)
+		_, err = service.CreateProduct(ctx, company.ID, company.TenantID, testUserID, testIPAddress, testUserAgent, req2)
 
 		assert.Error(t, err)
 		appErr, ok := err.(*pkgerrors.AppError)
@@ -139,7 +146,7 @@ func TestProductService_CreateProduct(t *testing.T) {
 			MinimumStock: "10",
 		}
 
-		_, err := service.CreateProduct(ctx, company.ID, company.TenantID, req)
+		_, err := service.CreateProduct(ctx, company.ID, company.TenantID, testUserID, testIPAddress, testUserAgent, req)
 
 		assert.Error(t, err)
 		appErr, ok := err.(*pkgerrors.AppError)
@@ -157,7 +164,7 @@ func TestProductService_CreateProduct(t *testing.T) {
 			MinimumStock: "-10", // Negative
 		}
 
-		_, err := service.CreateProduct(ctx, company.ID, company.TenantID, req)
+		_, err := service.CreateProduct(ctx, company.ID, company.TenantID, testUserID, testIPAddress, testUserAgent, req)
 
 		assert.Error(t, err)
 		appErr, ok := err.(*pkgerrors.AppError)
@@ -176,7 +183,7 @@ func TestProductService_CreateProduct(t *testing.T) {
 			MinimumStock: "10",
 			Barcode:      stringPtr("123456789"),
 		}
-		_, err := service.CreateProduct(ctx, company.ID, company.TenantID, req1)
+		_, err := service.CreateProduct(ctx, company.ID, company.TenantID, testUserID, testIPAddress, testUserAgent, req1)
 		require.NoError(t, err)
 
 		// Try to create with duplicate barcode
@@ -189,7 +196,7 @@ func TestProductService_CreateProduct(t *testing.T) {
 			MinimumStock: "10",
 			Barcode:      stringPtr("123456789"), // Duplicate
 		}
-		_, err = service.CreateProduct(ctx, company.ID, company.TenantID, req2)
+		_, err = service.CreateProduct(ctx, company.ID, company.TenantID, testUserID, testIPAddress, testUserAgent, req2)
 
 		assert.Error(t, err)
 		appErr, ok := err.(*pkgerrors.AppError)
@@ -202,8 +209,14 @@ func TestProductService_GetProduct(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.CleanupTestDB(db)
 
-	service := NewProductService(db)
+	auditService := audit.NewAuditService(db)
+	service := NewProductService(db, auditService)
 	ctx := context.Background()
+
+	// Test audit info
+	testUserID := "test-user-id"
+	testIPAddress := "127.0.0.1"
+	testUserAgent := "test-agent"
 
 	company := testutil.CreateTestCompany(t, db, "tenant1", "COMP1")
 	testutil.CreateTestWarehouse(t, db, company.ID, "WH001")
@@ -218,11 +231,11 @@ func TestProductService_GetProduct(t *testing.T) {
 			BasePrice:    "1500",
 			MinimumStock: "10",
 		}
-		created, err := service.CreateProduct(ctx, company.ID, company.TenantID, req)
+		created, err := service.CreateProduct(ctx, company.ID, company.TenantID, testUserID, testIPAddress, testUserAgent, req)
 		require.NoError(t, err)
 
 		// Get product
-		product, err := service.GetProduct(ctx, company.ID, created.ID)
+		product, err := service.GetProduct(ctx, company.ID, company.TenantID, created.ID)
 
 		require.NoError(t, err)
 		assert.Equal(t, created.ID, product.ID)
@@ -231,7 +244,7 @@ func TestProductService_GetProduct(t *testing.T) {
 	})
 
 	t.Run("error - product not found", func(t *testing.T) {
-		_, err := service.GetProduct(ctx, company.ID, "nonexistent-id")
+		_, err := service.GetProduct(ctx, company.ID, company.TenantID, "nonexistent-id")
 
 		assert.Error(t, err)
 		appErr, ok := err.(*pkgerrors.AppError)
@@ -249,14 +262,14 @@ func TestProductService_GetProduct(t *testing.T) {
 			BasePrice:    "1500",
 			MinimumStock: "10",
 		}
-		product, err := service.CreateProduct(ctx, company.ID, company.TenantID, req)
+		product, err := service.CreateProduct(ctx, company.ID, company.TenantID, testUserID, testIPAddress, testUserAgent, req)
 		require.NoError(t, err)
 
 		// Create company 2
 		company2 := testutil.CreateTestCompany(t, db, "tenant1", "COMP2")
 
 		// Try to get product from company 2 context
-		_, err = service.GetProduct(ctx, company2.ID, product.ID)
+		_, err = service.GetProduct(ctx, company2.ID, company2.TenantID, product.ID)
 
 		assert.Error(t, err)
 		appErr, ok := err.(*pkgerrors.AppError)
@@ -269,8 +282,14 @@ func TestProductService_ListProducts(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.CleanupTestDB(db)
 
-	service := NewProductService(db)
+	auditService := audit.NewAuditService(db)
+	service := NewProductService(db, auditService)
 	ctx := context.Background()
+
+	// Test audit info
+	testUserID := "test-user-id"
+	testIPAddress := "127.0.0.1"
+	testUserAgent := "test-agent"
 
 	company := testutil.CreateTestCompany(t, db, "tenant1", "COMP1")
 	testutil.CreateTestWarehouse(t, db, company.ID, "WH001")
@@ -284,7 +303,7 @@ func TestProductService_ListProducts(t *testing.T) {
 	}
 
 	for _, req := range products {
-		_, err := service.CreateProduct(ctx, company.ID, company.TenantID, &req)
+		_, err := service.CreateProduct(ctx, company.ID, company.TenantID, testUserID, testIPAddress, testUserAgent, &req)
 		require.NoError(t, err)
 	}
 
@@ -294,7 +313,7 @@ func TestProductService_ListProducts(t *testing.T) {
 			Limit: 10,
 		}
 
-		products, count, err := service.ListProducts(ctx, company.ID, query)
+		products, count, err := service.ListProducts(ctx, company.TenantID, company.ID, query)
 
 		require.NoError(t, err)
 		assert.Equal(t, int64(4), count)
@@ -307,7 +326,7 @@ func TestProductService_ListProducts(t *testing.T) {
 			Limit: 2,
 		}
 
-		products, count, err := service.ListProducts(ctx, company.ID, query)
+		products, count, err := service.ListProducts(ctx, company.TenantID, company.ID, query)
 
 		require.NoError(t, err)
 		assert.Equal(t, int64(4), count)
@@ -321,7 +340,7 @@ func TestProductService_ListProducts(t *testing.T) {
 			Limit: 10,
 		}
 
-		products, count, err := service.ListProducts(ctx, company.ID, query)
+		products, count, err := service.ListProducts(ctx, company.TenantID, company.ID, query)
 
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), count)
@@ -336,7 +355,7 @@ func TestProductService_ListProducts(t *testing.T) {
 			Limit:    10,
 		}
 
-		products, count, err := service.ListProducts(ctx, company.ID, query)
+		products, count, err := service.ListProducts(ctx, company.TenantID, company.ID, query)
 
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), count)
@@ -351,7 +370,7 @@ func TestProductService_ListProducts(t *testing.T) {
 			SortOrder: "asc",
 		}
 
-		products, count, err := service.ListProducts(ctx, company.ID, query)
+		products, count, err := service.ListProducts(ctx, company.TenantID, company.ID, query)
 
 		require.NoError(t, err)
 		assert.Equal(t, int64(4), count)
@@ -373,7 +392,7 @@ func TestProductService_ListProducts(t *testing.T) {
 			Limit: 10,
 		}
 
-		products, count, err := service.ListProducts(ctx, company.ID, query)
+		products, count, err := service.ListProducts(ctx, company.TenantID, company.ID, query)
 
 		require.NoError(t, err)
 		assert.Equal(t, int64(3), count) // Only 3 active products
@@ -385,8 +404,14 @@ func TestProductService_UpdateProduct(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.CleanupTestDB(db)
 
-	service := NewProductService(db)
+	auditService := audit.NewAuditService(db)
+	service := NewProductService(db, auditService)
 	ctx := context.Background()
+
+	// Test audit info
+	testUserID := "test-user-id"
+	testIPAddress := "127.0.0.1"
+	testUserAgent := "test-agent"
 
 	company := testutil.CreateTestCompany(t, db, "tenant1", "COMP1")
 	testutil.CreateTestWarehouse(t, db, company.ID, "WH001")
@@ -401,7 +426,7 @@ func TestProductService_UpdateProduct(t *testing.T) {
 			BasePrice:    "1500",
 			MinimumStock: "10",
 		}
-		product, err := service.CreateProduct(ctx, company.ID, company.TenantID, req)
+		product, err := service.CreateProduct(ctx, company.ID, company.TenantID, testUserID, testIPAddress, testUserAgent, req)
 		require.NoError(t, err)
 
 		// Update product
@@ -411,7 +436,7 @@ func TestProductService_UpdateProduct(t *testing.T) {
 			MinimumStock: stringPtr("20"),
 		}
 
-		updated, err := service.UpdateProduct(ctx, company.ID, product.ID, updateReq)
+		updated, err := service.UpdateProduct(ctx, company.ID, company.TenantID, product.ID, testUserID, testIPAddress, testUserAgent, updateReq)
 
 		require.NoError(t, err)
 		assert.Equal(t, "Updated Name", updated.Name)
@@ -425,14 +450,14 @@ func TestProductService_UpdateProduct(t *testing.T) {
 			Code: "PROD005", Name: "Product 5", BaseUnit: "PCS",
 			BaseCost: "1000", BasePrice: "1500", MinimumStock: "10",
 		}
-		product, err := service.CreateProduct(ctx, company.ID, company.TenantID, req)
+		product, err := service.CreateProduct(ctx, company.ID, company.TenantID, testUserID, testIPAddress, testUserAgent, req)
 		require.NoError(t, err)
 
 		updateReq := &dto.UpdateProductRequest{
 			BasePrice: stringPtr("500"), // Below cost
 		}
 
-		_, err = service.UpdateProduct(ctx, company.ID, product.ID, updateReq)
+		_, err = service.UpdateProduct(ctx, company.ID, company.TenantID, product.ID, testUserID, testIPAddress, testUserAgent, updateReq)
 
 		assert.Error(t, err)
 		appErr, ok := err.(*pkgerrors.AppError)
@@ -445,8 +470,14 @@ func TestProductService_DeleteProduct(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.CleanupTestDB(db)
 
-	service := NewProductService(db)
+	auditService := audit.NewAuditService(db)
+	service := NewProductService(db, auditService)
 	ctx := context.Background()
+
+	// Test audit info
+	testUserID := "test-user-id"
+	testIPAddress := "127.0.0.1"
+	testUserAgent := "test-agent"
 
 	company := testutil.CreateTestCompany(t, db, "tenant1", "COMP1")
 	warehouse := testutil.CreateTestWarehouse(t, db, company.ID, "WH001")
@@ -456,11 +487,11 @@ func TestProductService_DeleteProduct(t *testing.T) {
 			Code: "PROD001", Name: "Product 1", BaseUnit: "PCS",
 			BaseCost: "1000", BasePrice: "1500", MinimumStock: "10",
 		}
-		product, err := service.CreateProduct(ctx, company.ID, company.TenantID, req)
+		product, err := service.CreateProduct(ctx, company.ID, company.TenantID, testUserID, testIPAddress, testUserAgent, req)
 		require.NoError(t, err)
 
 		// Delete product
-		err = service.DeleteProduct(ctx, company.ID, product.ID)
+		err = service.DeleteProduct(ctx, company.ID, product.ID, testUserID, testIPAddress, testUserAgent)
 
 		require.NoError(t, err)
 
@@ -475,7 +506,7 @@ func TestProductService_DeleteProduct(t *testing.T) {
 			Code: "PROD002", Name: "Product 2", BaseUnit: "PCS",
 			BaseCost: "1000", BasePrice: "1500", MinimumStock: "10",
 		}
-		product, err := service.CreateProduct(ctx, company.ID, company.TenantID, req)
+		product, err := service.CreateProduct(ctx, company.ID, company.TenantID, testUserID, testIPAddress, testUserAgent, req)
 		require.NoError(t, err)
 
 		// Add stock to warehouse
@@ -485,7 +516,7 @@ func TestProductService_DeleteProduct(t *testing.T) {
 		db.Save(&stock)
 
 		// Try to delete
-		err = service.DeleteProduct(ctx, company.ID, product.ID)
+		err = service.DeleteProduct(ctx, company.ID, product.ID, testUserID, testIPAddress, testUserAgent)
 
 		assert.Error(t, err)
 		appErr, ok := err.(*pkgerrors.AppError)
@@ -494,7 +525,7 @@ func TestProductService_DeleteProduct(t *testing.T) {
 	})
 
 	t.Run("error - product not found", func(t *testing.T) {
-		err := service.DeleteProduct(ctx, company.ID, "nonexistent-id")
+		err := service.DeleteProduct(ctx, company.ID, "nonexistent-id", testUserID, testIPAddress, testUserAgent)
 
 		assert.Error(t, err)
 		appErr, ok := err.(*pkgerrors.AppError)

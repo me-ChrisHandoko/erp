@@ -48,14 +48,25 @@ func (h *ProductHandler) CreateProduct(c *gin.Context) {
 		return
 	}
 
+	// Get user ID from JWT middleware
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
+	// Get IP address and user agent
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	var req dto.CreateProductRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.handleValidationError(c, err)
 		return
 	}
 
-	// Call service
-	productModel, err := h.productService.CreateProduct(c.Request.Context(), companyID.(string), tenantID.(string), &req)
+	// Call service with audit info
+	productModel, err := h.productService.CreateProduct(c.Request.Context(), companyID.(string), tenantID.(string), userIDStr, ipAddress, userAgent, &req)
 	if err != nil {
 		h.handleError(c, err)
 		return
@@ -188,6 +199,17 @@ func (h *ProductHandler) UpdateProduct(c *gin.Context) {
 		return
 	}
 
+	// Get user ID from JWT middleware
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
+	// Get IP address and user agent
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	productID := c.Param("id")
 	if productID == "" {
 		c.JSON(http.StatusBadRequest, errors.NewBadRequestError("Product ID is required"))
@@ -200,8 +222,8 @@ func (h *ProductHandler) UpdateProduct(c *gin.Context) {
 		return
 	}
 
-	// Call service
-	productModel, err := h.productService.UpdateProduct(c.Request.Context(), companyID.(string), tenantID.(string), productID, &req)
+	// Call service with audit info
+	productModel, err := h.productService.UpdateProduct(c.Request.Context(), companyID.(string), tenantID.(string), productID, userIDStr, ipAddress, userAgent, &req)
 	if err != nil {
 		h.handleError(c, err)
 		return
@@ -227,14 +249,25 @@ func (h *ProductHandler) DeleteProduct(c *gin.Context) {
 		return
 	}
 
+	// Get user ID from JWT middleware
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
+	// Get IP address and user agent
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	productID := c.Param("id")
 	if productID == "" {
 		c.JSON(http.StatusBadRequest, errors.NewBadRequestError("Product ID is required"))
 		return
 	}
 
-	// Call service
-	err := h.productService.DeleteProduct(c.Request.Context(), companyID.(string), productID)
+	// Call service with audit info
+	err := h.productService.DeleteProduct(c.Request.Context(), companyID.(string), productID, userIDStr, ipAddress, userAgent)
 	if err != nil {
 		h.handleError(c, err)
 		return
