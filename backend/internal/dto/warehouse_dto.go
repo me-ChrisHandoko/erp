@@ -61,11 +61,9 @@ type WarehouseResponse struct {
 
 // WarehouseListResponse - Response DTO for warehouse list with pagination
 type WarehouseListResponse struct {
-	Warehouses []WarehouseResponse `json:"warehouses"`
-	TotalCount int64               `json:"totalCount"`
-	Page       int                 `json:"page"`
-	PageSize   int                 `json:"pageSize"`
-	TotalPages int                 `json:"totalPages"`
+	Success    bool                `json:"success"`
+	Data       []WarehouseResponse `json:"data"`
+	Pagination PaginationInfo      `json:"pagination"`
 }
 
 // WarehouseListQuery - Query parameters for listing warehouses

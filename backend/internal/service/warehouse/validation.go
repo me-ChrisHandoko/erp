@@ -17,9 +17,9 @@ import (
 
 // validateCodeUniqueness validates warehouse code uniqueness per company
 // Reference: ANALYSIS-02-MASTER-DATA-MANAGEMENT.md Section 5.1 (Validation Rules)
-func (s *WarehouseService) validateCodeUniqueness(companyID, code, excludeWarehouseID string) error {
+func (s *WarehouseService) validateCodeUniqueness(ctx context.Context, tenantID, companyID, code, excludeWarehouseID string) error {
 	var existing models.Warehouse
-	query := s.db.Where("company_id = ? AND code = ?", companyID, code)
+	query := s.db.WithContext(ctx).Set("tenant_id", tenantID).Where("company_id = ? AND code = ?", companyID, code)
 
 	if excludeWarehouseID != "" {
 		query = query.Where("id != ?", excludeWarehouseID)
@@ -51,10 +51,10 @@ func (s *WarehouseService) validateManagerExists(managerID string) error {
 
 // validateDeleteWarehouse validates warehouse deletion
 // Reference: ANALYSIS-02-MASTER-DATA-MANAGEMENT.md Section 5.3 (Soft Delete Rules)
-func (s *WarehouseService) validateDeleteWarehouse(ctx context.Context, warehouse *models.Warehouse) error {
+func (s *WarehouseService) validateDeleteWarehouse(ctx context.Context, tenantID string, warehouse *models.Warehouse) error {
 	// 1. Cannot delete if warehouse has stock
 	var totalStock decimal.Decimal
-	err := s.db.WithContext(ctx).Model(&models.WarehouseStock{}).
+	err := s.db.WithContext(ctx).Set("tenant_id", tenantID).Model(&models.WarehouseStock{}).
 		Where("warehouse_id = ?", warehouse.ID).
 		Select("COALESCE(SUM(quantity), 0)").
 		Scan(&totalStock).Error

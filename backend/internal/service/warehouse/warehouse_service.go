@@ -30,7 +30,7 @@ func NewWarehouseService(db *gorm.DB) *WarehouseService {
 
 // CreateWarehouse creates a new warehouse
 // Reference: ANALYSIS-02-MASTER-DATA-MANAGEMENT.md Section 5.1 (Validation Rules)
-func (s *WarehouseService) CreateWarehouse(ctx context.Context, companyID string, req *dto.CreateWarehouseRequest) (*models.Warehouse, error) {
+func (s *WarehouseService) CreateWarehouse(ctx context.Context, tenantID, companyID string, req *dto.CreateWarehouseRequest) (*models.Warehouse, error) {
 	// Parse capacity
 	var capacity *decimal.Decimal
 	if req.Capacity != nil && *req.Capacity != "" {
@@ -45,7 +45,7 @@ func (s *WarehouseService) CreateWarehouse(ctx context.Context, companyID string
 	}
 
 	// Validate code uniqueness per company
-	if err := s.validateCodeUniqueness(companyID, req.Code, ""); err != nil {
+	if err := s.validateCodeUniqueness(ctx, tenantID, companyID, req.Code, ""); err != nil {
 		return nil, err
 	}
 
@@ -58,6 +58,7 @@ func (s *WarehouseService) CreateWarehouse(ctx context.Context, companyID string
 
 	// Create warehouse
 	warehouse := &models.Warehouse{
+		TenantID:   tenantID,
 		CompanyID:  companyID,
 		Code:       req.Code,
 		Name:       req.Name,
@@ -73,7 +74,7 @@ func (s *WarehouseService) CreateWarehouse(ctx context.Context, companyID string
 		IsActive:   true,
 	}
 
-	if err := s.db.WithContext(ctx).Create(warehouse).Error; err != nil {
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).Create(warehouse).Error; err != nil {
 		return nil, fmt.Errorf("failed to create warehouse: %w", err)
 	}
 
@@ -85,7 +86,7 @@ func (s *WarehouseService) CreateWarehouse(ctx context.Context, companyID string
 // ============================================================================
 
 // ListWarehouses retrieves warehouses with filtering, sorting, and pagination
-func (s *WarehouseService) ListWarehouses(ctx context.Context, companyID string, query *dto.WarehouseListQuery) (*dto.WarehouseListResponse, error) {
+func (s *WarehouseService) ListWarehouses(ctx context.Context, tenantID, companyID string, query *dto.WarehouseListQuery) (*dto.WarehouseListResponse, error) {
 	// Set defaults
 	page := 1
 	if query.Page > 0 {
@@ -107,8 +108,8 @@ func (s *WarehouseService) ListWarehouses(ctx context.Context, companyID string,
 		sortOrder = query.SortOrder
 	}
 
-	// Build base query
-	baseQuery := s.db.WithContext(ctx).Model(&models.Warehouse{}).
+	// Build base query with tenant context
+	baseQuery := s.db.WithContext(ctx).Set("tenant_id", tenantID).Model(&models.Warehouse{}).
 		Where("company_id = ?", companyID)
 
 	// Apply filters
@@ -168,11 +169,14 @@ func (s *WarehouseService) ListWarehouses(ctx context.Context, companyID string,
 	totalPages := int(math.Ceil(float64(totalCount) / float64(pageSize)))
 
 	return &dto.WarehouseListResponse{
-		Warehouses: warehouseResponses,
-		TotalCount: totalCount,
-		Page:       page,
-		PageSize:   pageSize,
-		TotalPages: totalPages,
+		Success: true,
+		Data:    warehouseResponses,
+		Pagination: dto.PaginationInfo{
+			Page:       page,
+			Limit:      pageSize,
+			Total:      int(totalCount),
+			TotalPages: totalPages,
+		},
 	}, nil
 }
 
@@ -181,9 +185,9 @@ func (s *WarehouseService) ListWarehouses(ctx context.Context, companyID string,
 // ============================================================================
 
 // GetWarehouseByID retrieves a warehouse by ID
-func (s *WarehouseService) GetWarehouseByID(ctx context.Context, companyID, warehouseID string) (*models.Warehouse, error) {
+func (s *WarehouseService) GetWarehouseByID(ctx context.Context, tenantID, companyID, warehouseID string) (*models.Warehouse, error) {
 	var warehouse models.Warehouse
-	err := s.db.WithContext(ctx).
+	err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
 		Where("company_id = ? AND id = ?", companyID, warehouseID).
 		First(&warehouse).Error
 
@@ -203,16 +207,16 @@ func (s *WarehouseService) GetWarehouseByID(ctx context.Context, companyID, ware
 // ============================================================================
 
 // UpdateWarehouse updates an existing warehouse
-func (s *WarehouseService) UpdateWarehouse(ctx context.Context, companyID, warehouseID string, req *dto.UpdateWarehouseRequest) (*models.Warehouse, error) {
+func (s *WarehouseService) UpdateWarehouse(ctx context.Context, tenantID, companyID, warehouseID string, req *dto.UpdateWarehouseRequest) (*models.Warehouse, error) {
 	// Get existing warehouse
-	warehouse, err := s.GetWarehouseByID(ctx, companyID, warehouseID)
+	warehouse, err := s.GetWarehouseByID(ctx, tenantID, companyID, warehouseID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Validate code uniqueness if updating code
 	if req.Code != nil && *req.Code != warehouse.Code {
-		if err := s.validateCodeUniqueness(companyID, *req.Code, warehouseID); err != nil {
+		if err := s.validateCodeUniqueness(ctx, tenantID, companyID, *req.Code, warehouseID); err != nil {
 			return nil, err
 		}
 		warehouse.Code = *req.Code
@@ -275,7 +279,7 @@ func (s *WarehouseService) UpdateWarehouse(ctx context.Context, companyID, wareh
 	}
 
 	// Save updates
-	if err := s.db.WithContext(ctx).Save(warehouse).Error; err != nil {
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).Save(warehouse).Error; err != nil {
 		return nil, fmt.Errorf("failed to update warehouse: %w", err)
 	}
 
@@ -288,21 +292,21 @@ func (s *WarehouseService) UpdateWarehouse(ctx context.Context, companyID, wareh
 
 // DeleteWarehouse soft deletes a warehouse
 // Reference: ANALYSIS-02-MASTER-DATA-MANAGEMENT.md Section 5.3 (Soft Delete Rules)
-func (s *WarehouseService) DeleteWarehouse(ctx context.Context, companyID, warehouseID string) error {
+func (s *WarehouseService) DeleteWarehouse(ctx context.Context, tenantID, companyID, warehouseID string) error {
 	// Get warehouse
-	warehouse, err := s.GetWarehouseByID(ctx, companyID, warehouseID)
+	warehouse, err := s.GetWarehouseByID(ctx, tenantID, companyID, warehouseID)
 	if err != nil {
 		return err
 	}
 
 	// Validate deletion
-	if err := s.validateDeleteWarehouse(ctx, warehouse); err != nil {
+	if err := s.validateDeleteWarehouse(ctx, tenantID, warehouse); err != nil {
 		return err
 	}
 
 	// Soft delete (set IsActive = false)
 	warehouse.IsActive = false
-	if err := s.db.WithContext(ctx).Save(warehouse).Error; err != nil {
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).Save(warehouse).Error; err != nil {
 		return fmt.Errorf("failed to delete warehouse: %w", err)
 	}
 
@@ -314,7 +318,7 @@ func (s *WarehouseService) DeleteWarehouse(ctx context.Context, companyID, wareh
 // ============================================================================
 
 // ListWarehouseStocks retrieves warehouse stocks with filtering and pagination
-func (s *WarehouseService) ListWarehouseStocks(ctx context.Context, companyID string, query *dto.WarehouseStockListQuery) (*dto.WarehouseStockListResponse, error) {
+func (s *WarehouseService) ListWarehouseStocks(ctx context.Context, tenantID, companyID string, query *dto.WarehouseStockListQuery) (*dto.WarehouseStockListResponse, error) {
 	// Set defaults
 	page := 1
 	if query.Page > 0 {
@@ -343,7 +347,7 @@ func (s *WarehouseService) ListWarehouseStocks(ctx context.Context, companyID st
 	}
 
 	// Build base query
-	baseQuery := s.db.WithContext(ctx).Model(&models.WarehouseStock{}).
+	baseQuery := s.db.WithContext(ctx).Set("tenant_id", tenantID).Model(&models.WarehouseStock{}).
 		Joins("JOIN warehouses ON warehouses.id = warehouse_stocks.warehouse_id").
 		Joins("JOIN products ON products.id = warehouse_stocks.product_id").
 		Where("warehouses.company_id = ? AND products.company_id = ?", companyID, companyID)
@@ -408,10 +412,10 @@ func (s *WarehouseService) ListWarehouseStocks(ctx context.Context, companyID st
 }
 
 // UpdateWarehouseStock updates warehouse stock settings (not quantity)
-func (s *WarehouseService) UpdateWarehouseStock(ctx context.Context, companyID, stockID string, req *dto.UpdateWarehouseStockRequest) (*models.WarehouseStock, error) {
+func (s *WarehouseService) UpdateWarehouseStock(ctx context.Context, tenantID, companyID, stockID string, req *dto.UpdateWarehouseStockRequest) (*models.WarehouseStock, error) {
 	// Get existing warehouse stock
 	var stock models.WarehouseStock
-	err := s.db.WithContext(ctx).
+	err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
 		Joins("JOIN warehouses ON warehouses.id = warehouse_stocks.warehouse_id").
 		Where("warehouses.company_id = ? AND warehouse_stocks.id = ?", companyID, stockID).
 		First(&stock).Error
@@ -452,12 +456,12 @@ func (s *WarehouseService) UpdateWarehouseStock(ctx context.Context, companyID, 
 	}
 
 	// Save updates
-	if err := s.db.WithContext(ctx).Save(&stock).Error; err != nil {
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).Save(&stock).Error; err != nil {
 		return nil, fmt.Errorf("failed to update warehouse stock: %w", err)
 	}
 
 	// Reload with Product relation
-	if err := s.db.WithContext(ctx).Preload("Product").Where("id = ?", stock.ID).First(&stock).Error; err != nil {
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).Preload("Product").Where("id = ?", stock.ID).First(&stock).Error; err != nil {
 		return nil, fmt.Errorf("failed to reload warehouse stock: %w", err)
 	}
 

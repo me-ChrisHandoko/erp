@@ -48,6 +48,13 @@ func (h *WarehouseHandler) CreateWarehouse(c *gin.Context) {
 		return
 	}
 
+	// Get tenant ID from context (set by CompanyContextMiddleware)
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
 	// Parse request body
 	var req dto.CreateWarehouseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -56,7 +63,7 @@ func (h *WarehouseHandler) CreateWarehouse(c *gin.Context) {
 	}
 
 	// Create warehouse
-	warehouseModel, err := h.warehouseService.CreateWarehouse(c.Request.Context(), companyID.(string), &req)
+	warehouseModel, err := h.warehouseService.CreateWarehouse(c.Request.Context(), tenantID.(string), companyID.(string), &req)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -90,6 +97,13 @@ func (h *WarehouseHandler) ListWarehouses(c *gin.Context) {
 		return
 	}
 
+	// Get tenant ID from context
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
 	// Parse query parameters
 	var query dto.WarehouseListQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
@@ -98,7 +112,7 @@ func (h *WarehouseHandler) ListWarehouses(c *gin.Context) {
 	}
 
 	// List warehouses
-	response, err := h.warehouseService.ListWarehouses(c.Request.Context(), companyID.(string), &query)
+	response, err := h.warehouseService.ListWarehouses(c.Request.Context(), tenantID.(string), companyID.(string), &query)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -131,6 +145,13 @@ func (h *WarehouseHandler) GetWarehouse(c *gin.Context) {
 		return
 	}
 
+	// Get tenant ID from context
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
 	// Get warehouse ID from path
 	warehouseID := c.Param("id")
 	if warehouseID == "" {
@@ -139,7 +160,7 @@ func (h *WarehouseHandler) GetWarehouse(c *gin.Context) {
 	}
 
 	// Get warehouse
-	warehouseModel, err := h.warehouseService.GetWarehouseByID(c.Request.Context(), companyID.(string), warehouseID)
+	warehouseModel, err := h.warehouseService.GetWarehouseByID(c.Request.Context(), tenantID.(string), companyID.(string), warehouseID)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -176,6 +197,13 @@ func (h *WarehouseHandler) UpdateWarehouse(c *gin.Context) {
 		return
 	}
 
+	// Get tenant ID from context
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
 	// Get warehouse ID from path
 	warehouseID := c.Param("id")
 	if warehouseID == "" {
@@ -191,7 +219,7 @@ func (h *WarehouseHandler) UpdateWarehouse(c *gin.Context) {
 	}
 
 	// Update warehouse
-	warehouseModel, err := h.warehouseService.UpdateWarehouse(c.Request.Context(), companyID.(string), warehouseID, &req)
+	warehouseModel, err := h.warehouseService.UpdateWarehouse(c.Request.Context(), tenantID.(string), companyID.(string), warehouseID, &req)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -227,6 +255,13 @@ func (h *WarehouseHandler) DeleteWarehouse(c *gin.Context) {
 		return
 	}
 
+	// Get tenant ID from context
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
 	// Get warehouse ID from path
 	warehouseID := c.Param("id")
 	if warehouseID == "" {
@@ -235,7 +270,7 @@ func (h *WarehouseHandler) DeleteWarehouse(c *gin.Context) {
 	}
 
 	// Delete warehouse
-	err := h.warehouseService.DeleteWarehouse(c.Request.Context(), companyID.(string), warehouseID)
+	err := h.warehouseService.DeleteWarehouse(c.Request.Context(), tenantID.(string), companyID.(string), warehouseID)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -270,6 +305,13 @@ func (h *WarehouseHandler) ListWarehouseStocks(c *gin.Context) {
 		return
 	}
 
+	// Get tenant ID from context
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
 	// Parse query parameters
 	var query dto.WarehouseStockListQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
@@ -278,7 +320,7 @@ func (h *WarehouseHandler) ListWarehouseStocks(c *gin.Context) {
 	}
 
 	// List warehouse stocks
-	response, err := h.warehouseService.ListWarehouseStocks(c.Request.Context(), companyID.(string), &query)
+	response, err := h.warehouseService.ListWarehouseStocks(c.Request.Context(), tenantID.(string), companyID.(string), &query)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -312,6 +354,13 @@ func (h *WarehouseHandler) UpdateWarehouseStock(c *gin.Context) {
 		return
 	}
 
+	// Get tenant ID from context
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
 	// Get stock ID from path
 	stockID := c.Param("id")
 	if stockID == "" {
@@ -327,7 +376,7 @@ func (h *WarehouseHandler) UpdateWarehouseStock(c *gin.Context) {
 	}
 
 	// Update warehouse stock
-	stockModel, err := h.warehouseService.UpdateWarehouseStock(c.Request.Context(), companyID.(string), stockID, &req)
+	stockModel, err := h.warehouseService.UpdateWarehouseStock(c.Request.Context(), tenantID.(string), companyID.(string), stockID, &req)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)

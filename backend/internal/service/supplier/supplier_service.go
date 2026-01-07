@@ -30,7 +30,7 @@ func NewSupplierService(db *gorm.DB) *SupplierService {
 
 // CreateSupplier creates a new supplier
 // Reference: ANALYSIS-02-MASTER-DATA-MANAGEMENT.md Section 5.1 (Validation Rules)
-func (s *SupplierService) CreateSupplier(ctx context.Context, companyID string, req *dto.CreateSupplierRequest) (*models.Supplier, error) {
+func (s *SupplierService) CreateSupplier(ctx context.Context, tenantID, companyID string, req *dto.CreateSupplierRequest) (*models.Supplier, error) {
 	// Parse credit limit
 	creditLimit := decimal.Zero
 	if req.CreditLimit != nil && *req.CreditLimit != "" {
@@ -50,7 +50,7 @@ func (s *SupplierService) CreateSupplier(ctx context.Context, companyID string, 
 	}
 
 	// Validate code uniqueness per company
-	if err := s.validateCodeUniqueness(companyID, req.Code, ""); err != nil {
+	if err := s.validateCodeUniqueness(ctx, tenantID, companyID, req.Code, ""); err != nil {
 		return nil, err
 	}
 
@@ -67,6 +67,7 @@ func (s *SupplierService) CreateSupplier(ctx context.Context, companyID string, 
 
 	// Create supplier
 	supplier := &models.Supplier{
+		TenantID:           tenantID,
 		CompanyID:          companyID,
 		Code:               req.Code,
 		Name:               req.Name,
@@ -89,7 +90,7 @@ func (s *SupplierService) CreateSupplier(ctx context.Context, companyID string, 
 		IsActive:           true,
 	}
 
-	if err := s.db.WithContext(ctx).Create(supplier).Error; err != nil {
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).Create(supplier).Error; err != nil {
 		return nil, fmt.Errorf("failed to create supplier: %w", err)
 	}
 
@@ -101,7 +102,7 @@ func (s *SupplierService) CreateSupplier(ctx context.Context, companyID string, 
 // ============================================================================
 
 // ListSuppliers retrieves suppliers with filtering, sorting, and pagination
-func (s *SupplierService) ListSuppliers(ctx context.Context, companyID string, query *dto.SupplierListQuery) (*dto.SupplierListResponse, error) {
+func (s *SupplierService) ListSuppliers(ctx context.Context, tenantID, companyID string, query *dto.SupplierListQuery) (*dto.SupplierListResponse, error) {
 	// Set defaults
 	page := 1
 	if query.Page > 0 {
@@ -123,8 +124,8 @@ func (s *SupplierService) ListSuppliers(ctx context.Context, companyID string, q
 		sortOrder = query.SortOrder
 	}
 
-	// Build base query
-	baseQuery := s.db.WithContext(ctx).Model(&models.Supplier{}).
+	// Build base query with tenant context set for GORM callbacks
+	baseQuery := s.db.WithContext(ctx).Set("tenant_id", tenantID).Model(&models.Supplier{}).
 		Where("company_id = ?", companyID)
 
 	// Apply filters
@@ -149,12 +150,13 @@ func (s *SupplierService) ListSuppliers(ctx context.Context, companyID string, q
 		baseQuery = baseQuery.Where("is_pkp = ?", *query.IsPKP)
 	}
 
+	// Filter by isActive status
+	// If IsActive is nil, show ALL suppliers (both active and inactive)
+	// If IsActive is provided, filter by the specified status
 	if query.IsActive != nil {
 		baseQuery = baseQuery.Where("is_active = ?", *query.IsActive)
-	} else {
-		// Default: only show active suppliers
-		baseQuery = baseQuery.Where("is_active = ?", true)
 	}
+	// No default filter - show all when not specified
 
 	if query.HasOverdue != nil && *query.HasOverdue {
 		baseQuery = baseQuery.Where("overdue_amount > 0")
@@ -163,8 +165,10 @@ func (s *SupplierService) ListSuppliers(ctx context.Context, companyID string, q
 	// Count total records
 	var totalCount int64
 	if err := baseQuery.Count(&totalCount).Error; err != nil {
+		println("❌ [ListSuppliers] Count error:", err.Error())
 		return nil, fmt.Errorf("failed to count suppliers: %w", err)
 	}
+	println("✅ [ListSuppliers] Total count:", totalCount)
 
 	// Apply sorting and pagination
 	offset := (page - 1) * pageSize
@@ -175,8 +179,10 @@ func (s *SupplierService) ListSuppliers(ctx context.Context, companyID string, q
 		Limit(pageSize).
 		Offset(offset).
 		Find(&suppliers).Error; err != nil {
+		println("❌ [ListSuppliers] Query error:", err.Error())
 		return nil, fmt.Errorf("failed to list suppliers: %w", err)
 	}
+	println("✅ [ListSuppliers] Found", len(suppliers), "suppliers")
 
 	// Map to response DTOs
 	supplierResponses := make([]dto.SupplierResponse, len(suppliers))
@@ -188,11 +194,14 @@ func (s *SupplierService) ListSuppliers(ctx context.Context, companyID string, q
 	totalPages := int(math.Ceil(float64(totalCount) / float64(pageSize)))
 
 	return &dto.SupplierListResponse{
-		Suppliers:  supplierResponses,
-		TotalCount: totalCount,
-		Page:       page,
-		PageSize:   pageSize,
-		TotalPages: totalPages,
+		Success: true,
+		Data:    supplierResponses,
+		Pagination: dto.PaginationInfo{
+			Page:       page,
+			Limit:      pageSize,
+			Total:      int(totalCount),
+			TotalPages: totalPages,
+		},
 	}, nil
 }
 
@@ -201,9 +210,9 @@ func (s *SupplierService) ListSuppliers(ctx context.Context, companyID string, q
 // ============================================================================
 
 // GetSupplierByID retrieves a supplier by ID
-func (s *SupplierService) GetSupplierByID(ctx context.Context, companyID, supplierID string) (*models.Supplier, error) {
+func (s *SupplierService) GetSupplierByID(ctx context.Context, tenantID, companyID, supplierID string) (*models.Supplier, error) {
 	var supplier models.Supplier
-	err := s.db.WithContext(ctx).
+	err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
 		Where("company_id = ? AND id = ?", companyID, supplierID).
 		First(&supplier).Error
 
@@ -223,16 +232,16 @@ func (s *SupplierService) GetSupplierByID(ctx context.Context, companyID, suppli
 // ============================================================================
 
 // UpdateSupplier updates an existing supplier
-func (s *SupplierService) UpdateSupplier(ctx context.Context, companyID, supplierID string, req *dto.UpdateSupplierRequest) (*models.Supplier, error) {
+func (s *SupplierService) UpdateSupplier(ctx context.Context, tenantID, companyID, supplierID string, req *dto.UpdateSupplierRequest) (*models.Supplier, error) {
 	// Get existing supplier
-	supplier, err := s.GetSupplierByID(ctx, companyID, supplierID)
+	supplier, err := s.GetSupplierByID(ctx, tenantID, companyID, supplierID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Validate code uniqueness if updating code
 	if req.Code != nil && *req.Code != supplier.Code {
-		if err := s.validateCodeUniqueness(companyID, *req.Code, supplierID); err != nil {
+		if err := s.validateCodeUniqueness(ctx, tenantID, companyID, *req.Code, supplierID); err != nil {
 			return nil, err
 		}
 		supplier.Code = *req.Code
@@ -311,7 +320,7 @@ func (s *SupplierService) UpdateSupplier(ctx context.Context, companyID, supplie
 	}
 
 	// Save updates
-	if err := s.db.WithContext(ctx).Save(supplier).Error; err != nil {
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).Save(supplier).Error; err != nil {
 		return nil, fmt.Errorf("failed to update supplier: %w", err)
 	}
 
@@ -324,21 +333,21 @@ func (s *SupplierService) UpdateSupplier(ctx context.Context, companyID, supplie
 
 // DeleteSupplier soft deletes a supplier
 // Reference: ANALYSIS-02-MASTER-DATA-MANAGEMENT.md Section 5.3 (Soft Delete Rules)
-func (s *SupplierService) DeleteSupplier(ctx context.Context, companyID, supplierID string) error {
+func (s *SupplierService) DeleteSupplier(ctx context.Context, tenantID, companyID, supplierID string) error {
 	// Get supplier
-	supplier, err := s.GetSupplierByID(ctx, companyID, supplierID)
+	supplier, err := s.GetSupplierByID(ctx, tenantID, companyID, supplierID)
 	if err != nil {
 		return err
 	}
 
 	// Validate deletion
-	if err := s.validateDeleteSupplier(ctx, supplier); err != nil {
+	if err := s.validateDeleteSupplier(ctx, tenantID, supplier); err != nil {
 		return err
 	}
 
 	// Soft delete (set IsActive = false)
 	supplier.IsActive = false
-	if err := s.db.WithContext(ctx).Save(supplier).Error; err != nil {
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).Save(supplier).Error; err != nil {
 		return fmt.Errorf("failed to delete supplier: %w", err)
 	}
 

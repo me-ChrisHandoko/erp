@@ -79,26 +79,24 @@ type SupplierResponse struct {
 
 // SupplierListResponse - Response DTO for supplier list with pagination
 type SupplierListResponse struct {
-	Suppliers  []SupplierResponse `json:"suppliers"`
-	TotalCount int64              `json:"totalCount"`
-	Page       int                `json:"page"`
-	PageSize   int                `json:"pageSize"`
-	TotalPages int                `json:"totalPages"`
+	Success    bool               `json:"success"`
+	Data       []SupplierResponse `json:"data"`
+	Pagination PaginationInfo     `json:"pagination"`
 }
 
 // SupplierListQuery - Query parameters for listing suppliers
 type SupplierListQuery struct {
 	Page        int     `form:"page" binding:"omitempty,min=1"`
-	PageSize    int     `form:"pageSize" binding:"omitempty,min=1,max=100"`
+	PageSize    int     `form:"page_size" binding:"omitempty,min=1,max=100"`
 	Search      string  `form:"search" binding:"omitempty"`                                              // Search by code or name
 	Type        *string `form:"type" binding:"omitempty,oneof=MANUFACTURER DISTRIBUTOR WHOLESALER"`
 	City        *string `form:"city" binding:"omitempty"`
 	Province    *string `form:"province" binding:"omitempty"`
-	IsPKP       *bool   `form:"isPKP" binding:"omitempty"`
-	IsActive    *bool   `form:"isActive" binding:"omitempty"`
-	HasOverdue  *bool   `form:"hasOverdue" binding:"omitempty"`  // Filter suppliers with overdue amounts > 0
-	SortBy      string  `form:"sortBy" binding:"omitempty,oneof=code name createdAt currentOutstanding overdueAmount"`
-	SortOrder   string  `form:"sortOrder" binding:"omitempty,oneof=asc desc"`
+	IsPKP       *bool   `form:"is_pkp" binding:"omitempty"`
+	IsActive    *bool   `form:"is_active" binding:"omitempty"`
+	HasOverdue  *bool   `form:"has_overdue" binding:"omitempty"`  // Filter suppliers with overdue amounts > 0
+	SortBy      string  `form:"sort_by" binding:"omitempty,oneof=code name createdAt currentOutstanding overdueAmount"`
+	SortOrder   string  `form:"sort_order" binding:"omitempty,oneof=asc desc"`
 }
 
 // ============================================================================

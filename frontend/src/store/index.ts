@@ -9,8 +9,10 @@ import { multiCompanyApi } from './services/multiCompanyApi';
 import { companyUserApi } from './services/companyUserApi';
 import { productApi } from './services/productApi';
 import { customerApi } from './services/customerApi';
+import { supplierApi } from './services/supplierApi';
+import { warehouseApi } from './services/warehouseApi'; // Warehouse management API
 import authReducer, { logout } from './slices/authSlice';
-import companyReducer from './slices/companySlice';
+import companyReducer, { setActiveCompany } from './slices/companySlice';
 
 /**
  * Middleware to reset all RTK Query API caches when user logs out
@@ -32,6 +34,8 @@ const resetAllApiStatesOnLogout: Middleware = (storeAPI) => (next) => (action) =
     storeAPI.dispatch(companyUserApi.util.resetApiState());
     storeAPI.dispatch(productApi.util.resetApiState());
     storeAPI.dispatch(customerApi.util.resetApiState());
+    storeAPI.dispatch(supplierApi.util.resetApiState());
+    storeAPI.dispatch(warehouseApi.util.resetApiState());
 
     // CRITICAL: Clear company Redux state to prevent cross-user data exposure
     // Import clearCompanyState from companySlice
@@ -44,9 +48,59 @@ const resetAllApiStatesOnLogout: Middleware = (storeAPI) => (next) => (action) =
       localStorage.removeItem('activeCompanyId');
     }
 
-    console.log('[Middleware] All API caches cleared (authApi, companyApi, tenantApi, multiCompanyApi, companyUserApi, productApi, customerApi)');
+    console.log('[Middleware] All API caches cleared (authApi, companyApi, tenantApi, multiCompanyApi, companyUserApi, productApi, customerApi, supplierApi, warehouseApi)');
     console.log('[Middleware] Company Redux state cleared (activeCompany, availableCompanies)');
     console.log('[Middleware] localStorage.activeCompanyId cleared to prevent cross-user contamination');
+  }
+
+  return result;
+};
+
+/**
+ * Middleware to reset all RTK Query API caches when user switches company
+ * This prevents cached data from previous company showing in new company context
+ *
+ * CRITICAL: When switching companies, all data (products, customers, suppliers, etc.)
+ * must be refetched with the new company context (X-Company-ID header)
+ */
+const resetAllApiStatesOnCompanySwitch: Middleware = (storeAPI) => (next) => (action) => {
+  // Get the previous company ID before the action is processed
+  const prevState = storeAPI.getState() as RootState;
+  const prevCompanyId = prevState.company.activeCompany?.id;
+
+  // Call next to let the setActiveCompany action update the state
+  const result = next(action);
+
+  // After setActiveCompany action is processed, check if company actually changed
+  if (setActiveCompany.match(action)) {
+    const newCompanyId = action.payload.company.id;
+
+    // Only reset caches if company actually changed (not initial load)
+    if (prevCompanyId && prevCompanyId !== newCompanyId) {
+      console.log('[Middleware] Company switch detected:', {
+        from: prevCompanyId,
+        to: newCompanyId,
+      });
+      console.log('[Middleware] Resetting all API caches to fetch company-specific data...');
+
+      // Reset all RTK Query API slices to clear cached data from previous company
+      // This forces refetch with new X-Company-ID header
+      storeAPI.dispatch(companyApi.util.resetApiState());
+      storeAPI.dispatch(companyUserApi.util.resetApiState());
+      storeAPI.dispatch(productApi.util.resetApiState());
+      storeAPI.dispatch(customerApi.util.resetApiState());
+      storeAPI.dispatch(supplierApi.util.resetApiState());
+      storeAPI.dispatch(warehouseApi.util.resetApiState());
+      // Note: authApi, tenantApi, multiCompanyApi are NOT reset (user-level, not company-level)
+
+      console.log('[Middleware] All company-scoped API caches cleared (companyApi, companyUserApi, productApi, customerApi, supplierApi, warehouseApi)');
+      console.log('[Middleware] Next API calls will fetch data for company:', newCompanyId);
+    } else if (!prevCompanyId) {
+      console.log('[Middleware] Initial company selection:', newCompanyId);
+      console.log('[Middleware] No cache reset needed (first company selection)');
+    } else {
+      console.log('[Middleware] Company unchanged:', newCompanyId);
+    }
   }
 
   return result;
@@ -73,6 +127,8 @@ export const store = configureStore({
     [companyUserApi.reducerPath]: companyUserApi.reducer, // Company-scoped user API
     [productApi.reducerPath]: productApi.reducer, // Product management API
     [customerApi.reducerPath]: customerApi.reducer, // Customer management API
+    [supplierApi.reducerPath]: supplierApi.reducer, // Supplier management API
+    [warehouseApi.reducerPath]: warehouseApi.reducer, // Warehouse management API
   },
 
   // Add RTK Query middleware for caching, invalidation, etc.
@@ -85,7 +141,10 @@ export const store = configureStore({
       companyUserApi.middleware, // Company-scoped user middleware
       productApi.middleware, // Product management middleware
       customerApi.middleware, // Customer management middleware
-      resetAllApiStatesOnLogout // CRITICAL: Reset all API caches on logout
+      supplierApi.middleware, // Supplier management middleware
+      warehouseApi.middleware, // Warehouse management middleware
+      resetAllApiStatesOnLogout, // CRITICAL: Reset all API caches on logout
+      resetAllApiStatesOnCompanySwitch // CRITICAL: Reset company-scoped caches on company switch
     ),
 
   // Enable Redux DevTools in development

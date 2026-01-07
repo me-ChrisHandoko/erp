@@ -288,6 +288,77 @@ const baseQueryWithReauth: BaseQueryFn<
     }
   }
 
+  // 🔐 HYBRID SOLUTION PART 2: Reactive 403 CSRF Error Handler
+  // Handle CSRF token errors with automatic recovery
+  if (result.error && result.error.status === 403) {
+    const errorData = result.error.data as any;
+    const errorMessage = errorData?.error || errorData?.message || '';
+
+    // Check if it's a CSRF-related error
+    const isCSRFError =
+      errorMessage.toLowerCase().includes('csrf') ||
+      errorMessage.toLowerCase().includes('token') ||
+      errorMessage.toLowerCase().includes('forbidden');
+
+    if (isCSRFError) {
+      console.log('[Auth] 🚨 403 CSRF error detected:', errorMessage);
+      console.log('[Auth] 🔄 Attempting recovery via token refresh...');
+
+      try {
+        // RACE CONDITION PREVENTION: Check if refresh is already in progress
+        if (!refreshTokenPromise) {
+          console.log('[Auth] Initiating token refresh for CSRF recovery');
+
+          // Create new refresh promise
+          refreshTokenPromise = Promise.resolve(
+            baseQuery(
+              { url: '/auth/refresh', method: 'POST' },
+              api,
+              extraOptions
+            )
+          ).finally(() => {
+            console.log('[Auth] CSRF recovery refresh completed');
+            refreshTokenPromise = null;
+          });
+        } else {
+          console.log('[Auth] Token refresh already in progress for CSRF recovery');
+        }
+
+        // Wait for refresh to complete
+        const refreshResult = await refreshTokenPromise;
+
+        if (refreshResult.data) {
+          console.log('[Auth] ✅ Token refresh successful, CSRF token regenerated');
+
+          // Extract new access token
+          const refreshData = refreshResult.data as ApiSuccessResponse<RefreshTokenResponseData>;
+          const newAccessToken = refreshData.data.accessToken;
+
+          // Update Redux state with new access token
+          api.dispatch(setAccessToken(newAccessToken));
+
+          // Retry original request with new CSRF token
+          console.log('[Auth] 🔄 Retrying original request with new CSRF token...');
+          result = await baseQuery(args, api, extraOptions);
+
+          if (result.data) {
+            console.log('[Auth] ✅ Request succeeded after CSRF recovery');
+          } else if (result.error) {
+            console.error('[Auth] ❌ Request still failed after CSRF recovery:', result.error);
+          }
+        } else {
+          console.error('[Auth] ❌ Token refresh failed during CSRF recovery');
+          console.log('[Auth] Unable to recover from CSRF error, user may need to re-login');
+        }
+      } catch (error) {
+        console.error('[Auth] ❌ CSRF recovery error:', error);
+        console.log('[Auth] Fallback: User may need to reload page or re-login');
+      }
+    } else {
+      console.log('[Auth] 403 error (not CSRF-related):', errorMessage);
+    }
+  }
+
   return result;
 };
 

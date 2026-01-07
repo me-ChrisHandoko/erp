@@ -17,9 +17,9 @@ import (
 
 // validateCodeUniqueness validates supplier code uniqueness per company
 // Reference: ANALYSIS-02-MASTER-DATA-MANAGEMENT.md Section 5.1 (Validation Rules)
-func (s *SupplierService) validateCodeUniqueness(companyID, code, excludeSupplierID string) error {
+func (s *SupplierService) validateCodeUniqueness(ctx context.Context, tenantID, companyID, code, excludeSupplierID string) error {
 	var existing models.Supplier
-	query := s.db.Where("company_id = ? AND code = ?", companyID, code)
+	query := s.db.WithContext(ctx).Set("tenant_id", tenantID).Where("company_id = ? AND code = ?", companyID, code)
 
 	if excludeSupplierID != "" {
 		query = query.Where("id != ?", excludeSupplierID)
@@ -37,7 +37,7 @@ func (s *SupplierService) validateCodeUniqueness(companyID, code, excludeSupplie
 
 // validateDeleteSupplier validates supplier deletion
 // Reference: ANALYSIS-02-MASTER-DATA-MANAGEMENT.md Section 5.3 (Soft Delete Rules)
-func (s *SupplierService) validateDeleteSupplier(ctx context.Context, supplier *models.Supplier) error {
+func (s *SupplierService) validateDeleteSupplier(ctx context.Context, tenantID string, supplier *models.Supplier) error {
 	// 1. Cannot delete if supplier has outstanding balance
 	if supplier.CurrentOutstanding.GreaterThan(decimal.Zero) {
 		return pkgerrors.NewBadRequestError(
@@ -58,7 +58,7 @@ func (s *SupplierService) validateDeleteSupplier(ctx context.Context, supplier *
 	// 4. TODO Phase 3: Cannot delete if supplier has unpaid goods receipts
 	// 5. Check if supplier is linked to any products
 	var productCount int64
-	err := s.db.WithContext(ctx).
+	err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
 		Model(&models.ProductSupplier{}).
 		Where("supplier_id = ?", supplier.ID).
 		Count(&productCount).Error

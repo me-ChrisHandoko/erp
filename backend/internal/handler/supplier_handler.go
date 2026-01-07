@@ -41,6 +41,13 @@ func NewSupplierHandler(supplierService *supplier.SupplierService) *SupplierHand
 // @Router /api/v1/suppliers [post]
 // @Security BearerAuth
 func (h *SupplierHandler) CreateSupplier(c *gin.Context) {
+	// Get tenant ID from context
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
 	// Get company ID from context (set by CompanyContextMiddleware)
 	companyID, exists := c.Get("company_id")
 	if !exists {
@@ -56,7 +63,7 @@ func (h *SupplierHandler) CreateSupplier(c *gin.Context) {
 	}
 
 	// Create supplier
-	supplierModel, err := h.supplierService.CreateSupplier(c.Request.Context(), companyID.(string), &req)
+	supplierModel, err := h.supplierService.CreateSupplier(c.Request.Context(), tenantID.(string), companyID.(string), &req)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -69,7 +76,10 @@ func (h *SupplierHandler) CreateSupplier(c *gin.Context) {
 	// Map to response DTO
 	response := mapSupplierToResponse(supplierModel)
 
-	c.JSON(http.StatusCreated, response)
+	c.JSON(http.StatusCreated, gin.H{
+		"success": true,
+		"data":    response,
+	})
 }
 
 // ============================================================================
@@ -98,6 +108,13 @@ func (h *SupplierHandler) CreateSupplier(c *gin.Context) {
 // @Router /api/v1/suppliers [get]
 // @Security BearerAuth
 func (h *SupplierHandler) ListSuppliers(c *gin.Context) {
+	// Get tenant ID from context
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
 	// Get company ID from context
 	companyID, exists := c.Get("company_id")
 	if !exists {
@@ -113,8 +130,10 @@ func (h *SupplierHandler) ListSuppliers(c *gin.Context) {
 	}
 
 	// List suppliers
-	response, err := h.supplierService.ListSuppliers(c.Request.Context(), companyID.(string), &query)
+	response, err := h.supplierService.ListSuppliers(c.Request.Context(), tenantID.(string), companyID.(string), &query)
 	if err != nil {
+		// Log the actual error for debugging
+		println("❌ [ListSuppliers] Error:", err.Error())
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
 			return
@@ -143,6 +162,13 @@ func (h *SupplierHandler) ListSuppliers(c *gin.Context) {
 // @Router /api/v1/suppliers/{id} [get]
 // @Security BearerAuth
 func (h *SupplierHandler) GetSupplier(c *gin.Context) {
+	// Get tenant ID from context
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
 	// Get company ID from context
 	companyID, exists := c.Get("company_id")
 	if !exists {
@@ -158,7 +184,7 @@ func (h *SupplierHandler) GetSupplier(c *gin.Context) {
 	}
 
 	// Get supplier
-	supplierModel, err := h.supplierService.GetSupplierByID(c.Request.Context(), companyID.(string), supplierID)
+	supplierModel, err := h.supplierService.GetSupplierByID(c.Request.Context(), tenantID.(string), companyID.(string), supplierID)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -171,7 +197,10 @@ func (h *SupplierHandler) GetSupplier(c *gin.Context) {
 	// Map to response DTO
 	response := mapSupplierToResponse(supplierModel)
 
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    response,
+	})
 }
 
 // ============================================================================
@@ -192,6 +221,13 @@ func (h *SupplierHandler) GetSupplier(c *gin.Context) {
 // @Router /api/v1/suppliers/{id} [put]
 // @Security BearerAuth
 func (h *SupplierHandler) UpdateSupplier(c *gin.Context) {
+	// Get tenant ID from context
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
 	// Get company ID from context
 	companyID, exists := c.Get("company_id")
 	if !exists {
@@ -214,7 +250,7 @@ func (h *SupplierHandler) UpdateSupplier(c *gin.Context) {
 	}
 
 	// Update supplier
-	supplierModel, err := h.supplierService.UpdateSupplier(c.Request.Context(), companyID.(string), supplierID, &req)
+	supplierModel, err := h.supplierService.UpdateSupplier(c.Request.Context(), tenantID.(string), companyID.(string), supplierID, &req)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -227,7 +263,10 @@ func (h *SupplierHandler) UpdateSupplier(c *gin.Context) {
 	// Map to response DTO
 	response := mapSupplierToResponse(supplierModel)
 
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    response,
+	})
 }
 
 // ============================================================================
@@ -247,6 +286,13 @@ func (h *SupplierHandler) UpdateSupplier(c *gin.Context) {
 // @Router /api/v1/suppliers/{id} [delete]
 // @Security BearerAuth
 func (h *SupplierHandler) DeleteSupplier(c *gin.Context) {
+	// Get tenant ID from context
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
 	// Get company ID from context
 	companyID, exists := c.Get("company_id")
 	if !exists {
@@ -262,7 +308,7 @@ func (h *SupplierHandler) DeleteSupplier(c *gin.Context) {
 	}
 
 	// Delete supplier
-	err := h.supplierService.DeleteSupplier(c.Request.Context(), companyID.(string), supplierID)
+	err := h.supplierService.DeleteSupplier(c.Request.Context(), tenantID.(string), companyID.(string), supplierID)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)

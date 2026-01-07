@@ -13,6 +13,26 @@ import { jwtDecode } from "jwt-decode";
 import type { JWTPayload } from "@/types/api";
 
 /**
+ * Helper function to get CSRF token from cookie
+ * 🔐 HYBRID SOLUTION PART 1: Proactive CSRF check
+ */
+function getCSRFToken(): string | null {
+  if (typeof document === 'undefined') return null;
+
+  const name = 'csrf_token=';
+  const decodedCookie = decodeURIComponent(document.cookie);
+  const cookieArray = decodedCookie.split(';');
+
+  for (let cookie of cookieArray) {
+    cookie = cookie.trim();
+    if (cookie.indexOf(name) === 0) {
+      return cookie.substring(name.length);
+    }
+  }
+  return null;
+}
+
+/**
  * Auth initializer component
  * Restores authentication state from localStorage or refresh token cookie
  */
@@ -117,6 +137,79 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
             // Check if token is still valid
             if (decoded.exp > now) {
               console.log("[Auth] Restoring session from localStorage");
+
+              // 🔐 HYBRID SOLUTION PART 1A: Proactive CSRF Check
+              // Check if CSRF cookie exists when restoring session
+              const csrfToken = getCSRFToken();
+
+              if (!csrfToken) {
+                console.warn("[Auth] ⚠️ CSRF token missing but access token valid");
+                console.log("[Auth] 🔄 Forcing token refresh to regenerate CSRF token...");
+
+                // CSRF cookie missing - force token refresh to regenerate it
+                // This prevents 403 errors on first POST request
+                try {
+                  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/auth/refresh`, {
+                    method: 'POST',
+                    credentials: 'include', // Send cookies (refresh_token)
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                  });
+
+                  if (response.ok) {
+                    const data = await response.json();
+                    console.log("[Auth] ✅ Token refresh successful, CSRF regenerated");
+
+                    // Extract new access token
+                    const newAccessToken = data.data.accessToken;
+
+                    // Decode new token
+                    const newDecoded = jwtDecode<JWTPayload>(newAccessToken);
+
+                    // Save to localStorage
+                    localStorage.setItem("accessToken", newAccessToken);
+
+                    // Restore session with new token
+                    dispatch(
+                      setCredentials({
+                        user: {
+                          id: newDecoded.user_id,
+                          email: newDecoded.email,
+                          fullName: "",
+                          isActive: true,
+                          createdAt: "",
+                        },
+                        accessToken: newAccessToken,
+                        activeTenant: newDecoded.tenant_id
+                          ? {
+                              tenantId: newDecoded.tenant_id,
+                              role: newDecoded.role as any,
+                              companyName: "",
+                              status: "ACTIVE",
+                            }
+                          : null,
+                        availableTenants: [],
+                      })
+                    );
+
+                    setTokenRestored(true);
+                    setIsRestoring(false);
+                    return;
+                  } else {
+                    console.error("[Auth] ❌ Token refresh failed, proceeding with existing token");
+                    console.log("[Auth] Note: First POST request may fail with 403 (will be handled by reactive recovery)");
+                    // Fall through to restore session with existing token
+                    // Reactive handler will catch 403 errors
+                  }
+                } catch (error) {
+                  console.error("[Auth] ❌ Token refresh error:", error);
+                  console.log("[Auth] Proceeding with existing token, reactive handler will catch 403");
+                  // Fall through to restore session with existing token
+                }
+              } else {
+                console.log("[Auth] ✅ CSRF token present, session restoration OK");
+              }
 
               // Restore partial user data immediately (to avoid showing "Guest User")
               dispatch(
