@@ -22,7 +22,7 @@ func setupRoutes(router *gin.Engine, cfg *config.Config, db *gorm.DB) {
 		panic("Failed to create token service: " + err.Error())
 	}
 	authService := auth.NewAuthService(db, cfg, passwordHasher, tokenService)
-	authHandler := handler.NewAuthHandler(authService, cfg)
+	authHandler := handler.NewAuthHandler(authService, cfg, db) // ✅ Pass db for company queries
 	adminHandler := handler.NewAdminHandler(authService, cfg)
 
 	// API v1 routes

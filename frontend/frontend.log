@@ -2,13 +2,44 @@
 > frontend@0.1.0 dev
 > next dev
 
- ⚠ Port 3000 is in use by process 6409, using available port 3001 instead.
    ▲ Next.js 16.0.10 (Turbopack)
-   - Local:         http://localhost:3001
-   - Network:       http://192.168.50.48:3001
+   - Local:         http://localhost:3000
+   - Network:       http://192.168.252.143:3000
    - Environments: .env.local
 
  ✓ Starting...
- ⨯ Unable to acquire lock at /Users/christianhandoko/Development/work/erp/frontend/.next/dev/lock, is another instance of next dev running?
-   Suggestion: If you intended to restart next dev, terminate the other process, and then try again.
-[?25h
+ ⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+ ✓ Ready in 1248ms
+[Auth] shouldFetchFullData: {
+  tokenRestored: false,
+  hasUser: false,
+  userFullName: undefined,
+  shouldFetch: false,
+  hasReduxToken: false
+}
+[Auth] useGetCurrentUserQuery status: { hasData: false, isLoading: false, isError: false, error: null }
+[Server API Fetch via Proxy] GET http://localhost:3000/api/proxy/products?page=1&page_size=20&sort_by=code&sort_order=asc
+[API Proxy] GET http://localhost:8080/api/v1/products?page=1&page_size=20&sort_by=code&sort_order=asc
+ GET /api/proxy/products?page=1&page_size=20&sort_by=code&sort_order=asc 401 in 1170ms (compile: 1143ms, render: 27ms)
+[Server API Error] 401 {"error":{"code":"AUTHENTICATION_ERROR","message":"Authorization header required"},"success":false}
+[Server API Fetch Error] Error: API error: 401 - {"error":{"code":"AUTHENTICATION_ERROR","message":"Authorization header required"},"success":false}
+    at apiFetch (src/lib/server/api-fetch.ts:70:13)
+    at async ProductsPage (src/app/(app)/master/products/page.tsx:57:22)
+  68 |       const errorText = await response.text();
+  69 |       console.error('[Server API Error]', response.status, errorText);
+> 70 |       throw new Error(`API error: ${response.status} - ${errorText}`);
+     |             ^
+  71 |     }
+  72 |
+  73 |     const data = await response.json();
+[Products Page] Failed to fetch initial data: Error: API error: 401 - {"error":{"code":"AUTHENTICATION_ERROR","message":"Authorization header required"},"success":false}
+    at apiFetch (src/lib/server/api-fetch.ts:70:13)
+    at async ProductsPage (src/app/(app)/master/products/page.tsx:57:22)
+  68 |       const errorText = await response.text();
+  69 |       console.error('[Server API Error]', response.status, errorText);
+> 70 |       throw new Error(`API error: ${response.status} - ${errorText}`);
+     |             ^
+  71 |     }
+  72 |
+  73 |     const data = await response.json();
+ GET /master/products 200 in 4.3s (compile: 2.6s, proxy.ts: 71ms, render: 1562ms)

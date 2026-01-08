@@ -48,27 +48,35 @@ function hasRefreshTokenCookie(): boolean {
 
 /**
  * Base query configuration with authentication and company context headers
+ *
+ * Uses Next.js API proxy route to ensure httpOnly cookies are forwarded to backend.
+ * The proxy route at /api/proxy/[...path] reads cookies from Next.js cookie store
+ * and forwards them to backend with proper authentication headers.
  */
 const baseQuery = fetchBaseQuery({
-  baseUrl: `${process.env.NEXT_PUBLIC_API_URL}/api/v1`,
-  credentials: 'include', // CRITICAL: Send cookies (refresh_token, csrf_token)
+  baseUrl: '/api/proxy', // Use Next.js API proxy to forward cookies
+  credentials: 'include', // CRITICAL: Send cookies to Next.js proxy
   prepareHeaders: (headers, { getState }) => {
     const state = getState() as any;
 
-    // Add Authorization header if token exists
+    // Note: Authorization header is automatically added by the proxy route
+    // from httpOnly access_token cookie. We still add it here for Redux state
+    // in case it's available (e.g., after login before cookie is set).
     const token = state.auth.accessToken;
     if (token) {
       headers.set('authorization', `Bearer ${token}`);
     }
 
-    // Add X-Company-ID header for multi-company context
+    // Note: X-Company-ID header is automatically added by the proxy route
+    // from active_company_id cookie. We still add it here for Redux state
+    // to ensure consistency during company switching.
     const activeCompanyId = state.company?.activeCompany?.id;
     if (activeCompanyId) {
       headers.set('X-Company-ID', activeCompanyId);
     }
 
-    // Add CSRF token header for POST/PUT/DELETE requests
-    // CSRF token is read from cookie and sent in header (double-submit pattern)
+    // Note: CSRF token is automatically forwarded by the proxy route.
+    // We keep this for double-submit pattern verification.
     const csrfToken = getCSRFToken();
     if (csrfToken) {
       headers.set('X-CSRF-Token', csrfToken);
@@ -417,14 +425,22 @@ export const authApi = createApi({
   endpoints: (builder) => ({
     /**
      * Login endpoint
-     * POST /auth/login
+     * POST /api/auth/login (Next.js API Route that proxies to backend)
+     * Uses Next.js API Route to set cookies in same domain for SSR
      */
     login: builder.mutation<ApiSuccessResponse<LoginResponseData>, LoginRequest>({
-      query: (credentials) => ({
-        url: '/auth/login',
-        method: 'POST',
-        body: credentials,
-      }),
+      query: (credentials) => {
+        // ✅ Use absolute URL to Next.js API Route to bypass baseUrl
+        const nextJsUrl = typeof window !== 'undefined'
+          ? `${window.location.origin}/api/auth/login`
+          : 'http://localhost:3000/api/auth/login';
+
+        return {
+          url: nextJsUrl,
+          method: 'POST',
+          body: credentials,
+        };
+      },
       async onQueryStarted(arg, { dispatch, queryFulfilled }) {
         try {
           const { data } = await queryFulfilled;

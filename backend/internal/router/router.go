@@ -81,7 +81,7 @@ func setupAuthRoutes(
 	authService := auth.NewAuthService(db, cfg, passwordHasher, tokenService)
 
 	// Create auth handler
-	authHandler := handler.NewAuthHandler(authService, cfg)
+	authHandler := handler.NewAuthHandler(authService, cfg, db) // ✅ Pass db for company queries
 
 	// Auth routes with stricter rate limiting
 	authGroup := rg.Group("/auth")
@@ -111,7 +111,7 @@ func setupProtectedRoutes(
 	// Create auth service and handler for protected auth routes
 	passwordHasher := security.NewPasswordHasher(cfg.Argon2)
 	authService := auth.NewAuthService(db, cfg, passwordHasher, tokenService)
-	authHandler := handler.NewAuthHandler(authService, cfg)
+	authHandler := handler.NewAuthHandler(authService, cfg, db) // ✅ Pass db for company queries
 
 	// ============================================================================
 	// AUTH-ONLY PROTECTED ROUTES

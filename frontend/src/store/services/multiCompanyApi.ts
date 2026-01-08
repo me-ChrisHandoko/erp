@@ -44,26 +44,30 @@ function getCSRFToken(): string | null {
 
 /**
  * Base query configuration with authentication and company context headers
+ *
+ * Uses Next.js API proxy route to ensure httpOnly cookies are forwarded to backend.
  */
 const baseQuery = fetchBaseQuery({
-  baseUrl: `${process.env.NEXT_PUBLIC_API_URL}/api/v1`,
+  baseUrl: '/api/proxy', // Use Next.js API proxy to forward cookies
   credentials: 'include', // Send cookies (refresh_token, csrf_token)
   prepareHeaders: (headers, { getState }) => {
     const state = getState() as RootState;
 
-    // Add Authorization header if token exists
+    // Note: Authorization header is automatically added by the proxy route
+    // from httpOnly access_token cookie. We still add it here for consistency.
     const token = state.auth.accessToken;
     if (token) {
       headers.set('authorization', `Bearer ${token}`);
     }
 
-    // Add X-Company-ID header for multi-company context
+    // Note: X-Company-ID header is automatically added by the proxy route
+    // from active_company_id cookie. We still add it here for consistency.
     const activeCompanyId = state.company.activeCompany?.id;
     if (activeCompanyId) {
       headers.set('X-Company-ID', activeCompanyId);
     }
 
-    // Add CSRF token header for POST/PUT/DELETE requests
+    // Note: CSRF token is automatically forwarded by the proxy route.
     const csrfToken = getCSRFToken();
     if (csrfToken) {
       headers.set('X-CSRF-Token', csrfToken);

@@ -39,20 +39,40 @@ export const productApi = createApi({
      * GET /api/v1/products
      */
     listProducts: builder.query<ProductListResponse, ProductFilters | void>({
-      query: (filters = {}) => ({
-        url: "/products",
-        params: {
-          search: filters.search,
-          category: filters.category,
-          is_active: filters.isActive,
-          is_batch_tracked: filters.isBatchTracked,
-          is_perishable: filters.isPerishable,
+      query: (filters = {}) => {
+        // Build params object, explicitly handling boolean values
+        const params: Record<string, any> = {
           page: filters.page || 1,
           page_size: filters.pageSize || 20,
           sort_by: filters.sortBy || "code",
           sort_order: filters.sortOrder || "asc",
-        },
-      }),
+        };
+
+        // Only add optional params if they have values
+        if (filters.search) params.search = filters.search;
+        if (filters.category) params.category = filters.category;
+
+        // Explicitly handle boolean filters (include false values!)
+        if (filters.isActive !== undefined) params.is_active = filters.isActive;
+        if (filters.isBatchTracked !== undefined) params.is_batch_tracked = filters.isBatchTracked;
+        if (filters.isPerishable !== undefined) params.is_perishable = filters.isPerishable;
+
+        return {
+          url: "/products",
+          params,
+        };
+      },
+      // Force RTK Query to treat different filter values as different cache keys
+      serializeQueryArgs: ({ queryArgs }) => {
+        // Create unique cache key that includes all filter values
+        return JSON.stringify(queryArgs);
+      },
+      // Always refetch when arguments change (important for filter changes!)
+      forceRefetch: ({ currentArg, previousArg }) => {
+        return JSON.stringify(currentArg) !== JSON.stringify(previousArg);
+      },
+      // Disable caching for filter changes
+      keepUnusedDataFor: 0,
       providesTags: (result) =>
         result
           ? [

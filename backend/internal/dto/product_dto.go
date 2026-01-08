@@ -44,9 +44,9 @@ type UpdateProductRequest struct {
 type ProductFilters struct {
 	Search         string  `form:"search"`
 	Category       string  `form:"category"`
-	IsActive       *bool   `form:"isActive"`
-	IsBatchTracked *bool   `form:"isBatchTracked"`
-	IsPerishable   *bool   `form:"isPerishable"`
+	IsActive       *bool   `form:"is_active"`
+	IsBatchTracked *bool   `form:"is_batch_tracked"`
+	IsPerishable   *bool   `form:"is_perishable"`
 	Page           int     `form:"page" binding:"omitempty,min=1"`
 	Limit          int     `form:"page_size" binding:"omitempty,min=1,max=100"`
 	SortBy         string  `form:"sort_by" binding:"omitempty,oneof=code name createdAt"`

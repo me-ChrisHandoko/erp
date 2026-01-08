@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
+	"gorm.io/gorm" // ✅ NEW: Import gorm for database queries
 
 	"backend/internal/config"
 	"backend/internal/dto"
@@ -23,14 +24,16 @@ type AuthHandler struct {
 	authService *auth.AuthService
 	cfg         *config.Config
 	validator   *customValidator.Validator
+	db          *gorm.DB // ✅ NEW: Database connection for company queries
 }
 
 // NewAuthHandler creates a new auth handler
-func NewAuthHandler(authService *auth.AuthService, cfg *config.Config) *AuthHandler {
+func NewAuthHandler(authService *auth.AuthService, cfg *config.Config, db *gorm.DB) *AuthHandler {
 	return &AuthHandler{
 		authService: authService,
 		cfg:         cfg,
 		validator:   customValidator.New(),
+		db:          db, // ✅ NEW: Store DB connection
 	}
 }
 
@@ -58,9 +61,45 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// Set refresh token as httpOnly cookie
 	h.setRefreshTokenCookie(c, response.RefreshToken)
 
+	// ✅ NEW: Set access token as httpOnly cookie for server-side rendering
+	// This enables Next.js Server Components to access the token securely
+	h.setAccessTokenCookie(c, response.AccessToken)
+
 	// Set CSRF token for protecting future requests
 	// This must be done after successful login to establish session security
 	h.setCSRFToken(c)
+
+	// ✅ NEW: Auto-set default company for SSR support
+	// Query user's first company and set active_company_id cookie
+	// This enables server-side rendering to work immediately after login
+	if response.User != nil {
+		var firstCompany struct {
+			CompanyID string
+		}
+
+		// Try user_company_roles first (Tier 2 - per-company access)
+		err = h.db.Table("user_company_roles").
+			Select("company_id").
+			Where("user_id = ? AND is_active = true", response.User.ID).
+			Order("created_at ASC").
+			Limit(1).
+			Scan(&firstCompany).Error
+
+		// If no company role found, try tenant-level access (Tier 1 - owner/admin)
+		// For users with tenant-level OWNER role, get first company from their tenant
+		if (err != nil || firstCompany.CompanyID == "") && response.User.CurrentTenant != nil {
+			err = h.db.Table("companies").
+				Select("id as company_id").
+				Where("tenant_id = ?", response.User.CurrentTenant.ID).
+				Order("created_at ASC").
+				Limit(1).
+				Scan(&firstCompany).Error
+		}
+
+		if err == nil && firstCompany.CompanyID != "" {
+			h.setCompanyIDCookie(c, firstCompany.CompanyID)
+		}
+	}
 
 	// Don't send refresh token in response body
 	response.RefreshToken = ""
@@ -118,6 +157,9 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	// Set new refresh token as httpOnly cookie
 	h.setRefreshTokenCookie(c, response.RefreshToken)
 
+	// ✅ NEW: Set new access token as httpOnly cookie for server-side rendering
+	h.setAccessTokenCookie(c, response.AccessToken)
+
 	// 🔐 FIX #1: Regenerate CSRF token for renewed session security
 	// This prevents 403 errors after long sleep (>24h) when CSRF cookie expires
 	// but refresh token is still valid (7 days)
@@ -164,6 +206,12 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 
 	// Clear refresh token cookie
 	h.clearRefreshTokenCookie(c)
+
+	// ✅ NEW: Clear access token cookie
+	h.clearAccessTokenCookie(c)
+
+	// Clear CSRF token cookie
+	h.clearCSRFCookie(c)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -341,6 +389,12 @@ func (h *AuthHandler) SwitchCompany(c *gin.Context) {
 
 	// Set new refresh token cookie (optional - keep existing refresh token)
 	// Refresh token is tenant-scoped, not company-scoped
+
+	// ✅ NEW: Set new access token cookie with updated company context
+	h.setAccessTokenCookie(c, accessToken)
+
+	// ✅ NEW: Set active company ID cookie for server-side rendering
+	h.setCompanyIDCookie(c, company.ID)
 
 	response := &dto.SwitchCompanyResponse{
 		AccessToken: accessToken,
@@ -550,6 +604,64 @@ func (h *AuthHandler) setRefreshTokenCookie(c *gin.Context, token string) {
 	c.SetSameSite(sameSiteMode)
 }
 
+// ✅ NEW: setAccessTokenCookie sets the access token as an httpOnly cookie
+// This enables Next.js Server Components to securely access the token
+// for server-side rendering and API calls
+func (h *AuthHandler) setAccessTokenCookie(c *gin.Context, token string) {
+	maxAge := int(h.cfg.JWT.Expiry.Seconds())
+
+	c.SetCookie(
+		"access_token",           // name
+		token,                    // value
+		maxAge,                   // maxAge in seconds (15 minutes typically)
+		"/",                      // path
+		h.cfg.Cookie.Domain,      // domain
+		h.cfg.Cookie.Secure,      // secure (HTTPS only in production)
+		true,                     // httpOnly (prevent XSS)
+	)
+
+	// Set SameSite attribute from configuration
+	sameSiteMode := http.SameSiteLaxMode // Default
+	switch h.cfg.Cookie.SameSite {
+	case "Strict":
+		sameSiteMode = http.SameSiteStrictMode
+	case "None":
+		sameSiteMode = http.SameSiteNoneMode
+	case "Lax":
+		sameSiteMode = http.SameSiteLaxMode
+	}
+	c.SetSameSite(sameSiteMode)
+}
+
+// ✅ NEW: setCompanyIDCookie sets the active company ID cookie
+// This enables Next.js Server Components to access company context
+// Not httpOnly so frontend can also read it
+func (h *AuthHandler) setCompanyIDCookie(c *gin.Context, companyID string) {
+	maxAge := 30 * 24 * 60 * 60 // 30 days
+
+	c.SetCookie(
+		"active_company_id",      // name
+		companyID,                // value
+		maxAge,                   // maxAge in seconds
+		"/",                      // path
+		h.cfg.Cookie.Domain,      // domain
+		h.cfg.Cookie.Secure,      // secure (HTTPS only in production)
+		false,                    // NOT httpOnly (frontend needs to read)
+	)
+
+	// Set SameSite attribute from configuration
+	sameSiteMode := http.SameSiteLaxMode // Default
+	switch h.cfg.Cookie.SameSite {
+	case "Strict":
+		sameSiteMode = http.SameSiteStrictMode
+	case "None":
+		sameSiteMode = http.SameSiteNoneMode
+	case "Lax":
+		sameSiteMode = http.SameSiteLaxMode
+	}
+	c.SetSameSite(sameSiteMode)
+}
+
 // clearRefreshTokenCookie clears the refresh token cookie
 func (h *AuthHandler) clearRefreshTokenCookie(c *gin.Context) {
 	c.SetCookie(
@@ -560,6 +672,32 @@ func (h *AuthHandler) clearRefreshTokenCookie(c *gin.Context) {
 		h.cfg.Cookie.Domain,
 		h.cfg.Cookie.Secure,
 		true,
+	)
+}
+
+// ✅ NEW: clearAccessTokenCookie clears the access token cookie
+func (h *AuthHandler) clearAccessTokenCookie(c *gin.Context) {
+	c.SetCookie(
+		"access_token",
+		"",
+		-1, // maxAge -1 means delete
+		"/",
+		h.cfg.Cookie.Domain,
+		h.cfg.Cookie.Secure,
+		true,
+	)
+}
+
+// ✅ NEW: clearCompanyIDCookie clears the company ID cookie
+func (h *AuthHandler) clearCompanyIDCookie(c *gin.Context) {
+	c.SetCookie(
+		"active_company_id",
+		"",
+		-1, // maxAge -1 means delete
+		"/",
+		h.cfg.Cookie.Domain,
+		h.cfg.Cookie.Secure,
+		false,
 	)
 }
 
