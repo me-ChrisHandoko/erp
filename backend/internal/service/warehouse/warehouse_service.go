@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
 	"backend/internal/dto"
+	"backend/internal/service/audit"
 	"backend/models"
 	pkgerrors "backend/pkg/errors"
 )
@@ -16,12 +18,16 @@ import (
 // WarehouseService - Business logic for warehouse management
 // Reference: ANALYSIS-02-MASTER-DATA-MANAGEMENT.md Module 4
 type WarehouseService struct {
-	db *gorm.DB
+	db           *gorm.DB
+	auditService *audit.AuditService
 }
 
 // NewWarehouseService creates a new warehouse service instance
-func NewWarehouseService(db *gorm.DB) *WarehouseService {
-	return &WarehouseService{db: db}
+func NewWarehouseService(db *gorm.DB, auditService *audit.AuditService) *WarehouseService {
+	return &WarehouseService{
+		db:           db,
+		auditService: auditService,
+	}
 }
 
 // ============================================================================
@@ -30,7 +36,7 @@ func NewWarehouseService(db *gorm.DB) *WarehouseService {
 
 // CreateWarehouse creates a new warehouse
 // Reference: ANALYSIS-02-MASTER-DATA-MANAGEMENT.md Section 5.1 (Validation Rules)
-func (s *WarehouseService) CreateWarehouse(ctx context.Context, tenantID, companyID string, req *dto.CreateWarehouseRequest) (*models.Warehouse, error) {
+func (s *WarehouseService) CreateWarehouse(ctx context.Context, tenantID, companyID, userID, ipAddress, userAgent string, req *dto.CreateWarehouseRequest) (*models.Warehouse, error) {
 	// Parse capacity
 	var capacity *decimal.Decimal
 	if req.Capacity != nil && *req.Capacity != "" {
@@ -76,6 +82,39 @@ func (s *WarehouseService) CreateWarehouse(ctx context.Context, tenantID, compan
 
 	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).Create(warehouse).Error; err != nil {
 		return nil, fmt.Errorf("failed to create warehouse: %w", err)
+	}
+
+	// Audit logging - Log successful warehouse creation
+	requestID := uuid.New().String()
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		RequestID: &requestID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
+	warehouseData := map[string]interface{}{
+		"code":        warehouse.Code,
+		"name":        warehouse.Name,
+		"type":        string(warehouse.Type),
+		"address":     warehouse.Address,
+		"city":        warehouse.City,
+		"province":    warehouse.Province,
+		"postal_code": warehouse.PostalCode,
+		"phone":       warehouse.Phone,
+		"email":       warehouse.Email,
+		"manager_id":  warehouse.ManagerID,
+		"is_active":   warehouse.IsActive,
+	}
+
+	if warehouse.Capacity != nil {
+		warehouseData["capacity"] = warehouse.Capacity.String()
+	}
+
+	if err := s.auditService.LogWarehouseCreated(ctx, auditCtx, warehouse.ID, warehouseData); err != nil {
+		fmt.Printf("WARNING: Failed to create audit log: %v\n", err)
 	}
 
 	return warehouse, nil
@@ -207,11 +246,29 @@ func (s *WarehouseService) GetWarehouseByID(ctx context.Context, tenantID, compa
 // ============================================================================
 
 // UpdateWarehouse updates an existing warehouse
-func (s *WarehouseService) UpdateWarehouse(ctx context.Context, tenantID, companyID, warehouseID string, req *dto.UpdateWarehouseRequest) (*models.Warehouse, error) {
+func (s *WarehouseService) UpdateWarehouse(ctx context.Context, tenantID, companyID, warehouseID, userID, ipAddress, userAgent string, req *dto.UpdateWarehouseRequest) (*models.Warehouse, error) {
 	// Get existing warehouse
 	warehouse, err := s.GetWarehouseByID(ctx, tenantID, companyID, warehouseID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Capture old values for audit logging
+	oldValues := map[string]interface{}{
+		"code":        warehouse.Code,
+		"name":        warehouse.Name,
+		"type":        string(warehouse.Type),
+		"address":     warehouse.Address,
+		"city":        warehouse.City,
+		"province":    warehouse.Province,
+		"postal_code": warehouse.PostalCode,
+		"phone":       warehouse.Phone,
+		"email":       warehouse.Email,
+		"manager_id":  warehouse.ManagerID,
+		"is_active":   warehouse.IsActive,
+	}
+	if warehouse.Capacity != nil {
+		oldValues["capacity"] = warehouse.Capacity.String()
 	}
 
 	// Validate code uniqueness if updating code
@@ -283,6 +340,38 @@ func (s *WarehouseService) UpdateWarehouse(ctx context.Context, tenantID, compan
 		return nil, fmt.Errorf("failed to update warehouse: %w", err)
 	}
 
+	// Audit logging - Log successful warehouse update
+	requestID := uuid.New().String()
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		RequestID: &requestID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
+	newValues := map[string]interface{}{
+		"code":        warehouse.Code,
+		"name":        warehouse.Name,
+		"type":        string(warehouse.Type),
+		"address":     warehouse.Address,
+		"city":        warehouse.City,
+		"province":    warehouse.Province,
+		"postal_code": warehouse.PostalCode,
+		"phone":       warehouse.Phone,
+		"email":       warehouse.Email,
+		"manager_id":  warehouse.ManagerID,
+		"is_active":   warehouse.IsActive,
+	}
+	if warehouse.Capacity != nil {
+		newValues["capacity"] = warehouse.Capacity.String()
+	}
+
+	if err := s.auditService.LogWarehouseUpdated(ctx, auditCtx, warehouse.ID, oldValues, newValues); err != nil {
+		fmt.Printf("WARNING: Failed to create audit log: %v\n", err)
+	}
+
 	return warehouse, nil
 }
 
@@ -292,11 +381,29 @@ func (s *WarehouseService) UpdateWarehouse(ctx context.Context, tenantID, compan
 
 // DeleteWarehouse soft deletes a warehouse
 // Reference: ANALYSIS-02-MASTER-DATA-MANAGEMENT.md Section 5.3 (Soft Delete Rules)
-func (s *WarehouseService) DeleteWarehouse(ctx context.Context, tenantID, companyID, warehouseID string) error {
+func (s *WarehouseService) DeleteWarehouse(ctx context.Context, tenantID, companyID, warehouseID, userID, ipAddress, userAgent string) error {
 	// Get warehouse
 	warehouse, err := s.GetWarehouseByID(ctx, tenantID, companyID, warehouseID)
 	if err != nil {
 		return err
+	}
+
+	// Capture warehouse data for audit logging before deletion
+	warehouseData := map[string]interface{}{
+		"code":        warehouse.Code,
+		"name":        warehouse.Name,
+		"type":        string(warehouse.Type),
+		"address":     warehouse.Address,
+		"city":        warehouse.City,
+		"province":    warehouse.Province,
+		"postal_code": warehouse.PostalCode,
+		"phone":       warehouse.Phone,
+		"email":       warehouse.Email,
+		"manager_id":  warehouse.ManagerID,
+		"is_active":   warehouse.IsActive,
+	}
+	if warehouse.Capacity != nil {
+		warehouseData["capacity"] = warehouse.Capacity.String()
 	}
 
 	// Validate deletion
@@ -308,6 +415,21 @@ func (s *WarehouseService) DeleteWarehouse(ctx context.Context, tenantID, compan
 	warehouse.IsActive = false
 	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).Save(warehouse).Error; err != nil {
 		return fmt.Errorf("failed to delete warehouse: %w", err)
+	}
+
+	// Audit logging - Log successful warehouse deletion
+	requestID := uuid.New().String()
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		RequestID: &requestID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
+	if err := s.auditService.LogWarehouseDeleted(ctx, auditCtx, warehouse.ID, warehouseData); err != nil {
+		fmt.Printf("WARNING: Failed to create audit log: %v\n", err)
 	}
 
 	return nil

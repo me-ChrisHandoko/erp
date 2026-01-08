@@ -62,8 +62,19 @@ func (h *SupplierHandler) CreateSupplier(c *gin.Context) {
 		return
 	}
 
+	// Get user ID from JWT middleware for audit logging
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
+	// Get IP address and user agent for audit logging
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	// Create supplier
-	supplierModel, err := h.supplierService.CreateSupplier(c.Request.Context(), tenantID.(string), companyID.(string), &req)
+	supplierModel, err := h.supplierService.CreateSupplier(c.Request.Context(), tenantID.(string), companyID.(string), userIDStr, ipAddress, userAgent, &req)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -249,8 +260,19 @@ func (h *SupplierHandler) UpdateSupplier(c *gin.Context) {
 		return
 	}
 
+	// Get user ID from JWT middleware for audit logging
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
+	// Get IP address and user agent for audit logging
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	// Update supplier
-	supplierModel, err := h.supplierService.UpdateSupplier(c.Request.Context(), tenantID.(string), companyID.(string), supplierID, &req)
+	supplierModel, err := h.supplierService.UpdateSupplier(c.Request.Context(), tenantID.(string), companyID.(string), supplierID, userIDStr, ipAddress, userAgent, &req)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -307,8 +329,19 @@ func (h *SupplierHandler) DeleteSupplier(c *gin.Context) {
 		return
 	}
 
+	// Get user ID from JWT middleware for audit logging
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
+	// Get IP address and user agent for audit logging
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	// Delete supplier
-	err := h.supplierService.DeleteSupplier(c.Request.Context(), tenantID.(string), companyID.(string), supplierID)
+	err := h.supplierService.DeleteSupplier(c.Request.Context(), tenantID.(string), companyID.(string), supplierID, userIDStr, ipAddress, userAgent)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)

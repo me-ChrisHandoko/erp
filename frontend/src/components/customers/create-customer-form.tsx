@@ -225,7 +225,7 @@ export function CreateCustomerForm({
       {/* Basic Information */}
       <Card className="border-2">
         <CardContent>
-          <div className="grid gap-6 sm:grid-cols-3">
+          <div className="grid gap-6 sm:grid-cols-2">
             {/* Code */}
             <div className="space-y-2">
               <Label htmlFor="code" className="text-sm font-medium">
@@ -255,7 +255,7 @@ export function CreateCustomerForm({
             </div>
 
             {/* Name */}
-            <div className="space-y-2 sm:col-span-2">
+            <div className="space-y-2">
               <Label htmlFor="name" className="text-sm font-medium">
                 Nama Pelanggan <span className="text-destructive">*</span>
               </Label>
@@ -281,7 +281,7 @@ export function CreateCustomerForm({
             </div>
 
             {/* Customer Type */}
-            <div className="space-y-2">
+            <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="customerType" className="text-sm font-medium">
                 Tipe Pelanggan <span className="text-destructive">*</span>
               </Label>

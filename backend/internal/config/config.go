@@ -63,6 +63,7 @@ type Argon2Config struct {
 
 // SecurityConfig holds security-related configuration
 type SecurityConfig struct {
+	// Login security
 	MaxLoginAttempts     int
 	LoginLockoutDuration time.Duration
 	// Exponential backoff tiers
@@ -74,6 +75,20 @@ type SecurityConfig struct {
 	LockoutTier3Duration  time.Duration
 	LockoutTier4Attempts  int
 	LockoutTier4Duration  time.Duration
+
+	// Security Headers Configuration
+	// Reference: OWASP Secure Headers Project
+	EnableHSTS              bool
+	HSTSMaxAge              int
+	HSTSIncludeSubDomains   bool
+	HSTSPreload             bool
+	EnableCSP               bool
+	CSPReportOnly           bool
+	EnableXFrameOptions     bool
+	EnableXContentType      bool
+	EnableXXSSProtection    bool
+	EnableReferrerPolicy    bool
+	EnablePermissionsPolicy bool
 }
 
 // EmailConfig holds email/SMTP configuration

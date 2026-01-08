@@ -129,4 +129,5 @@ export interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+  logoutReason: string | null; // Reason for logout (session_expired, user_action, etc.)
 }

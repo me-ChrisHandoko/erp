@@ -592,7 +592,7 @@ func (h *AuthHandler) setCSRFToken(c *gin.Context) {
 	c.SetCookie(
 		"csrf_token",
 		token,
-		24*60*60, // 24 hours
+		7*24*60*60, // 7 days (match refresh token lifetime)
 		"/",
 		h.cfg.Cookie.Domain,
 		h.cfg.Cookie.Secure,

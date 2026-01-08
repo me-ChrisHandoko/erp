@@ -1,16 +1,25 @@
 /**
  * Edit Warehouse Form Component
  *
- * Form for editing existing warehouses with:
+ * Professional form for editing existing warehouses with:
  * - Pre-populated data from existing warehouse
- * - Same sections as create form
+ * - Real-time validation with touched state
+ * - Organized sections with visual indicators
  * - Partial update support
- * - Validation and error handling
+ * - Responsive layout
  */
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import {
+  Warehouse,
+  MapPin,
+  Phone,
+  Settings,
+  AlertCircle,
+  Save,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +31,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useUpdateWarehouseMutation } from "@/store/services/warehouseApi";
 import type {
   UpdateWarehouseRequest,
@@ -29,9 +40,7 @@ import type {
   WarehouseType,
 } from "@/types/warehouse.types";
 import { WAREHOUSE_TYPES } from "@/types/warehouse.types";
-import { Loader2 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
 
 interface EditWarehouseFormProps {
   warehouse: WarehouseResponse;
@@ -44,7 +53,6 @@ export function EditWarehouseForm({
   onSuccess,
   onCancel,
 }: EditWarehouseFormProps) {
-  const { toast } = useToast();
   const [updateWarehouse, { isLoading }] = useUpdateWarehouseMutation();
 
   // Form state - Initialize with existing warehouse data
@@ -63,10 +71,9 @@ export function EditWarehouseForm({
     isActive: warehouse.isActive,
   });
 
-  // Error state
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
 
-  // Handle input change
   const handleChange = (
     field: keyof UpdateWarehouseRequest,
     value: string | boolean | undefined
@@ -75,27 +82,32 @@ export function EditWarehouseForm({
       ...prev,
       [field]: value === "" ? undefined : value,
     }));
-    // Clear error when user starts typing
+    // Clear error when user types
     if (errors[field]) {
-      setErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors[field];
-        return newErrors;
-      });
+      setErrors((prev) => ({ ...prev, [field]: "" }));
     }
   };
 
-  // Validate form
-  const validateForm = (): boolean => {
+  const handleBlur = (field: string) => {
+    setTouched((prev) => ({ ...prev, [field]: true }));
+  };
+
+  const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
 
     // Required fields
     if (!formData.code || formData.code.trim() === "") {
       newErrors.code = "Kode gudang wajib diisi";
+    } else if (formData.code.length < 2) {
+      newErrors.code = "Kode gudang minimal 2 karakter";
     }
+
     if (!formData.name || formData.name.trim() === "") {
       newErrors.name = "Nama gudang wajib diisi";
+    } else if (formData.name.length < 3) {
+      newErrors.name = "Nama gudang minimal 3 karakter";
     }
+
     if (!formData.type) {
       newErrors.type = "Tipe gudang wajib dipilih";
     }
@@ -121,18 +133,23 @@ export function EditWarehouseForm({
     }
 
     setErrors(newErrors);
+    setTouched({
+      code: true,
+      name: true,
+      type: true,
+      email: true,
+      capacity: true,
+    });
+
     return Object.keys(newErrors).length === 0;
   };
 
-  // Handle submit
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!validateForm()) {
-      toast({
-        title: "Validasi Gagal",
+    if (!validate()) {
+      toast.error("Validasi Gagal", {
         description: "Mohon periksa kembali form Anda",
-        variant: "destructive",
       });
       return;
     }
@@ -142,8 +159,10 @@ export function EditWarehouseForm({
       const updateData: UpdateWarehouseRequest = {};
 
       // Only include fields that have changed
-      if (formData.code !== warehouse.code) updateData.code = formData.code?.trim();
-      if (formData.name !== warehouse.name) updateData.name = formData.name?.trim();
+      if (formData.code !== warehouse.code)
+        updateData.code = formData.code?.trim();
+      if (formData.name !== warehouse.name)
+        updateData.name = formData.name?.trim();
       if (formData.type !== warehouse.type) updateData.type = formData.type;
       if (formData.address !== warehouse.address)
         updateData.address = formData.address?.trim();
@@ -166,8 +185,7 @@ export function EditWarehouseForm({
 
       // Check if there are any changes
       if (Object.keys(updateData).length === 0) {
-        toast({
-          title: "Tidak Ada Perubahan",
+        toast("Tidak Ada Perubahan", {
           description: "Tidak ada data yang diubah",
         });
         return;
@@ -178,276 +196,361 @@ export function EditWarehouseForm({
         data: updateData,
       }).unwrap();
 
-      toast({
-        title: "Berhasil",
-        description: "Gudang berhasil diperbarui",
+      toast.success("✓ Gudang Berhasil Diperbarui", {
+        description: `${formData.name} telah diperbarui`,
       });
 
       onSuccess();
     } catch (error: any) {
-      console.error("Error updating warehouse:", error);
-
-      let errorMessage = "Gagal memperbarui gudang";
-
-      if (error?.data?.message) {
-        errorMessage = error.data.message;
-      } else if (error?.status === 400) {
-        errorMessage = "Data tidak valid. Periksa kembali form Anda.";
-      } else if (error?.status === 409) {
-        errorMessage = "Kode gudang sudah digunakan";
-      } else if (error?.status === 403) {
-        errorMessage = "Anda tidak memiliki izin untuk mengubah gudang";
-      } else if (error?.status === 404) {
-        errorMessage = "Gudang tidak ditemukan";
-      }
-
-      toast({
-        title: "Error",
-        description: errorMessage,
-        variant: "destructive",
+      toast.error("Gagal Memperbarui Gudang", {
+        description:
+          error?.data?.error?.message ||
+          error?.data?.message ||
+          error?.message ||
+          "Terjadi kesalahan pada server",
       });
     }
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Section 1: Basic Information */}
-      <div className="space-y-4">
-        <div className="border-b pb-2">
-          <h3 className="text-lg font-semibold">Informasi Dasar</h3>
-          <p className="text-sm text-muted-foreground">
-            Data dasar gudang (wajib diisi)
-          </p>
-        </div>
+      {/* Basic Information */}
+      <Card className="border-2">
+        <CardContent>
+          <div className="grid gap-6 sm:grid-cols-2">
+            {/* Code */}
+            <div className="space-y-2">
+              <Label htmlFor="code" className="text-sm font-medium">
+                Kode Gudang <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="code"
+                value={formData.code || ""}
+                onChange={(e) =>
+                  handleChange("code", e.target.value.toUpperCase())
+                }
+                onBlur={() => handleBlur("code")}
+                placeholder="Contoh: GDG-001"
+                className={
+                  errors.code && touched.code ? "border-destructive" : ""
+                }
+              />
+              {errors.code && touched.code && (
+                <p className="flex items-center gap-1 text-sm text-destructive">
+                  <AlertCircle className="h-3 w-3" />
+                  {errors.code}
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Kode unik untuk identifikasi gudang
+              </p>
+            </div>
 
-        {/* Code */}
-        <div className="space-y-2">
-          <Label htmlFor="code">
-            Kode Gudang <span className="text-red-500">*</span>
-          </Label>
-          <Input
-            id="code"
-            value={formData.code || ""}
-            onChange={(e) => handleChange("code", e.target.value)}
-            placeholder="Contoh: GDG-001"
-            className={errors.code ? "border-red-500" : ""}
-          />
-          {errors.code && (
-            <p className="text-sm text-red-500">{errors.code}</p>
-          )}
-        </div>
+            {/* Name */}
+            <div className="space-y-2">
+              <Label htmlFor="name" className="text-sm font-medium">
+                Nama Gudang <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="name"
+                value={formData.name || ""}
+                onChange={(e) => handleChange("name", e.target.value)}
+                onBlur={() => handleBlur("name")}
+                placeholder="Contoh: Gudang Pusat Jakarta"
+                className={
+                  errors.name && touched.name ? "border-destructive" : ""
+                }
+              />
+              {errors.name && touched.name && (
+                <p className="flex items-center gap-1 text-sm text-destructive">
+                  <AlertCircle className="h-3 w-3" />
+                  {errors.name}
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Nama lengkap gudang yang mudah dikenali
+              </p>
+            </div>
 
-        {/* Name */}
-        <div className="space-y-2">
-          <Label htmlFor="name">
-            Nama Gudang <span className="text-red-500">*</span>
-          </Label>
-          <Input
-            id="name"
-            value={formData.name || ""}
-            onChange={(e) => handleChange("name", e.target.value)}
-            placeholder="Contoh: Gudang Pusat Jakarta"
-            className={errors.name ? "border-red-500" : ""}
-          />
-          {errors.name && (
-            <p className="text-sm text-red-500">{errors.name}</p>
-          )}
-        </div>
+            {/* Type */}
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="type" className="text-sm font-medium">
+                Tipe Gudang <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={formData.type}
+                onValueChange={(value) =>
+                  handleChange("type", value as WarehouseType)
+                }
+              >
+                <SelectTrigger
+                  className={
+                    errors.type && touched.type ? "w-full border-destructive" : "w-full"
+                  }
+                >
+                  <SelectValue placeholder="Pilih tipe gudang" />
+                </SelectTrigger>
+                <SelectContent>
+                  {WAREHOUSE_TYPES.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.type && touched.type && (
+                <p className="flex items-center gap-1 text-sm text-destructive">
+                  <AlertCircle className="h-3 w-3" />
+                  {errors.type}
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Pilih kategori yang sesuai dengan fungsi gudang dalam sistem
+                distribusi Anda (Gudang Utama, Cabang, atau Transit)
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
-        {/* Type */}
-        <div className="space-y-2">
-          <Label htmlFor="type">
-            Tipe Gudang <span className="text-red-500">*</span>
-          </Label>
-          <Select
-            value={formData.type}
-            onValueChange={(value) =>
-              handleChange("type", value as WarehouseType)
-            }
+      {/* Location Information */}
+      <Card className="border-2">
+        <CardContent>
+          <div className="space-y-4">
+            {/* Address */}
+            <div className="space-y-2">
+              <Label htmlFor="address" className="text-sm font-medium">
+                Alamat
+              </Label>
+              <Textarea
+                id="address"
+                value={formData.address || ""}
+                onChange={(e) => handleChange("address", e.target.value)}
+                placeholder="Jl. Raya Industri No. 123"
+                rows={3}
+              />
+              <p className="text-xs text-muted-foreground">
+                Alamat lengkap lokasi gudang
+              </p>
+            </div>
+
+            {/* City and Province */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="city" className="text-sm font-medium">
+                  Kota
+                </Label>
+                <Input
+                  id="city"
+                  value={formData.city || ""}
+                  onChange={(e) => handleChange("city", e.target.value)}
+                  placeholder="Jakarta"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Kota lokasi gudang
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="province" className="text-sm font-medium">
+                  Provinsi
+                </Label>
+                <Input
+                  id="province"
+                  value={formData.province || ""}
+                  onChange={(e) => handleChange("province", e.target.value)}
+                  placeholder="DKI Jakarta"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Provinsi lokasi gudang
+                </p>
+              </div>
+            </div>
+
+            {/* Postal Code */}
+            <div className="space-y-2">
+              <Label htmlFor="postalCode" className="text-sm font-medium">
+                Kode Pos
+              </Label>
+              <Input
+                id="postalCode"
+                value={formData.postalCode || ""}
+                onChange={(e) => handleChange("postalCode", e.target.value)}
+                placeholder="12345"
+              />
+              <p className="text-xs text-muted-foreground">
+                Kode pos area gudang
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Contact & Management */}
+      <div className="grid gap-6 sm:grid-cols-2">
+        {/* Contact Information */}
+        <Card className="border-2">
+          <CardContent>
+            <div className="space-y-4">
+              {/* Phone */}
+              <div className="space-y-2">
+                <Label htmlFor="phone" className="text-sm font-medium">
+                  Telepon
+                </Label>
+                <Input
+                  id="phone"
+                  value={formData.phone || ""}
+                  onChange={(e) => handleChange("phone", e.target.value)}
+                  placeholder="021-1234567"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Nomor telepon gudang
+                </p>
+              </div>
+
+              {/* Email */}
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-sm font-medium">
+                  Email
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={formData.email || ""}
+                  onChange={(e) => handleChange("email", e.target.value)}
+                  onBlur={() => handleBlur("email")}
+                  placeholder="gudang@example.com"
+                  className={
+                    errors.email && touched.email ? "border-destructive" : ""
+                  }
+                />
+                {errors.email && touched.email && (
+                  <p className="flex items-center gap-1 text-sm text-destructive">
+                    <AlertCircle className="h-3 w-3" />
+                    {errors.email}
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Email kontak gudang
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Management Information */}
+        <Card className="border-2">
+          <CardContent>
+            <div className="space-y-4">
+              {/* Capacity */}
+              <div className="space-y-2">
+                <Label htmlFor="capacity" className="text-sm font-medium">
+                  Kapasitas (m²)
+                </Label>
+                <Input
+                  id="capacity"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={formData.capacity || ""}
+                  onChange={(e) => handleChange("capacity", e.target.value)}
+                  onBlur={() => handleBlur("capacity")}
+                  placeholder="1000"
+                  className={
+                    errors.capacity && touched.capacity
+                      ? "border-destructive"
+                      : ""
+                  }
+                />
+                {errors.capacity && touched.capacity && (
+                  <p className="flex items-center gap-1 text-sm text-destructive">
+                    <AlertCircle className="h-3 w-3" />
+                    {errors.capacity}
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Kapasitas total dalam meter persegi
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Status & Options */}
+      <Card className="border-2">
+        <CardContent>
+          {/* Active Status */}
+          <div
+            className={`flex items-start gap-3 rounded-lg border-2 p-4 transition-colors ${
+              formData.isActive
+                ? "border-green-500 bg-green-50 dark:bg-green-900/10"
+                : "border-red-500 bg-red-50 dark:bg-red-900/10"
+            }`}
           >
-            <SelectTrigger className={errors.type ? "border-red-500" : ""}>
-              <SelectValue placeholder="Pilih tipe gudang" />
-            </SelectTrigger>
-            <SelectContent>
-              {WAREHOUSE_TYPES.map((type) => (
-                <SelectItem key={type.value} value={type.value}>
-                  {type.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {errors.type && (
-            <p className="text-sm text-red-500">{errors.type}</p>
-          )}
-        </div>
-
-        {/* Status */}
-        <div className="flex items-center justify-between rounded-lg border p-4">
-          <div className="space-y-0.5">
-            <Label htmlFor="isActive">Status Gudang</Label>
-            <p className="text-sm text-muted-foreground">
-              {formData.isActive
-                ? "Gudang aktif dan dapat digunakan"
-                : "Gudang nonaktif dan tidak dapat digunakan"}
-            </p>
-          </div>
-          <Switch
-            id="isActive"
-            checked={formData.isActive}
-            onCheckedChange={(checked) => handleChange("isActive", checked)}
-          />
-        </div>
-      </div>
-
-      {/* Section 2: Location Information */}
-      <div className="space-y-4">
-        <div className="border-b pb-2">
-          <h3 className="text-lg font-semibold">Informasi Lokasi</h3>
-          <p className="text-sm text-muted-foreground">
-            Detail alamat dan lokasi gudang (opsional)
-          </p>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="address">Alamat</Label>
-          <Textarea
-            id="address"
-            value={formData.address || ""}
-            onChange={(e) => handleChange("address", e.target.value)}
-            placeholder="Jl. Raya Industri No. 123"
-            rows={3}
-          />
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="city">Kota</Label>
-            <Input
-              id="city"
-              value={formData.city || ""}
-              onChange={(e) => handleChange("city", e.target.value)}
-              placeholder="Jakarta"
+            <Checkbox
+              id="isActive"
+              checked={formData.isActive}
+              onCheckedChange={(checked) =>
+                handleChange("isActive", checked as boolean)
+              }
+              className="mt-0.5"
             />
+            <div
+              className="flex-1 cursor-pointer"
+              onClick={() => handleChange("isActive", !formData.isActive)}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <Warehouse
+                  className={`h-4 w-4 ${
+                    formData.isActive ? "text-green-600" : "text-red-600"
+                  }`}
+                />
+                <Label
+                  htmlFor="isActive"
+                  className="cursor-pointer font-semibold text-base"
+                >
+                  Gudang Aktif
+                </Label>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {formData.isActive
+                  ? "Gudang dapat digunakan untuk transaksi dan operasional"
+                  : "Gudang tidak akan muncul dalam daftar operasional"}
+              </p>
+            </div>
           </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="province">Provinsi</Label>
-            <Input
-              id="province"
-              value={formData.province || ""}
-              onChange={(e) => handleChange("province", e.target.value)}
-              placeholder="DKI Jakarta"
-            />
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="postalCode">Kode Pos</Label>
-          <Input
-            id="postalCode"
-            value={formData.postalCode || ""}
-            onChange={(e) => handleChange("postalCode", e.target.value)}
-            placeholder="12345"
-          />
-        </div>
-      </div>
-
-      {/* Section 3: Contact Information */}
-      <div className="space-y-4">
-        <div className="border-b pb-2">
-          <h3 className="text-lg font-semibold">Informasi Kontak</h3>
-          <p className="text-sm text-muted-foreground">
-            Kontak gudang (opsional)
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="phone">Telepon</Label>
-            <Input
-              id="phone"
-              value={formData.phone || ""}
-              onChange={(e) => handleChange("phone", e.target.value)}
-              placeholder="021-1234567"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              value={formData.email || ""}
-              onChange={(e) => handleChange("email", e.target.value)}
-              placeholder="gudang@example.com"
-              className={errors.email ? "border-red-500" : ""}
-            />
-            {errors.email && (
-              <p className="text-sm text-red-500">{errors.email}</p>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Section 4: Management Information */}
-      <div className="space-y-4">
-        <div className="border-b pb-2">
-          <h3 className="text-lg font-semibold">Informasi Manajemen</h3>
-          <p className="text-sm text-muted-foreground">
-            Detail manajemen gudang (opsional)
-          </p>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="capacity">Kapasitas (m²)</Label>
-          <Input
-            id="capacity"
-            type="number"
-            step="0.01"
-            min="0"
-            value={formData.capacity || ""}
-            onChange={(e) => handleChange("capacity", e.target.value)}
-            placeholder="1000"
-            className={errors.capacity ? "border-red-500" : ""}
-          />
-          {errors.capacity && (
-            <p className="text-sm text-red-500">{errors.capacity}</p>
-          )}
-          <p className="text-xs text-muted-foreground">
-            Kapasitas gudang dalam meter persegi
-          </p>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="managerID">Manager</Label>
-          <Input
-            id="managerID"
-            value={formData.managerID || ""}
-            onChange={(e) => handleChange("managerID", e.target.value)}
-            placeholder="ID Manager (untuk implementasi masa depan)"
-            disabled
-            className="bg-muted"
-          />
-          <p className="text-xs text-muted-foreground">
-            Fitur pemilihan manager akan ditambahkan nanti
-          </p>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Form Actions */}
-      <div className="flex gap-3 border-t pt-4">
+      <div className="flex justify-end gap-3 pt-2">
         <Button
           type="button"
           variant="outline"
           onClick={onCancel}
           disabled={isLoading}
-          className="flex-1"
+          size="lg"
         >
           Batal
         </Button>
-        <Button type="submit" disabled={isLoading} className="flex-1">
-          {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {isLoading ? "Menyimpan..." : "Simpan Perubahan"}
+        <Button
+          type="submit"
+          disabled={isLoading}
+          size="lg"
+          className="min-w-[150px]"
+        >
+          {isLoading ? (
+            <>
+              <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              Menyimpan...
+            </>
+          ) : (
+            <>
+              <Save className="mr-2 h-4 w-4" />
+              Simpan Perubahan
+            </>
+          )}
         </Button>
       </div>
     </form>

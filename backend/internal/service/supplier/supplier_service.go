@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
 	"backend/internal/dto"
+	"backend/internal/service/audit"
 	"backend/models"
 	pkgerrors "backend/pkg/errors"
 )
@@ -16,12 +18,16 @@ import (
 // SupplierService - Business logic for supplier management
 // Reference: ANALYSIS-02-MASTER-DATA-MANAGEMENT.md Module 3
 type SupplierService struct {
-	db *gorm.DB
+	db           *gorm.DB
+	auditService *audit.AuditService
 }
 
 // NewSupplierService creates a new supplier service instance
-func NewSupplierService(db *gorm.DB) *SupplierService {
-	return &SupplierService{db: db}
+func NewSupplierService(db *gorm.DB, auditService *audit.AuditService) *SupplierService {
+	return &SupplierService{
+		db:           db,
+		auditService: auditService,
+	}
 }
 
 // ============================================================================
@@ -30,7 +36,7 @@ func NewSupplierService(db *gorm.DB) *SupplierService {
 
 // CreateSupplier creates a new supplier
 // Reference: ANALYSIS-02-MASTER-DATA-MANAGEMENT.md Section 5.1 (Validation Rules)
-func (s *SupplierService) CreateSupplier(ctx context.Context, tenantID, companyID string, req *dto.CreateSupplierRequest) (*models.Supplier, error) {
+func (s *SupplierService) CreateSupplier(ctx context.Context, tenantID, companyID, userID, ipAddress, userAgent string, req *dto.CreateSupplierRequest) (*models.Supplier, error) {
 	// Parse credit limit
 	creditLimit := decimal.Zero
 	if req.CreditLimit != nil && *req.CreditLimit != "" {
@@ -92,6 +98,41 @@ func (s *SupplierService) CreateSupplier(ctx context.Context, tenantID, companyI
 
 	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).Create(supplier).Error; err != nil {
 		return nil, fmt.Errorf("failed to create supplier: %w", err)
+	}
+
+	// Audit logging - Log successful supplier creation
+	requestID := uuid.New().String()
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		RequestID: &requestID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
+	supplierData := map[string]interface{}{
+		"code":            supplier.Code,
+		"name":            supplier.Name,
+		"type":            supplier.Type,
+		"phone":           supplier.Phone,
+		"email":           supplier.Email,
+		"address":         supplier.Address,
+		"city":            supplier.City,
+		"province":        supplier.Province,
+		"postal_code":     supplier.PostalCode,
+		"npwp":            supplier.NPWP,
+		"is_pkp":          supplier.IsPKP,
+		"contact_person":  supplier.ContactPerson,
+		"contact_phone":   supplier.ContactPhone,
+		"payment_term":    supplier.PaymentTerm,
+		"credit_limit":    supplier.CreditLimit.String(),
+		"notes":           supplier.Notes,
+		"is_active":       supplier.IsActive,
+	}
+
+	if err := s.auditService.LogSupplierCreated(ctx, auditCtx, supplier.ID, supplierData); err != nil {
+		fmt.Printf("WARNING: Failed to create audit log: %v\n", err)
 	}
 
 	return supplier, nil
@@ -232,11 +273,32 @@ func (s *SupplierService) GetSupplierByID(ctx context.Context, tenantID, company
 // ============================================================================
 
 // UpdateSupplier updates an existing supplier
-func (s *SupplierService) UpdateSupplier(ctx context.Context, tenantID, companyID, supplierID string, req *dto.UpdateSupplierRequest) (*models.Supplier, error) {
+func (s *SupplierService) UpdateSupplier(ctx context.Context, tenantID, companyID, supplierID, userID, ipAddress, userAgent string, req *dto.UpdateSupplierRequest) (*models.Supplier, error) {
 	// Get existing supplier
 	supplier, err := s.GetSupplierByID(ctx, tenantID, companyID, supplierID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Capture old values for audit logging
+	oldValues := map[string]interface{}{
+		"code":            supplier.Code,
+		"name":            supplier.Name,
+		"type":            supplier.Type,
+		"phone":           supplier.Phone,
+		"email":           supplier.Email,
+		"address":         supplier.Address,
+		"city":            supplier.City,
+		"province":        supplier.Province,
+		"postal_code":     supplier.PostalCode,
+		"npwp":            supplier.NPWP,
+		"is_pkp":          supplier.IsPKP,
+		"contact_person":  supplier.ContactPerson,
+		"contact_phone":   supplier.ContactPhone,
+		"payment_term":    supplier.PaymentTerm,
+		"credit_limit":    supplier.CreditLimit.String(),
+		"notes":           supplier.Notes,
+		"is_active":       supplier.IsActive,
 	}
 
 	// Validate code uniqueness if updating code
@@ -324,6 +386,41 @@ func (s *SupplierService) UpdateSupplier(ctx context.Context, tenantID, companyI
 		return nil, fmt.Errorf("failed to update supplier: %w", err)
 	}
 
+	// Audit logging - Log successful supplier update
+	requestID := uuid.New().String()
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		RequestID: &requestID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
+	newValues := map[string]interface{}{
+		"code":            supplier.Code,
+		"name":            supplier.Name,
+		"type":            supplier.Type,
+		"phone":           supplier.Phone,
+		"email":           supplier.Email,
+		"address":         supplier.Address,
+		"city":            supplier.City,
+		"province":        supplier.Province,
+		"postal_code":     supplier.PostalCode,
+		"npwp":            supplier.NPWP,
+		"is_pkp":          supplier.IsPKP,
+		"contact_person":  supplier.ContactPerson,
+		"contact_phone":   supplier.ContactPhone,
+		"payment_term":    supplier.PaymentTerm,
+		"credit_limit":    supplier.CreditLimit.String(),
+		"notes":           supplier.Notes,
+		"is_active":       supplier.IsActive,
+	}
+
+	if err := s.auditService.LogSupplierUpdated(ctx, auditCtx, supplier.ID, oldValues, newValues); err != nil {
+		fmt.Printf("WARNING: Failed to create audit log: %v\n", err)
+	}
+
 	return supplier, nil
 }
 
@@ -333,11 +430,32 @@ func (s *SupplierService) UpdateSupplier(ctx context.Context, tenantID, companyI
 
 // DeleteSupplier soft deletes a supplier
 // Reference: ANALYSIS-02-MASTER-DATA-MANAGEMENT.md Section 5.3 (Soft Delete Rules)
-func (s *SupplierService) DeleteSupplier(ctx context.Context, tenantID, companyID, supplierID string) error {
+func (s *SupplierService) DeleteSupplier(ctx context.Context, tenantID, companyID, supplierID, userID, ipAddress, userAgent string) error {
 	// Get supplier
 	supplier, err := s.GetSupplierByID(ctx, tenantID, companyID, supplierID)
 	if err != nil {
 		return err
+	}
+
+	// Capture supplier data for audit logging before deletion
+	supplierData := map[string]interface{}{
+		"code":            supplier.Code,
+		"name":            supplier.Name,
+		"type":            supplier.Type,
+		"phone":           supplier.Phone,
+		"email":           supplier.Email,
+		"address":         supplier.Address,
+		"city":            supplier.City,
+		"province":        supplier.Province,
+		"postal_code":     supplier.PostalCode,
+		"npwp":            supplier.NPWP,
+		"is_pkp":          supplier.IsPKP,
+		"contact_person":  supplier.ContactPerson,
+		"contact_phone":   supplier.ContactPhone,
+		"payment_term":    supplier.PaymentTerm,
+		"credit_limit":    supplier.CreditLimit.String(),
+		"notes":           supplier.Notes,
+		"is_active":       supplier.IsActive,
 	}
 
 	// Validate deletion
@@ -349,6 +467,21 @@ func (s *SupplierService) DeleteSupplier(ctx context.Context, tenantID, companyI
 	supplier.IsActive = false
 	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).Save(supplier).Error; err != nil {
 		return fmt.Errorf("failed to delete supplier: %w", err)
+	}
+
+	// Audit logging - Log successful supplier deletion
+	requestID := uuid.New().String()
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		RequestID: &requestID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
+	if err := s.auditService.LogSupplierDeleted(ctx, auditCtx, supplier.ID, supplierData); err != nil {
+		fmt.Printf("WARNING: Failed to create audit log: %v\n", err)
 	}
 
 	return nil

@@ -16,6 +16,7 @@ const initialState: AuthState = {
   isAuthenticated: false,
   isLoading: false,
   error: null,
+  logoutReason: null, // Track reason for logout (session expired, user action, etc.)
 };
 
 /**
@@ -103,8 +104,9 @@ const authSlice = createSlice({
      * Logout and clear all authentication state
      * Called on user logout or session expiry
      * Note: rememberEmail is intentionally NOT cleared to preserve "Remember Me" functionality
+     * @param action.payload.reason - Optional reason for logout (e.g., "session_expired", "user_action")
      */
-    logout: (state) => {
+    logout: (state, action: PayloadAction<{ reason?: string } | void>) => {
       state.user = null;
       state.accessToken = null;
       state.activeTenant = null;
@@ -113,6 +115,13 @@ const authSlice = createSlice({
       state.error = null;
       state.isLoading = false;
 
+      // Store logout reason for display on logout/login page
+      if (action.payload && typeof action.payload === 'object' && action.payload.reason) {
+        state.logoutReason = action.payload.reason;
+      } else {
+        state.logoutReason = null;
+      }
+
       // Clear localStorage (access token and company context)
       // Note: rememberEmail is preserved for "Remember Me" functionality
       // Note: activeCompanyId is also cleared in middleware for defense in depth
@@ -120,6 +129,14 @@ const authSlice = createSlice({
         localStorage.removeItem('accessToken');
         localStorage.removeItem('activeCompanyId'); // Prevent cross-user company context leak
       }
+    },
+
+    /**
+     * Clear logout reason
+     * Called after user acknowledges logout message
+     */
+    clearLogoutReason: (state) => {
+      state.logoutReason = null;
     },
   },
 });
@@ -133,6 +150,7 @@ export const {
   setError,
   clearError,
   logout,
+  clearLogoutReason,
 } = authSlice.actions;
 
 // Export reducer
@@ -146,3 +164,4 @@ export const selectAvailableTenants = (state: { auth: AuthState }) => state.auth
 export const selectIsAuthenticated = (state: { auth: AuthState }) => state.auth.isAuthenticated;
 export const selectAuthLoading = (state: { auth: AuthState }) => state.auth.isLoading;
 export const selectAuthError = (state: { auth: AuthState }) => state.auth.error;
+export const selectLogoutReason = (state: { auth: AuthState }) => state.auth.logoutReason;

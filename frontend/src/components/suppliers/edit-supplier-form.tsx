@@ -322,7 +322,7 @@ export function EditSupplierForm({
           </div>
 
           {/* Type */}
-          <div className="space-y-2">
+          <div className="space-y-2 mt-6">
             <Label htmlFor="type">Tipe Supplier</Label>
             <Select
               value={formData.type || ""}
@@ -330,13 +330,13 @@ export function EditSupplierForm({
                 handleChange("type", value || undefined)
               }
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Pilih tipe supplier" />
               </SelectTrigger>
               <SelectContent>
                 {SUPPLIER_TYPES.map((type) => (
                   <SelectItem key={type} value={type}>
-                    {type}
+                    {type.charAt(0) + type.slice(1).toLowerCase()}
                   </SelectItem>
                 ))}
               </SelectContent>

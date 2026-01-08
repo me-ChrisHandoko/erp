@@ -62,8 +62,19 @@ func (h *WarehouseHandler) CreateWarehouse(c *gin.Context) {
 		return
 	}
 
+	// Get user ID from JWT middleware for audit logging
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
+	// Get IP address and user agent for audit logging
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	// Create warehouse
-	warehouseModel, err := h.warehouseService.CreateWarehouse(c.Request.Context(), tenantID.(string), companyID.(string), &req)
+	warehouseModel, err := h.warehouseService.CreateWarehouse(c.Request.Context(), tenantID.(string), companyID.(string), userIDStr, ipAddress, userAgent, &req)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -76,7 +87,10 @@ func (h *WarehouseHandler) CreateWarehouse(c *gin.Context) {
 	// Map to response DTO
 	response := mapWarehouseToResponse(warehouseModel)
 
-	c.JSON(http.StatusCreated, response)
+	c.JSON(http.StatusCreated, gin.H{
+		"success": true,
+		"data":    response,
+	})
 }
 
 // ListWarehouses handles GET /api/v1/warehouses
@@ -173,7 +187,10 @@ func (h *WarehouseHandler) GetWarehouse(c *gin.Context) {
 	// Map to response DTO
 	response := mapWarehouseToResponse(warehouseModel)
 
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    response,
+	})
 }
 
 // UpdateWarehouse handles PUT /api/v1/warehouses/:id
@@ -218,8 +235,19 @@ func (h *WarehouseHandler) UpdateWarehouse(c *gin.Context) {
 		return
 	}
 
+	// Get user ID from JWT middleware for audit logging
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
+	// Get IP address and user agent for audit logging
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	// Update warehouse
-	warehouseModel, err := h.warehouseService.UpdateWarehouse(c.Request.Context(), tenantID.(string), companyID.(string), warehouseID, &req)
+	warehouseModel, err := h.warehouseService.UpdateWarehouse(c.Request.Context(), tenantID.(string), companyID.(string), warehouseID, userIDStr, ipAddress, userAgent, &req)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -232,7 +260,10 @@ func (h *WarehouseHandler) UpdateWarehouse(c *gin.Context) {
 	// Map to response DTO
 	response := mapWarehouseToResponse(warehouseModel)
 
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    response,
+	})
 }
 
 // DeleteWarehouse handles DELETE /api/v1/warehouses/:id
@@ -269,8 +300,19 @@ func (h *WarehouseHandler) DeleteWarehouse(c *gin.Context) {
 		return
 	}
 
+	// Get user ID from JWT middleware for audit logging
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
+	// Get IP address and user agent for audit logging
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	// Delete warehouse
-	err := h.warehouseService.DeleteWarehouse(c.Request.Context(), tenantID.(string), companyID.(string), warehouseID)
+	err := h.warehouseService.DeleteWarehouse(c.Request.Context(), tenantID.(string), companyID.(string), warehouseID, userIDStr, ipAddress, userAgent)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)

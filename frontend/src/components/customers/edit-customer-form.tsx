@@ -12,14 +12,7 @@
 "use client";
 
 import { useState } from "react";
-import {
-  Save,
-  AlertCircle,
-  Mail,
-  Calendar,
-  ToggleLeft,
-  Info,
-} from "lucide-react";
+import { Save, AlertCircle, Mail, Calendar, User, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -234,7 +227,7 @@ export function EditCustomerForm({
       {/* Basic Information */}
       <Card className="border-2">
         <CardContent>
-          <div className="grid gap-6 sm:grid-cols-3">
+          <div className="grid gap-6 sm:grid-cols-2">
             {/* Code */}
             <div className="space-y-2">
               <Label htmlFor="code" className="text-sm font-medium">
@@ -274,7 +267,7 @@ export function EditCustomerForm({
             </div>
 
             {/* Name */}
-            <div className="space-y-2 sm:col-span-2">
+            <div className="space-y-2">
               <Label htmlFor="name" className="text-sm font-medium">
                 Nama Pelanggan <span className="text-destructive">*</span>
               </Label>
@@ -300,7 +293,7 @@ export function EditCustomerForm({
             </div>
 
             {/* Customer Type */}
-            <div className="space-y-2">
+            <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="customerType" className="text-sm font-medium">
                 Tipe Pelanggan <span className="text-destructive">*</span>
               </Label>
@@ -324,39 +317,6 @@ export function EditCustomerForm({
               <p className="text-xs text-muted-foreground">
                 Kategori untuk harga dan term pembayaran
               </p>
-            </div>
-
-            {/* Status Toggle */}
-            <div className="space-y-2 sm:col-span-2">
-              <div className="flex items-start gap-3 rounded-lg border-2 p-4 transition-colors">
-                <Checkbox
-                  id="isActive"
-                  checked={formData.isActive}
-                  onCheckedChange={(checked) =>
-                    handleChange("isActive", checked)
-                  }
-                  className="mt-0.5"
-                />
-                <div
-                  className="flex-1 cursor-pointer"
-                  onClick={() => handleChange("isActive", !formData.isActive)}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <ToggleLeft className="h-4 w-4 text-primary" />
-                    <Label
-                      htmlFor="isActive"
-                      className="cursor-pointer font-semibold"
-                    >
-                      Status Aktif
-                    </Label>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    {formData.isActive
-                      ? "Pelanggan aktif dan dapat bertransaksi"
-                      : "Pelanggan nonaktif dan tidak dapat bertransaksi"}
-                  </p>
-                </div>
-              </div>
             </div>
           </div>
         </CardContent>
@@ -587,7 +547,8 @@ export function EditCustomerForm({
                   type="number"
                   value={formData.creditTermDays || ""}
                   onChange={(e) => {
-                    const value = e.target.value === "" ? 0 : parseInt(e.target.value);
+                    const value =
+                      e.target.value === "" ? 0 : parseInt(e.target.value);
                     handleChange("creditTermDays", isNaN(value) ? 0 : value);
                   }}
                   onBlur={() => handleBlur("creditTermDays")}
@@ -607,6 +568,52 @@ export function EditCustomerForm({
               )}
               <p className="text-xs text-muted-foreground">
                 Jangka waktu pembayaran (hari)
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Status & Options */}
+      <Card className="border-2">
+        <CardContent>
+          {/* Active Status */}
+          <div
+            className={`flex items-start gap-3 rounded-lg border-2 p-4 transition-colors ${
+              formData.isActive
+                ? "border-green-500 bg-green-50 dark:bg-green-900/10"
+                : "border-red-500 bg-red-50 dark:bg-red-900/10"
+            }`}
+          >
+            <Checkbox
+              id="isActive"
+              checked={formData.isActive}
+              onCheckedChange={(checked) =>
+                handleChange("isActive", checked as boolean)
+              }
+              className="mt-0.5"
+            />
+            <div
+              className="flex-1 cursor-pointer"
+              onClick={() => handleChange("isActive", !formData.isActive)}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <User
+                  className={`h-4 w-4 ${
+                    formData.isActive ? "text-green-600" : "text-red-600"
+                  }`}
+                />
+                <Label
+                  htmlFor="isActive"
+                  className="cursor-pointer font-semibold text-base"
+                >
+                  Pelanggan Aktif
+                </Label>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {formData.isActive
+                  ? "Pelanggan dapat bertransaksi dan melakukan pembelian"
+                  : "Pelanggan tidak akan muncul dalam daftar transaksi"}
               </p>
             </div>
           </div>

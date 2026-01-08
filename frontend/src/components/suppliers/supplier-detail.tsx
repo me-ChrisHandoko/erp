@@ -69,7 +69,7 @@ export function SupplierDetail({ supplier }: SupplierDetailProps) {
                 </p>
                 <Badge className="bg-blue-500 text-white hover:bg-blue-600 text-sm">
                   <Tag className="mr-1 h-3 w-3" />
-                  {supplier.type}
+                  {supplier.type.charAt(0) + supplier.type.slice(1).toLowerCase()}
                 </Badge>
               </div>
             )}

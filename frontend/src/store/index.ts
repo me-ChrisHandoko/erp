@@ -15,6 +15,32 @@ import authReducer, { logout } from './slices/authSlice';
 import companyReducer, { setActiveCompany } from './slices/companySlice';
 
 /**
+ * Middleware to redirect to logout page when session expires
+ * This provides better UX by showing a message before redirecting to login
+ */
+const redirectToLogoutOnSessionExpiry: Middleware = (storeAPI) => (next) => (action) => {
+  // Call next first to let the logout action update the state
+  const result = next(action);
+
+  // After logout action is processed, check if there's a logout reason
+  if (logout.match(action)) {
+    const logoutReason = action.payload?.reason;
+
+    // If logout was due to session expiry, redirect to logout page
+    if (logoutReason === 'session_expired' && typeof window !== 'undefined') {
+      console.log('[Middleware] Session expired, redirecting to /logout page');
+
+      // Use setTimeout to ensure state is updated before navigation
+      setTimeout(() => {
+        window.location.href = '/logout';
+      }, 100);
+    }
+  }
+
+  return result;
+};
+
+/**
  * Middleware to reset all RTK Query API caches when user logs out
  * This prevents cached data from previous user showing to new user
  */
@@ -143,6 +169,7 @@ export const store = configureStore({
       customerApi.middleware, // Customer management middleware
       supplierApi.middleware, // Supplier management middleware
       warehouseApi.middleware, // Warehouse management middleware
+      redirectToLogoutOnSessionExpiry, // CRITICAL: Redirect to /logout page when session expires
       resetAllApiStatesOnLogout, // CRITICAL: Reset all API caches on logout
       resetAllApiStatesOnCompanySwitch // CRITICAL: Reset company-scoped caches on company switch
     ),

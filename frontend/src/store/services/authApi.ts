@@ -179,7 +179,7 @@ const baseQueryWithReauth: BaseQueryFn<
             }));
           } else {
             console.error('[Auth] No existing user data available, forcing logout');
-            api.dispatch(logout());
+            api.dispatch(logout({ reason: 'session_expired' }));
           }
         }
       } catch (err) {
@@ -200,7 +200,7 @@ const baseQueryWithReauth: BaseQueryFn<
           }));
         } else {
           console.error('[Auth] No existing user data available, forcing logout');
-          api.dispatch(logout());
+          api.dispatch(logout({ reason: 'session_expired' }));
         }
       }
 
@@ -281,10 +281,10 @@ const baseQueryWithReauth: BaseQueryFn<
         }
       }
     } else {
-      console.log('[Auth] Token refresh failed, logging out');
+      console.log('[Auth] Token refresh failed (session expired), logging out');
 
-      // Refresh failed - logout user
-      api.dispatch(logout());
+      // Refresh failed - logout user with session expired reason
+      api.dispatch(logout({ reason: 'session_expired' }));
     }
   }
 
@@ -292,7 +292,14 @@ const baseQueryWithReauth: BaseQueryFn<
   // Handle CSRF token errors with automatic recovery
   if (result.error && result.error.status === 403) {
     const errorData = result.error.data as any;
-    const errorMessage = errorData?.error || errorData?.message || '';
+
+    // 🔐 FIX: Handle both string and object error formats from backend
+    // Backend can return error as string OR as object {code, message}
+    const errorMessage =
+      (typeof errorData?.error === 'object' && errorData?.error?.message) ||
+      (typeof errorData?.error === 'string' && errorData?.error) ||
+      errorData?.message ||
+      '';
 
     // Check if it's a CSRF-related error
     const isCSRFError =

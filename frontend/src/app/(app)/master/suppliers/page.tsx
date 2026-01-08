@@ -244,7 +244,7 @@ export default function SuppliersPage() {
                         )
                       ).map((type) => (
                         <SelectItem key={type} value={type as string}>
-                          {type}
+                          {(type as string).charAt(0) + (type as string).slice(1).toLowerCase()}
                         </SelectItem>
                       ))}
                   </SelectContent>

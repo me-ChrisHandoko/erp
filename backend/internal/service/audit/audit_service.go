@@ -665,3 +665,365 @@ func (s *AuditService) LogProductOperationFailed(
 	}
 	return db.Create(auditLog).Error
 }
+
+// ==================== Supplier Audit Methods ====================
+
+// LogSupplierCreated logs when a supplier is created
+func (s *AuditService) LogSupplierCreated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	supplierID string,
+	supplierData map[string]interface{},
+) error {
+	newValuesJSON, _ := json.Marshal(supplierData)
+	newValuesStr := string(newValuesJSON)
+	entityType := "SUPPLIER"
+
+	// Create human-readable notes with created fields
+	createdFields := []string{}
+	for key, value := range supplierData {
+		switch v := value.(type) {
+		case string:
+			if v != "" && v != "0" && v != "0.00" {
+				createdFields = append(createdFields, key)
+			}
+		case bool:
+			if v {
+				createdFields = append(createdFields, key)
+			}
+		case int:
+			if v != 0 {
+				createdFields = append(createdFields, key)
+			}
+		default:
+			createdFields = append(createdFields, key)
+		}
+	}
+
+	notes := ""
+	if len(createdFields) > 0 {
+		notes = fmt.Sprintf("Created fields: [%s]", strings.Join(createdFields, ", "))
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "SUPPLIER_CREATED",
+		EntityType: &entityType,
+		EntityID:   &supplierID,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogSupplierUpdated logs when a supplier is updated
+func (s *AuditService) LogSupplierUpdated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	supplierID string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "SUPPLIER"
+
+	// Create human-readable notes
+	changedFields := []string{}
+	for key := range newValues {
+		if oldValues[key] != newValues[key] {
+			changedFields = append(changedFields, key)
+		}
+	}
+
+	notes := ""
+	if len(changedFields) > 0 {
+		notes = fmt.Sprintf("Updated fields: [%s]", strings.Join(changedFields, ", "))
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "SUPPLIER_UPDATED",
+		EntityType: &entityType,
+		EntityID:   &supplierID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogSupplierDeleted logs when a supplier is deleted
+func (s *AuditService) LogSupplierDeleted(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	supplierID string,
+	supplierData map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(supplierData)
+	oldValuesStr := string(oldValuesJSON)
+	entityType := "SUPPLIER"
+
+	notes := fmt.Sprintf("Supplier deleted: %s", supplierID)
+	if name, ok := supplierData["name"].(string); ok {
+		notes = fmt.Sprintf("Supplier deleted: %s (ID: %s)", name, supplierID)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "SUPPLIER_DELETED",
+		EntityType: &entityType,
+		EntityID:   &supplierID,
+		OldValues:  &oldValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogSupplierOperationFailed logs when a supplier operation fails
+func (s *AuditService) LogSupplierOperationFailed(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	action string,
+	supplierID string,
+	errorMsg string,
+) error {
+	entityType := "SUPPLIER"
+	notes := fmt.Sprintf("Operation failed: %s", errorMsg)
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     action,
+		EntityType: &entityType,
+		EntityID:   &supplierID,
+		Status:     StatusFailed,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// ==================== Warehouse Audit Methods ====================
+
+// LogWarehouseCreated logs when a warehouse is created
+func (s *AuditService) LogWarehouseCreated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	warehouseID string,
+	warehouseData map[string]interface{},
+) error {
+	newValuesJSON, _ := json.Marshal(warehouseData)
+	newValuesStr := string(newValuesJSON)
+	entityType := "WAREHOUSE"
+
+	// Create human-readable notes with created fields
+	createdFields := []string{}
+	for key, value := range warehouseData {
+		switch v := value.(type) {
+		case string:
+			if v != "" && v != "0" && v != "0.00" {
+				createdFields = append(createdFields, key)
+			}
+		case bool:
+			if v {
+				createdFields = append(createdFields, key)
+			}
+		case int:
+			if v != 0 {
+				createdFields = append(createdFields, key)
+			}
+		default:
+			createdFields = append(createdFields, key)
+		}
+	}
+
+	notes := ""
+	if len(createdFields) > 0 {
+		notes = fmt.Sprintf("Created fields: [%s]", strings.Join(createdFields, ", "))
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "WAREHOUSE_CREATED",
+		EntityType: &entityType,
+		EntityID:   &warehouseID,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogWarehouseUpdated logs when a warehouse is updated
+func (s *AuditService) LogWarehouseUpdated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	warehouseID string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "WAREHOUSE"
+
+	// Create human-readable notes
+	changedFields := []string{}
+	for key := range newValues {
+		if oldValues[key] != newValues[key] {
+			changedFields = append(changedFields, key)
+		}
+	}
+
+	notes := ""
+	if len(changedFields) > 0 {
+		notes = fmt.Sprintf("Updated fields: [%s]", strings.Join(changedFields, ", "))
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "WAREHOUSE_UPDATED",
+		EntityType: &entityType,
+		EntityID:   &warehouseID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogWarehouseDeleted logs when a warehouse is deleted
+func (s *AuditService) LogWarehouseDeleted(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	warehouseID string,
+	warehouseData map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(warehouseData)
+	oldValuesStr := string(oldValuesJSON)
+	entityType := "WAREHOUSE"
+
+	notes := fmt.Sprintf("Warehouse deleted: %s", warehouseID)
+	if name, ok := warehouseData["name"].(string); ok {
+		notes = fmt.Sprintf("Warehouse deleted: %s (ID: %s)", name, warehouseID)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "WAREHOUSE_DELETED",
+		EntityType: &entityType,
+		EntityID:   &warehouseID,
+		OldValues:  &oldValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogWarehouseOperationFailed logs when a warehouse operation fails
+func (s *AuditService) LogWarehouseOperationFailed(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	action string,
+	warehouseID string,
+	errorMsg string,
+) error {
+	entityType := "WAREHOUSE"
+	notes := fmt.Sprintf("Operation failed: %s", errorMsg)
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     action,
+		EntityType: &entityType,
+		EntityID:   &warehouseID,
+		Status:     StatusFailed,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}

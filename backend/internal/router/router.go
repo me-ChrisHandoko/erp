@@ -42,6 +42,7 @@ func SetupRouter(
 	// Global middleware
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
+	router.Use(middleware.SecurityHeadersMiddleware(cfg)) // OWASP Security Headers
 	router.Use(middleware.ErrorHandlerMiddleware())
 	router.Use(middleware.CORSMiddleware(cfg))
 
@@ -52,6 +53,10 @@ func SetupRouter(
 
 	// API v1 routes
 	v1 := router.Group("/api/v1")
+
+	// CSP violation reporting endpoint (no authentication required)
+	// Browsers send CSP violation reports here for monitoring
+	v1.POST("/csp-report", middleware.CSPReportHandler())
 	{
 		// Auth routes (no authentication required)
 		setupAuthRoutes(v1, cfg, db, redisClient, passwordHasher, tokenService)
@@ -338,7 +343,7 @@ func setupProtectedRoutes(
 		// SUPPLIER MANAGEMENT ROUTES (PHASE 2 - Master Data Management)
 		// Reference: 02-MASTER-DATA-MANAGEMENT.md Module 3: Supplier Management
 		// ============================================================================
-		supplierService := supplier.NewSupplierService(db)
+		supplierService := supplier.NewSupplierService(db, auditService)
 		supplierHandler := handler.NewSupplierHandler(supplierService)
 
 		supplierGroup := businessProtected.Group("/suppliers")
@@ -358,7 +363,7 @@ func setupProtectedRoutes(
 		// WAREHOUSE MANAGEMENT ROUTES (PHASE 2 - Master Data Management)
 		// Reference: 02-MASTER-DATA-MANAGEMENT.md Module 4: Warehouse Management
 		// ============================================================================
-		warehouseService := warehouse.NewWarehouseService(db)
+		warehouseService := warehouse.NewWarehouseService(db, auditService)
 		warehouseHandler := handler.NewWarehouseHandler(warehouseService)
 
 		warehouseGroup := businessProtected.Group("/warehouses")

@@ -43,6 +43,7 @@ func Load() (*Config, error) {
 			KeyLength:   uint32(getEnvAsInt("ARGON2_KEY_LENGTH", 32)),
 		},
 		Security: SecurityConfig{
+			// Login security
 			MaxLoginAttempts:     getEnvAsInt("MAX_LOGIN_ATTEMPTS", 5),
 			LoginLockoutDuration: getEnvAsDuration("LOGIN_LOCKOUT_DURATION", 15*time.Minute),
 			// 4-tier exponential backoff for brute force protection
@@ -54,6 +55,24 @@ func Load() (*Config, error) {
 			LockoutTier3Duration: getEnvAsDuration("LOCKOUT_TIER3_DURATION", 1*time.Hour),
 			LockoutTier4Attempts: getEnvAsInt("LOCKOUT_TIER4_ATTEMPTS", 15),
 			LockoutTier4Duration: getEnvAsDuration("LOCKOUT_TIER4_DURATION", 24*time.Hour),
+
+			// Security Headers (OWASP Secure Headers Project)
+			// Phase 1: Safe headers (enabled by default in development)
+			EnableXFrameOptions:     getEnvAsBool("SECURITY_ENABLE_X_FRAME_OPTIONS", true),
+			EnableXContentType:      getEnvAsBool("SECURITY_ENABLE_X_CONTENT_TYPE", true),
+			EnableXXSSProtection:    getEnvAsBool("SECURITY_ENABLE_X_XSS_PROTECTION", true),
+			EnableReferrerPolicy:    getEnvAsBool("SECURITY_ENABLE_REFERRER_POLICY", true),
+			EnablePermissionsPolicy: getEnvAsBool("SECURITY_ENABLE_PERMISSIONS_POLICY", true),
+
+			// Phase 2: HSTS (disabled by default, enable after SSL setup)
+			EnableHSTS:            getEnvAsBool("SECURITY_ENABLE_HSTS", false),
+			HSTSMaxAge:            getEnvAsInt("SECURITY_HSTS_MAX_AGE", 31536000), // 1 year
+			HSTSIncludeSubDomains: getEnvAsBool("SECURITY_HSTS_INCLUDE_SUBDOMAINS", false),
+			HSTSPreload:           getEnvAsBool("SECURITY_HSTS_PRELOAD", false),
+
+			// Phase 3: CSP (disabled by default, enable with Report-Only first)
+			EnableCSP:     getEnvAsBool("SECURITY_ENABLE_CSP", false),
+			CSPReportOnly: getEnvAsBool("SECURITY_CSP_REPORT_ONLY", true),
 		},
 		Email: EmailConfig{
 			SMTPHost:            getEnv("SMTP_HOST", ""),

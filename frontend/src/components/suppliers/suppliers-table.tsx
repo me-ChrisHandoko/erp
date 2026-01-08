@@ -176,7 +176,7 @@ export function SuppliersTable({
                   <TableCell>
                     {supplier.type && (
                       <Badge className="bg-blue-500 text-white hover:bg-blue-600">
-                        {supplier.type}
+                        {supplier.type.charAt(0) + supplier.type.slice(1).toLowerCase()}
                       </Badge>
                     )}
                   </TableCell>

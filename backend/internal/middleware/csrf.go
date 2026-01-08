@@ -86,7 +86,7 @@ func SetCSRFCookie(c *gin.Context, token string, secure bool) {
 	c.SetCookie(
 		"csrf_token",       // name
 		token,              // value
-		24*60*60,           // maxAge (24 hours in seconds)
+		7*24*60*60,         // maxAge (7 days to match refresh token lifetime)
 		"/",                // path
 		"",                 // domain (empty = current domain)
 		secure,             // secure (HTTPS only in production)
