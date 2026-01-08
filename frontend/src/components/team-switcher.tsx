@@ -86,8 +86,7 @@ export function TeamSwitcher() {
       const success = await switchCompany(companyId);
       if (success) {
         toast.success(`Beralih ke ${targetCompany.name}`);
-        // No need for hard redirect - state will update automatically
-        // The active company is already set in Redux by switchCompany mutation
+        // No need for reload - RTK Query will auto-refetch when activeCompanyId changes
       } else {
         toast.error("Gagal beralih perusahaan");
       }

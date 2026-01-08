@@ -35,68 +35,41 @@ export async function GET(
   const searchParams = request.nextUrl.searchParams.toString();
   const url = `${BACKEND_URL}/api/v1/${path}${searchParams ? `?${searchParams}` : ''}`;
 
-  console.log('[API Proxy GET] Starting request to:', url);
-  console.log('[API Proxy GET] Query params:', searchParams);
-
   try {
-    console.log('[API Proxy GET] Step 1: Building headers');
-
     // Build headers
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
       'Origin': 'http://localhost:3000',
     };
 
-    console.log('[API Proxy GET] Step 2: Reading cookies from store');
-
     // Add authentication token
     const accessToken = cookieStore.get('access_token')?.value;
-    console.log('[API Proxy GET] access_token:', accessToken ? `EXISTS (${accessToken.substring(0, 20)}...)` : 'MISSING');
-
     if (accessToken) {
       headers['Authorization'] = `Bearer ${accessToken}`;
-      console.log('[API Proxy GET] Added Authorization header');
-    } else {
-      console.log('[API Proxy GET] WARNING: No access_token cookie found!');
     }
 
     // Add company context
-    const companyId = cookieStore.get('active_company_id')?.value;
-    console.log('[API Proxy GET] active_company_id:', companyId ? companyId : 'MISSING');
+    // Priority: Use X-Company-ID from client request header (set from Redux state)
+    // Fallback: Read from cookie if header not provided
+    const clientCompanyId = request.headers.get('X-Company-ID');
+    const cookieCompanyId = cookieStore.get('active_company_id')?.value;
+    const companyId = clientCompanyId || cookieCompanyId;
 
     if (companyId) {
       headers['X-Company-ID'] = companyId;
-      console.log('[API Proxy GET] Added X-Company-ID header');
-    } else {
-      console.log('[API Proxy GET] WARNING: No active_company_id cookie found!');
     }
 
     // Add CSRF token for state-changing operations
     const csrfToken = cookieStore.get('csrf_token')?.value;
     if (csrfToken) {
       headers['X-CSRF-Token'] = csrfToken;
-      console.log('[API Proxy GET] Added CSRF token');
     }
-
-    console.log('[API Proxy GET] Step 3: Building cookie header');
 
     // Forward cookies to backend
     const cookieHeader = await buildCookieHeader(cookieStore);
-    console.log('[API Proxy GET] Cookie header length:', cookieHeader.length);
-    console.log('[API Proxy GET] Cookie header preview:', cookieHeader.substring(0, 100));
-
     if (cookieHeader) {
       headers['Cookie'] = cookieHeader;
-      console.log('[API Proxy GET] Added Cookie header');
-    } else {
-      console.log('[API Proxy GET] WARNING: Cookie header is empty!');
     }
-
-    console.log('[API Proxy GET] Step 4: Final headers check:', {
-      hasAuth: !!headers['Authorization'],
-      hasCompanyId: !!headers['X-Company-ID'],
-      hasCookie: !!headers['Cookie'],
-    });
 
     const response = await fetch(url, {
       method: 'GET',
@@ -131,8 +104,6 @@ export async function POST(
   const url = `${BACKEND_URL}/api/v1/${path}`;
   const body = await request.json();
 
-  console.log('[API Proxy POST] Starting request to:', url);
-
   try {
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
@@ -140,13 +111,14 @@ export async function POST(
     };
 
     const accessToken = cookieStore.get('access_token')?.value;
-    console.log('[API Proxy POST] access_token:', accessToken ? 'EXISTS' : 'MISSING');
     if (accessToken) {
       headers['Authorization'] = `Bearer ${accessToken}`;
     }
 
-    const companyId = cookieStore.get('active_company_id')?.value;
-    console.log('[API Proxy POST] active_company_id:', companyId || 'MISSING');
+    // Priority: Use X-Company-ID from client request header (Redux state)
+    const clientCompanyId = request.headers.get('X-Company-ID');
+    const cookieCompanyId = cookieStore.get('active_company_id')?.value;
+    const companyId = clientCompanyId || cookieCompanyId;
     if (companyId) {
       headers['X-Company-ID'] = companyId;
     }
@@ -156,8 +128,7 @@ export async function POST(
       headers['X-CSRF-Token'] = csrfToken;
     }
 
-    const cookieHeader = await buildCookieHeader(cookieStore); // ✅ FIXED: Added await
-    console.log('[API Proxy POST] Cookie header length:', cookieHeader.length);
+    const cookieHeader = await buildCookieHeader(cookieStore);
     if (cookieHeader) {
       headers['Cookie'] = cookieHeader;
     }
@@ -207,7 +178,10 @@ export async function PUT(
       headers['Authorization'] = `Bearer ${accessToken}`;
     }
 
-    const companyId = cookieStore.get('active_company_id')?.value;
+    // Priority: Use X-Company-ID from client request header (Redux state)
+    const clientCompanyId = request.headers.get('X-Company-ID');
+    const cookieCompanyId = cookieStore.get('active_company_id')?.value;
+    const companyId = clientCompanyId || cookieCompanyId;
     if (companyId) {
       headers['X-Company-ID'] = companyId;
     }
@@ -266,7 +240,10 @@ export async function PATCH(
       headers['Authorization'] = `Bearer ${accessToken}`;
     }
 
-    const companyId = cookieStore.get('active_company_id')?.value;
+    // Priority: Use X-Company-ID from client request header (Redux state)
+    const clientCompanyId = request.headers.get('X-Company-ID');
+    const cookieCompanyId = cookieStore.get('active_company_id')?.value;
+    const companyId = clientCompanyId || cookieCompanyId;
     if (companyId) {
       headers['X-Company-ID'] = companyId;
     }
@@ -324,7 +301,10 @@ export async function DELETE(
       headers['Authorization'] = `Bearer ${accessToken}`;
     }
 
-    const companyId = cookieStore.get('active_company_id')?.value;
+    // Priority: Use X-Company-ID from client request header (Redux state)
+    const clientCompanyId = request.headers.get('X-Company-ID');
+    const cookieCompanyId = cookieStore.get('active_company_id')?.value;
+    const companyId = clientCompanyId || cookieCompanyId;
     if (companyId) {
       headers['X-Company-ID'] = companyId;
     }

@@ -11,6 +11,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSelector } from "react-redux";
 import { Plus, Search, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +30,7 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { ProductsTable } from "@/components/products/products-table";
 import { CreateProductDialog } from "@/components/products/create-product-dialog";
 import type { ProductFilters, ProductListResponse } from "@/types/product.types";
+import type { RootState } from "@/store";
 
 interface ProductsClientProps {
   initialData: ProductListResponse;
@@ -54,6 +56,12 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
   // Get permissions hook
   const permissions = usePermissions();
 
+  // 🔑 Get activeCompanyId from Redux to trigger refetch on company switch
+  // This is the key to making switch company work without page reload
+  const activeCompanyId = useSelector(
+    (state: RootState) => state.company.activeCompany?.id
+  );
+
   // Compute permission checks ONCE at top level
   const canCreateProducts = permissions.canCreate('products');
   const canEditProducts = permissions.canEdit('products');
@@ -70,7 +78,8 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
   }, [search]);
 
   // Fetch products with filters
-  // 🎯 KEY: Use initialData from server for first render
+  // 🎯 KEY: Skip query until company context is ready
+  // When activeCompanyId changes, RTK Query will auto-refetch with new company context
   const queryParams = {
     ...filters,
     search: debouncedSearch || undefined,
@@ -79,14 +88,26 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
   };
 
   const {
-    data: productsData = initialData,
+    data: productsData,
     isLoading,
     error,
     refetch,
   } = useListProductsQuery(queryParams, {
-    // Use server data as initial - no loading spinner on first load!
-    skip: false, // Always query (for updates)
+    // Skip query until company context is available
+    // This ensures we don't fetch with wrong company ID
+    skip: !activeCompanyId,
   });
+
+  // Use initialData as fallback only for first render before query completes
+  const displayData = productsData || initialData;
+
+  // 🔑 CRITICAL: Explicit refetch when company changes
+  // Cache invalidation alone doesn't trigger refetch for skipped queries
+  useEffect(() => {
+    if (activeCompanyId) {
+      refetch();
+    }
+  }, [activeCompanyId, refetch]);
 
   const handlePageChange = (newPage: number) => {
     setFilters((prev) => ({ ...prev, page: newPage }));
@@ -181,10 +202,10 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Semua Kategori</SelectItem>
-                {productsData?.data &&
+                {displayData?.data &&
                   Array.from(
                     new Set(
-                      productsData.data
+                      displayData.data
                         .map((p) => p.category)
                         .filter(Boolean)
                     )
@@ -240,8 +261,8 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
             )}
           </div>
 
-          {/* Loading State (only for refetching, not initial load) */}
-          {isLoading && !productsData && (
+          {/* Loading State */}
+          {isLoading && !displayData && (
             <div className="py-12">
               <LoadingSpinner size="lg" text="Memuat data produk..." />
             </div>
@@ -257,9 +278,9 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
           )}
 
           {/* Data Display */}
-          {!error && productsData && productsData.data && (
+          {!error && displayData && displayData.data && (
             <>
-              {productsData.data.length === 0 &&
+              {displayData.data.length === 0 &&
               !search &&
               !categoryFilter &&
               statusFilter === undefined ? (
@@ -289,7 +310,7 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
 
                   {/* Products Table */}
                   <ProductsTable
-                    products={productsData.data}
+                    products={displayData.data}
                     sortBy={filters.sortBy}
                     sortOrder={filters.sortOrder}
                     onSortChange={handleSortChange}
@@ -297,11 +318,11 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
                   />
 
                   {/* Pagination */}
-                  {productsData?.pagination && (
+                  {displayData?.pagination && (
                     <div className="flex items-center justify-between border-t pt-4">
                       <div className="text-sm text-muted-foreground">
                         {(() => {
-                          const pagination = productsData.pagination as any;
+                          const pagination = displayData.pagination as any;
                           const page = pagination.page || 1;
                           const pageSize = pagination.limit || pagination.pageSize || 20;
                           const totalItems = pagination.total || pagination.totalItems || 0;
@@ -337,7 +358,7 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
                           variant="outline"
                           size="sm"
                           onClick={() => handlePageChange(1)}
-                          disabled={productsData.pagination.page === 1}
+                          disabled={displayData.pagination.page === 1}
                         >
                           &laquo;
                         </Button>
@@ -347,17 +368,17 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
                           variant="outline"
                           size="sm"
                           onClick={() =>
-                            handlePageChange(productsData.pagination.page - 1)
+                            handlePageChange(displayData.pagination.page - 1)
                           }
-                          disabled={productsData.pagination.page === 1}
+                          disabled={displayData.pagination.page === 1}
                         >
                           &lsaquo;
                         </Button>
 
                         {/* Current Page Info */}
                         <span className="text-sm text-muted-foreground px-2">
-                          Halaman {productsData.pagination.page} dari{" "}
-                          {productsData.pagination.totalPages}
+                          Halaman {displayData.pagination.page} dari{" "}
+                          {displayData.pagination.totalPages}
                         </span>
 
                         {/* Next Page */}
@@ -365,11 +386,11 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
                           variant="outline"
                           size="sm"
                           onClick={() =>
-                            handlePageChange(productsData.pagination.page + 1)
+                            handlePageChange(displayData.pagination.page + 1)
                           }
                           disabled={
-                            productsData.pagination.page >=
-                            productsData.pagination.totalPages
+                            displayData.pagination.page >=
+                            displayData.pagination.totalPages
                           }
                         >
                           &rsaquo;
@@ -380,11 +401,11 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
                           variant="outline"
                           size="sm"
                           onClick={() =>
-                            handlePageChange(productsData.pagination.totalPages)
+                            handlePageChange(displayData.pagination.totalPages)
                           }
                           disabled={
-                            productsData.pagination.page >=
-                            productsData.pagination.totalPages
+                            displayData.pagination.page >=
+                            displayData.pagination.totalPages
                           }
                         >
                           &raquo;
