@@ -262,7 +262,7 @@ export default function CustomersPage() {
                         new Set(
                           customersData.data
                             .map((c) => c.customerType)
-                            .filter((type): type is string => type != null)
+                            .filter((type): type is CustomerType => type != null)
                         )
                       ).map((type) => (
                         <SelectItem key={type} value={type}>

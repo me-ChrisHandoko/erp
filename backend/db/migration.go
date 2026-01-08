@@ -25,6 +25,7 @@ func AutoMigratePhase1(db *gorm.DB) error {
 		&models.Tenant{},
 		&models.SubscriptionPayment{},
 		&models.UserTenant{},
+		&models.UserCompanyRole{},
 	)
 }
 

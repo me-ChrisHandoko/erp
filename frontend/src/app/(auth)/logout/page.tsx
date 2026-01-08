@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { selectLogoutReason, clearLogoutReason } from "@/store/slices/authSlice";
+import { selectLogoutReason, clearLogoutReason, selectIsAuthenticated } from "@/store/slices/authSlice";
 import { useLogoutMutation } from "@/store/services/authApi";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,13 +21,22 @@ export default function LogoutPage() {
   const router = useRouter();
   const dispatch = useAppDispatch();
   const logoutReason = useAppSelector(selectLogoutReason);
+  const isAuthenticated = useAppSelector(selectIsAuthenticated); // 🔐 FIX #2: Check authentication status
   const [logout, { isLoading }] = useLogoutMutation();
   const [countdown, setCountdown] = useState(5);
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   // Call logout API to clear server-side session
+  // 🔐 FIX #2: Only call logout API if user is authenticated to prevent infinite loop
   useEffect(() => {
     const performLogout = async () => {
+      // Check if user is actually authenticated before calling logout API
+      // This prevents 401 errors that trigger token refresh when user was never logged in
+      if (!isAuthenticated) {
+        console.log('[Logout] Not authenticated, skipping logout API call');
+        return; // Skip API call if not authenticated
+      }
+
       try {
         await logout().unwrap();
         console.log('[Logout] Server-side logout successful');
@@ -38,7 +47,7 @@ export default function LogoutPage() {
     };
 
     performLogout();
-  }, [logout]);
+  }, [logout, isAuthenticated]); // Added isAuthenticated to dependency array
 
   // Auto-redirect countdown
   useEffect(() => {

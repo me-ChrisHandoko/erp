@@ -35,6 +35,18 @@ function getCSRFToken(): string | null {
 }
 
 /**
+ * Helper function to check if refresh_token cookie exists
+ * Used to prevent unnecessary refresh attempts when user is not authenticated
+ */
+function hasRefreshTokenCookie(): boolean {
+  if (typeof document === 'undefined') return false;
+
+  const name = 'refresh_token=';
+  const decodedCookie = decodeURIComponent(document.cookie);
+  return decodedCookie.includes(name);
+}
+
+/**
  * Base query configuration with authentication and company context headers
  */
 const baseQuery = fetchBaseQuery({
@@ -99,6 +111,29 @@ const baseQueryWithReauth: BaseQueryFn<
 
   // Check if request failed with 401 Unauthorized
   if (result.error && result.error.status === 401) {
+    // 🔐 FIX #1: Skip refresh for authentication endpoints to prevent infinite loop
+    // Authentication endpoints (login, logout, register) should NOT trigger token refresh
+    // because 401 from these endpoints means authentication failure, not expired token
+    const url = typeof args === 'string' ? args : args.url;
+    const isAuthEndpoint = url.includes('/auth/login') ||
+                           url.includes('/auth/logout') ||
+                           url.includes('/auth/register');
+
+    if (isAuthEndpoint) {
+      console.log('[Auth] 401 from authentication endpoint, skipping refresh to prevent loop');
+      return result; // Return error directly without attempting refresh
+    }
+
+    // 🔐 FIX #3: Check if refresh_token cookie exists before attempting refresh
+    // If no refresh_token cookie exists, user is not authenticated and refresh will fail
+    // This prevents unnecessary network calls and infinite loops
+    if (!hasRefreshTokenCookie()) {
+      console.log('[Auth] No refresh_token cookie found, user not authenticated');
+      console.log('[Auth] Forcing logout due to missing refresh token');
+      api.dispatch(logout({ reason: 'session_expired' }));
+      return result; // Return error without attempting refresh
+    }
+
     console.log('[Auth] Access token expired, attempting refresh...');
 
     // RACE CONDITION PREVENTION: Check if refresh is already in progress

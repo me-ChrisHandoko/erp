@@ -352,7 +352,7 @@ export default function WarehousesPage() {
                           <div className="text-sm text-muted-foreground">
                             Halaman {warehousesData.pagination.page} dari{" "}
                             {warehousesData.pagination.totalPages} (
-                            {warehousesData.pagination.totalItems} gudang)
+                            {warehousesData.pagination.total} gudang)
                           </div>
                           <div className="flex gap-2">
                             <Button

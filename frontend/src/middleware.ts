@@ -14,7 +14,8 @@ export function middleware(request: NextRequest) {
   const hasRefreshToken = !!refreshToken;
 
   // Determine if current page is auth or protected
-  const isAuthPage = request.nextUrl.pathname.startsWith("/login");
+  const isLoginPage = request.nextUrl.pathname.startsWith("/login");
+  const isLogoutPage = request.nextUrl.pathname.startsWith("/logout");
   const isProtectedPage =
     request.nextUrl.pathname.startsWith("/dashboard") ||
     request.nextUrl.pathname.startsWith("/master") ||
@@ -31,10 +32,18 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (isAuthPage && hasRefreshToken) {
+  // FIX: Don't redirect logout page even if refresh_token cookie exists
+  // This prevents infinite loop when user has stale cookie but no tenant access
+  if (isLoginPage && hasRefreshToken) {
     // Accessing login page while already authenticated
     console.log("[Middleware] Already authenticated, redirecting to dashboard");
     return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
+
+  // Allow logout page to always proceed (no redirect)
+  if (isLogoutPage) {
+    console.log("[Middleware] Logout page accessed, allowing to proceed");
+    return NextResponse.next();
   }
 
   // Allow request to proceed
@@ -49,6 +58,7 @@ export const config = {
   matcher: [
     // Auth pages
     "/login",
+    "/logout",
 
     // Protected routes
     "/dashboard/:path*",

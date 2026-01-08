@@ -103,6 +103,18 @@ go run cmd/migrate/main.go
 go run cmd/seed/main.go
 ```
 
+**Seed 100 Product Records (Standalone):**
+```bash
+go run cmd/seed/product_seed.go
+```
+This script:
+- Auto-migrates all required tables
+- Creates tenant, companies, and warehouses if they don't exist
+- Seeds 100 realistic Indonesian food distribution products across 15 categories
+- Creates multi-unit definitions for 15 key products
+- Initializes warehouse stock with tiered quantities (fast/medium/slow-moving)
+- Generates batch tracking records for perishable items with expiry dates
+
 **Auto-Migrate Models (Development):**
 ```go
 // In code using GORM AutoMigrate
@@ -325,6 +337,41 @@ Schema already includes critical indexes. Key patterns:
 - Trial period and grace period management
 - Subscription payment tracking
 - User-tenant access control
+
+## Seed Data Overview
+
+### Product Seed Data (100 products)
+The product_seed.go script creates realistic test data for Indonesian food distribution:
+
+**Category Distribution:**
+- Beras (Rice): 10 products
+- Minyak Goreng (Cooking Oil): 8 products
+- Gula (Sugar): 6 products
+- Tepung (Flour): 6 products
+- Mi Instan (Instant Noodles): 10 products
+- Minuman (Beverages): 8 products
+- Snack & Kue: 8 products
+- Bumbu Dapur (Spices): 8 products
+- Kecap & Saus (Sauces): 6 products
+- Susu & Dairy: 6 products
+- Kopi & Teh: 6 products
+- Sabun & Deterjen: 6 products
+- Perlengkapan Rumah: 4 products
+- Makanan Kaleng: 4 products
+- Frozen Food: 4 products
+
+**Multi-Unit Products:** 15 products with 2-3 units each (e.g., PCS, LUSIN, KARTON with bulk discounts)
+
+**Warehouse Stock:** Tiered initial quantities based on product velocity
+- Fast-moving (rice, noodles, oil): 300-500 units
+- Medium-moving (beverages, snacks): 80-150 units
+- Slow-moving (frozen, household): 30-60 units
+
+**Batch Tracking:** 14 batches for perishable items (dairy, frozen, beverages) with realistic expiry dates
+
+**Company Distribution:**
+- Company 1 (PT Distribusi Utama): 60 products (comprehensive range)
+- Company 2 (CV Sembako Jaya): 40 products (basic necessities focus)
 
 ## Common Pitfalls to Avoid
 

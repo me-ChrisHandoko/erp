@@ -56,14 +56,54 @@ func main() {
 
 func seedTestData(db *gorm.DB, hasher *security.PasswordHasher, cfg *config.Config) error {
 	// Clean up existing test data (delete in correct order to respect foreign keys)
+	// ⚠️ IMPORTANT: Only delete test data with email pattern '@example.com'
 	fmt.Println("🧹 Cleaning up existing test data...")
+
+	// Step 1: Delete user_tenants linked to test users
 	db.Exec("DELETE FROM user_tenants WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@example.com')")
+
+	// Step 2: Delete user_company_roles linked to test users
+	db.Exec("DELETE FROM user_company_roles WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@example.com')")
+
+	// Step 3: Delete test users
 	db.Exec("DELETE FROM users WHERE email LIKE '%@example.com'")
-	db.Exec("DELETE FROM subscription_payments")
-	db.Exec("DELETE FROM companies")
-	db.Exec("DELETE FROM tenants")
-	db.Exec("DELETE FROM subscriptions")
-	fmt.Println("✓ Cleanup complete")
+
+	// Step 4: Get test tenant IDs (tenants created by seed script)
+	var testTenantIDs []string
+	db.Raw("SELECT DISTINCT t.id FROM tenants t WHERE t.subdomain IN ('pt-maju-jaya-distribusi', 'cv-berkah-mandiri')").Scan(&testTenantIDs)
+
+	// Step 5: Delete test data linked to test tenants (in correct order for foreign keys)
+	if len(testTenantIDs) > 0 {
+		// Delete in order: child tables first, parent tables last
+		db.Exec("DELETE FROM product_batches WHERE warehouse_stock_id IN (SELECT id FROM warehouse_stocks WHERE warehouse_id IN (SELECT id FROM warehouses WHERE tenant_id IN (?)))", testTenantIDs)
+		db.Exec("DELETE FROM warehouse_stocks WHERE warehouse_id IN (SELECT id FROM warehouses WHERE tenant_id IN (?))", testTenantIDs)
+		db.Exec("DELETE FROM product_units WHERE product_id IN (SELECT id FROM products WHERE tenant_id IN (?))", testTenantIDs)
+		db.Exec("DELETE FROM price_list WHERE product_id IN (SELECT id FROM products WHERE tenant_id IN (?))", testTenantIDs)
+		db.Exec("DELETE FROM product_suppliers WHERE product_id IN (SELECT id FROM products WHERE tenant_id IN (?))", testTenantIDs)
+		db.Exec("DELETE FROM products WHERE tenant_id IN (?)", testTenantIDs)
+		db.Exec("DELETE FROM warehouses WHERE tenant_id IN (?)", testTenantIDs)
+		db.Exec("DELETE FROM suppliers WHERE tenant_id IN (?)", testTenantIDs)
+		db.Exec("DELETE FROM customers WHERE tenant_id IN (?)", testTenantIDs)
+		db.Exec("DELETE FROM companies WHERE tenant_id IN (?)", testTenantIDs)
+
+		// Get subscription IDs before nullifying (for deletion)
+		var subscriptionIDs []string
+		db.Raw("SELECT DISTINCT subscription_id FROM tenants WHERE id IN (?) AND subscription_id IS NOT NULL", testTenantIDs).Scan(&subscriptionIDs)
+
+		// Nullify tenant subscription_id before deleting subscriptions (FK constraint)
+		db.Exec("UPDATE tenants SET subscription_id = NULL WHERE id IN (?)", testTenantIDs)
+
+		// Now safe to delete subscription payments and subscriptions
+		if len(subscriptionIDs) > 0 {
+			db.Exec("DELETE FROM subscription_payments WHERE subscription_id IN (?)", subscriptionIDs)
+			db.Exec("DELETE FROM subscriptions WHERE id IN (?)", subscriptionIDs)
+		}
+
+		// Finally delete tenants
+		db.Exec("DELETE FROM tenants WHERE id IN (?)", testTenantIDs)
+	}
+
+	fmt.Println("✓ Cleanup complete (only test data removed)")
 
 	// Hash password once for all users
 	defaultPassword := "Password123!"
@@ -71,6 +111,9 @@ func seedTestData(db *gorm.DB, hasher *security.PasswordHasher, cfg *config.Conf
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
+
+	// Reset GORM context completely after raw SQL operations
+	db = db.Session(&gorm.Session{NewDB: true})
 
 	// 1. Create System Admin User
 	systemAdmin := &models.User{
@@ -86,17 +129,16 @@ func seedTestData(db *gorm.DB, hasher *security.PasswordHasher, cfg *config.Conf
 	}
 	fmt.Println("✓ Created system admin user")
 
-	// 2. Handle circular dependency: Tenant needs Company, Company needs Tenant
-	// Solution: Create both with pre-generated IDs
+	// 2. Create Tenant 1 first (1 Tenant → N Companies architecture)
 	tenant1ID := cuid.New()
 	company1ID := cuid.New()
 
-	// Create Tenant 1 first (with company_id reference)
+	// Create Tenant 1 WITHOUT company_id (correct architecture)
 	trialEndsAt := time.Now().Add(14 * 24 * time.Hour)
 	err = db.Exec(`
-		INSERT INTO tenants (id, name, slug, company_id, status, trial_ends_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, 'TRIAL', ?, NOW(), NOW())
-	`, tenant1ID, "PT Maju Jaya Distribusi", "pt-maju-jaya-distribusi", company1ID, trialEndsAt).Error
+		INSERT INTO tenants (id, name, subdomain, status, trial_ends_at, created_at, updated_at)
+		VALUES (?, ?, ?, 'TRIAL', ?, NOW(), NOW())
+	`, tenant1ID, "PT Maju Jaya Distribusi", "pt-maju-jaya-distribusi", trialEndsAt).Error
 	if err != nil {
 		return fmt.Errorf("failed to create tenant1: %w", err)
 	}
@@ -126,21 +168,21 @@ func seedTestData(db *gorm.DB, hasher *security.PasswordHasher, cfg *config.Conf
 	}
 	fmt.Println("✓ Created tenant 1 (TRIAL) and company 1: PT Maju Jaya Distribusi")
 
-	// 3. Create Tenant 2, Subscription, and Company (handle circular dependencies)
+	// 3. Create Tenant 2, Subscription, and Company (1 Tenant → N Companies architecture)
 	tenant2ID := cuid.New()
 	company2ID := cuid.New()
 	subscriptionID := cuid.New()
 
-	// First create Tenant 2 WITHOUT subscription (subscription_id is nullable)
+	// First create Tenant 2 WITHOUT subscription and WITHOUT company_id (correct architecture)
 	err = db.Exec(`
-		INSERT INTO tenants (id, name, slug, company_id, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, 'ACTIVE', NOW(), NOW())
-	`, tenant2ID, "CV Berkah Mandiri", "cv-berkah-mandiri", company2ID).Error
+		INSERT INTO tenants (id, name, subdomain, status, created_at, updated_at)
+		VALUES (?, ?, ?, 'ACTIVE', NOW(), NOW())
+	`, tenant2ID, "CV Berkah Mandiri", "cv-berkah-mandiri").Error
 	if err != nil {
 		return fmt.Errorf("failed to create tenant2: %w", err)
 	}
 
-	// Now create Subscription 2 WITH tenant_id
+	// Now create Subscription 2 WITHOUT tenant_id (1 Subscription → N Tenants architecture)
 	now := time.Now()
 	currentPeriodStart := now
 	currentPeriodEnd := now.AddDate(0, 1, 0)
@@ -148,10 +190,10 @@ func seedTestData(db *gorm.DB, hasher *security.PasswordHasher, cfg *config.Conf
 
 	err = db.Exec(`
 		INSERT INTO subscriptions (
-			id, tenant_id, price, billing_cycle, status, current_period_start,
+			id, price, billing_cycle, status, current_period_start,
 			current_period_end, next_billing_date, auto_renew, created_at, updated_at
-		) VALUES (?, ?, 300000, 'MONTHLY', 'ACTIVE', ?, ?, ?, true, NOW(), NOW())
-	`, subscriptionID, tenant2ID, currentPeriodStart, currentPeriodEnd, nextBillingDate).Error
+		) VALUES (?, 300000, 'MONTHLY', 'ACTIVE', ?, ?, ?, true, NOW(), NOW())
+	`, subscriptionID, currentPeriodStart, currentPeriodEnd, nextBillingDate).Error
 	if err != nil {
 		return fmt.Errorf("failed to create subscription2: %w", err)
 	}
@@ -290,6 +332,68 @@ func seedTestData(db *gorm.DB, hasher *security.PasswordHasher, cfg *config.Conf
 		}
 	}
 	fmt.Println("✓ Created multi-tenant consultant user (access to both companies)")
+
+	// 10. Create UserCompanyRoles (Tier 2 - Per-Company Access)
+	// This demonstrates the dual-tier permission system:
+	// - Tier 1 (UserTenant): Tenant-level access (OWNER, SYSADMIN)
+	// - Tier 2 (UserCompanyRole): Company-level access (ADMIN, FINANCE, SALES, WAREHOUSE, STAFF)
+	fmt.Println("\n📋 Creating User-Company Roles (Tier 2)...")
+
+	// Get user IDs for company role assignments
+	var (
+		adminMaju, financeMaju, salesMaju, warehouseMaju, staffMaju       models.User
+		adminBerkah, financeBerkah, salesBerkah                           models.User
+		consultantUser                                                    models.User
+	)
+
+	// Fetch users by email
+	db.Where("email = ?", "admin.maju@example.com").First(&adminMaju)
+	db.Where("email = ?", "finance.maju@example.com").First(&financeMaju)
+	db.Where("email = ?", "sales.maju@example.com").First(&salesMaju)
+	db.Where("email = ?", "warehouse.maju@example.com").First(&warehouseMaju)
+	db.Where("email = ?", "staff.maju@example.com").First(&staffMaju)
+	db.Where("email = ?", "admin.berkah@example.com").First(&adminBerkah)
+	db.Where("email = ?", "finance.berkah@example.com").First(&financeBerkah)
+	db.Where("email = ?", "sales.berkah@example.com").First(&salesBerkah)
+	db.Where("email = ?", "consultant@example.com").First(&consultantUser)
+
+	// Create UserCompanyRole records following phase1_seed.go pattern
+	userCompanyRoles := []struct {
+		userID    string
+		companyID string
+		tenantID  string
+		role      models.UserRole
+		comment   string
+	}{
+		// PT Maju Jaya (Company 1) - Tier 2 access
+		{adminMaju.ID, company1ID, tenant1ID, models.UserRoleAdmin, "Admin at PT Maju Jaya"},
+		{financeMaju.ID, company1ID, tenant1ID, models.UserRoleFinance, "Finance at PT Maju Jaya"},
+		{salesMaju.ID, company1ID, tenant1ID, models.UserRoleSales, "Sales at PT Maju Jaya"},
+		{warehouseMaju.ID, company1ID, tenant1ID, models.UserRoleWarehouse, "Warehouse at PT Maju Jaya"},
+		{staffMaju.ID, company1ID, tenant1ID, models.UserRoleStaff, "Staff at PT Maju Jaya"},
+
+		// CV Berkah Mandiri (Company 2) - Tier 2 access
+		{adminBerkah.ID, company2ID, tenant2ID, models.UserRoleAdmin, "Admin at CV Berkah Mandiri"},
+		{financeBerkah.ID, company2ID, tenant2ID, models.UserRoleFinance, "Finance at CV Berkah Mandiri"},
+		{salesBerkah.ID, company2ID, tenant2ID, models.UserRoleSales, "Sales at CV Berkah Mandiri"},
+
+		// Multi-tenant consultant - has STAFF role at both companies (Tier 2)
+		{consultantUser.ID, company1ID, tenant1ID, models.UserRoleStaff, "Consultant at PT Maju Jaya"},
+		{consultantUser.ID, company2ID, tenant2ID, models.UserRoleStaff, "Consultant at CV Berkah Mandiri"},
+	}
+
+	for _, ucr := range userCompanyRoles {
+		userCompanyRoleID := cuid.New()
+		err = db.Exec(`
+			INSERT INTO user_company_roles (id, user_id, company_id, tenant_id, role, is_active, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, true, NOW(), NOW())
+		`, userCompanyRoleID, ucr.userID, ucr.companyID, ucr.tenantID, ucr.role).Error
+		if err != nil {
+			return fmt.Errorf("failed to create user-company-role (%s): %w", ucr.comment, err)
+		}
+		fmt.Printf("  ✓ User-Company-Role: %s\n", ucr.comment)
+	}
+	fmt.Printf("✓ Created %d user-company-role assignments\n", len(userCompanyRoles))
 
 	return nil
 }
