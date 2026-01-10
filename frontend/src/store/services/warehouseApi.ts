@@ -34,21 +34,24 @@ export const warehouseApi = createApi({
       WarehouseListResponse,
       WarehouseFilters | void
     >({
-      query: (filters = {}) => ({
-        url: "/warehouses",
-        params: {
-          search: filters.search,
-          type: filters.type,
-          city: filters.city,
-          province: filters.province,
-          manager_id: filters.managerID, // ← snake_case for backend
-          is_active: filters.isActive, // ← snake_case for backend
-          page: filters.page || 1,
-          page_size: filters.pageSize || 20, // ← snake_case for backend
-          sort_by: filters.sortBy || "code", // ← snake_case for backend
-          sort_order: filters.sortOrder || "asc", // ← snake_case for backend
-        },
-      }),
+      query: (filters) => {
+        const params = filters || {};
+        return {
+          url: "/warehouses",
+          params: {
+            search: params.search,
+            type: params.type,
+            city: params.city,
+            province: params.province,
+            manager_id: params.managerID, // ← snake_case for backend
+            is_active: params.isActive, // ← snake_case for backend
+            page: params.page || 1,
+            page_size: params.pageSize || 20, // ← snake_case for backend
+            sort_by: params.sortBy || "code", // ← snake_case for backend
+            sort_order: params.sortOrder || "asc", // ← snake_case for backend
+          },
+        };
+      },
       providesTags: (result) =>
         result
           ? [

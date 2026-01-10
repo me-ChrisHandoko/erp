@@ -33,18 +33,21 @@ export const customerApi = createApi({
      * GET /api/v1/customers
      */
     listCustomers: builder.query<CustomerListResponse, CustomerFilters | void>({
-      query: (filters = {}) => ({
-        url: "/customers",
-        params: {
-          search: filters.search,
-          customer_type: filters.customerType,
-          is_active: filters.isActive,
-          page: filters.page || 1,
-          page_size: filters.pageSize || 20,
-          sort_by: filters.sortBy || "code",
-          sort_order: filters.sortOrder || "asc",
-        },
-      }),
+      query: (filters) => {
+        const params = filters || {};
+        return {
+          url: "/customers",
+          params: {
+            search: params.search,
+            customer_type: params.customerType,
+            is_active: params.isActive,
+            page: params.page || 1,
+            page_size: params.pageSize || 20,
+            sort_by: params.sortBy || "code",
+            sort_order: params.sortOrder || "asc",
+          },
+        };
+      },
       providesTags: (result) =>
         result
           ? [

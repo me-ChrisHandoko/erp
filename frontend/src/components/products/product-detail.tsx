@@ -417,7 +417,7 @@ export function ProductDetail({ product }: ProductDetailProps) {
                     <TableRow key={supplier.id}>
                       <TableCell className="font-medium">
                         {supplier.supplierName}
-                        {supplier.isPrimary && (
+                        {supplier.isPrimarySupplier && (
                           <Badge
                             variant="default"
                             className="ml-2 bg-blue-500 text-xs"
@@ -431,7 +431,7 @@ export function ProductDetail({ product }: ProductDetailProps) {
                         {Number(supplier.supplierPrice).toLocaleString("id-ID")}
                       </TableCell>
                       <TableCell className="text-right">
-                        {supplier.leadTime} hari
+                        {supplier.leadTimeDays} hari
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge variant="outline" className="text-xs">
@@ -464,7 +464,7 @@ export function ProductDetail({ product }: ProductDetailProps) {
                 Total Stok
               </p>
               <p className="text-2xl font-bold">
-                {Number(product.currentStock.total).toLocaleString("id-ID")}{" "}
+                {Number(product.currentStock?.totalStock || 0).toLocaleString("id-ID")}{" "}
                 {product.baseUnit}
               </p>
             </div>

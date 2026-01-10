@@ -193,6 +193,48 @@ func (h *WarehouseHandler) GetWarehouse(c *gin.Context) {
 	})
 }
 
+// GetWarehouseStockStatus handles GET /api/v1/warehouses/stock-status
+// @Summary Get warehouse stock initialization status
+// @Tags Warehouses
+// @Accept json
+// @Produce json
+// @Success 200 {object} dto.WarehouseStockStatusListResponse
+// @Failure 400 {object} pkgerrors.ErrorResponse
+// @Failure 500 {object} pkgerrors.ErrorResponse
+// @Router /api/v1/warehouses/stock-status [get]
+// @Security BearerAuth
+func (h *WarehouseHandler) GetWarehouseStockStatus(c *gin.Context) {
+	// Get company ID from context
+	companyID, exists := c.Get("company_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Company context not found. Please set X-Company-ID header."))
+		return
+	}
+
+	// Get tenant ID from context
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
+	// Get warehouse stock status
+	statusList, err := h.warehouseService.GetWarehouseStockStatus(c.Request.Context(), tenantID.(string), companyID.(string))
+	if err != nil {
+		if appErr, ok := err.(*pkgerrors.AppError); ok {
+			c.JSON(appErr.StatusCode, appErr)
+			return
+		}
+		c.JSON(http.StatusInternalServerError, pkgerrors.NewInternalError(err))
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.WarehouseStockStatusListResponse{
+		Success:    true,
+		Warehouses: statusList,
+	})
+}
+
 // UpdateWarehouse handles PUT /api/v1/warehouses/:id
 // @Summary Update an existing warehouse
 // @Tags Warehouses

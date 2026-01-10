@@ -113,7 +113,7 @@ type WarehouseStockListResponse struct {
 // WarehouseStockListQuery - Query parameters for listing warehouse stocks
 type WarehouseStockListQuery struct {
 	Page         int     `form:"page" binding:"omitempty,min=1"`
-	PageSize     int     `form:"pageSize" binding:"omitempty,min=1,max=100"`
+	PageSize     int     `form:"pageSize" binding:"omitempty,min=1,max=1000"` // Increased to 1000 for Initial Stock Setup
 	WarehouseID  *string `form:"warehouseID" binding:"omitempty"`
 	ProductID    *string `form:"productID" binding:"omitempty"`
 	Search       string  `form:"search" binding:"omitempty"` // Search by product code or name
@@ -142,4 +142,21 @@ type WarehouseStatisticsResponse struct {
 	TotalProducts          int    `json:"totalProducts"`
 	ProductsBelowMinimum   int    `json:"productsBelowMinimum"`
 	ProductsWithZeroStock  int    `json:"productsWithZeroStock"`
+}
+
+// WarehouseStockStatusResponse - Response DTO for warehouse stock initialization status
+type WarehouseStockStatusResponse struct {
+	WarehouseID    string     `json:"warehouseId"`
+	WarehouseName  string     `json:"warehouseName"`
+	WarehouseCode  string     `json:"warehouseCode,omitempty"`
+	HasInitialStock bool      `json:"hasInitialStock"`
+	TotalProducts  int        `json:"totalProducts"`
+	TotalValue     string     `json:"totalValue"`
+	LastUpdated    *time.Time `json:"lastUpdated,omitempty"`
+}
+
+// WarehouseStockStatusListResponse - Response DTO for warehouse stock status list
+type WarehouseStockStatusListResponse struct {
+	Success    bool                           `json:"success"`
+	Warehouses []WarehouseStockStatusResponse `json:"warehouses"`
 }

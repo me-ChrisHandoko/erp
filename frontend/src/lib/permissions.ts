@@ -29,6 +29,7 @@ export type Resource =
   | 'warehouses'
   // Inventory
   | 'stock'
+  | 'warehouse-stocks' // Initial stock setup
   | 'stock-transfers'
   | 'stock-opname'
   | 'inventory-adjustments'
@@ -70,6 +71,7 @@ const ROLE_PERMISSIONS: Record<CompanyRole, {
     products: ['view', 'create', 'edit', 'delete', 'export', 'import'],
     warehouses: ['view', 'create', 'edit', 'delete'],
     stock: ['view', 'export'],
+    'warehouse-stocks': ['view', 'create', 'edit'], // Initial stock setup
     'stock-transfers': ['view', 'create', 'edit', 'delete', 'approve'],
     'stock-opname': ['view', 'create', 'edit', 'delete', 'approve'],
     'inventory-adjustments': ['view', 'create', 'edit', 'delete', 'approve'],
@@ -99,6 +101,7 @@ const ROLE_PERMISSIONS: Record<CompanyRole, {
     products: ['view', 'create', 'edit', 'delete', 'export', 'import'],
     warehouses: ['view', 'create', 'edit', 'delete'],
     stock: ['view', 'export'],
+    'warehouse-stocks': ['view', 'create', 'edit'], // Initial stock setup
     'stock-transfers': ['view', 'create', 'edit', 'delete', 'approve'],
     'stock-opname': ['view', 'create', 'edit', 'delete', 'approve'],
     'inventory-adjustments': ['view', 'create', 'edit', 'delete', 'approve'],
@@ -128,6 +131,7 @@ const ROLE_PERMISSIONS: Record<CompanyRole, {
     products: ['view', 'export'],
     warehouses: ['view'],
     stock: ['view', 'export'],
+    'warehouse-stocks': ['view'], // View only - no initial stock setup
     'stock-transfers': ['view'],
     'stock-opname': ['view'],
     'inventory-adjustments': ['view'],
@@ -157,6 +161,7 @@ const ROLE_PERMISSIONS: Record<CompanyRole, {
     products: ['view', 'export'],
     warehouses: ['view'],
     stock: ['view'],
+    'warehouse-stocks': ['view'], // View only - no initial stock setup
     'stock-transfers': ['view'],
     'stock-opname': ['view'],
     'inventory-adjustments': ['view'],
@@ -186,6 +191,7 @@ const ROLE_PERMISSIONS: Record<CompanyRole, {
     products: ['view', 'export'], // Only view & export - create/edit restricted to OWNER/ADMIN
     warehouses: ['view'],
     stock: ['view', 'export'],
+    'warehouse-stocks': ['view', 'create', 'edit'], // Full access to initial stock setup
     'stock-transfers': ['view', 'create', 'edit'],
     'stock-opname': ['view', 'create', 'edit'],
     'inventory-adjustments': ['view', 'create', 'edit'],
@@ -215,6 +221,7 @@ const ROLE_PERMISSIONS: Record<CompanyRole, {
     products: ['view'],
     warehouses: ['view'],
     stock: ['view'],
+    'warehouse-stocks': ['view'], // View only - no initial stock setup
     'stock-transfers': ['view'],
     'stock-opname': ['view'],
     'inventory-adjustments': ['view'],

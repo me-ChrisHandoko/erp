@@ -11,6 +11,8 @@ import { productApi } from './services/productApi';
 import { customerApi } from './services/customerApi';
 import { supplierApi } from './services/supplierApi';
 import { warehouseApi } from './services/warehouseApi'; // Warehouse management API
+import { stockApi } from './services/stockApi'; // Stock and inventory API
+import { initialStockApi } from './services/initialStockApi'; // Initial stock setup API
 import authReducer, { logout } from './slices/authSlice';
 import companyReducer, { setActiveCompany } from './slices/companySlice';
 
@@ -62,6 +64,8 @@ const resetAllApiStatesOnLogout: Middleware = (storeAPI) => (next) => (action) =
     storeAPI.dispatch(customerApi.util.resetApiState());
     storeAPI.dispatch(supplierApi.util.resetApiState());
     storeAPI.dispatch(warehouseApi.util.resetApiState());
+    storeAPI.dispatch(stockApi.util.resetApiState());
+    storeAPI.dispatch(initialStockApi.util.resetApiState());
 
     // CRITICAL: Clear company Redux state to prevent cross-user data exposure
     // Import clearCompanyState from companySlice
@@ -74,7 +78,7 @@ const resetAllApiStatesOnLogout: Middleware = (storeAPI) => (next) => (action) =
       localStorage.removeItem('activeCompanyId');
     }
 
-    console.log('[Middleware] All API caches cleared (authApi, companyApi, tenantApi, multiCompanyApi, companyUserApi, productApi, customerApi, supplierApi, warehouseApi)');
+    console.log('[Middleware] All API caches cleared (authApi, companyApi, tenantApi, multiCompanyApi, companyUserApi, productApi, customerApi, supplierApi, warehouseApi, stockApi, initialStockApi)');
     console.log('[Middleware] Company Redux state cleared (activeCompany, availableCompanies)');
     console.log('[Middleware] localStorage.activeCompanyId cleared to prevent cross-user contamination');
   }
@@ -117,9 +121,11 @@ const resetAllApiStatesOnCompanySwitch: Middleware = (storeAPI) => (next) => (ac
       storeAPI.dispatch(customerApi.util.resetApiState());
       storeAPI.dispatch(supplierApi.util.resetApiState());
       storeAPI.dispatch(warehouseApi.util.resetApiState());
+      storeAPI.dispatch(stockApi.util.resetApiState());
+      storeAPI.dispatch(initialStockApi.util.resetApiState());
       // Note: authApi, tenantApi, multiCompanyApi are NOT reset (user-level, not company-level)
 
-      console.log('[Middleware] All company-scoped API caches cleared (companyApi, companyUserApi, productApi, customerApi, supplierApi, warehouseApi)');
+      console.log('[Middleware] All company-scoped API caches cleared (companyApi, companyUserApi, productApi, customerApi, supplierApi, warehouseApi, stockApi, initialStockApi)');
       console.log('[Middleware] Next API calls will fetch data for company:', newCompanyId);
     } else if (!prevCompanyId) {
       console.log('[Middleware] Initial company selection:', newCompanyId);
@@ -155,6 +161,8 @@ export const store = configureStore({
     [customerApi.reducerPath]: customerApi.reducer, // Customer management API
     [supplierApi.reducerPath]: supplierApi.reducer, // Supplier management API
     [warehouseApi.reducerPath]: warehouseApi.reducer, // Warehouse management API
+    [stockApi.reducerPath]: stockApi.reducer, // Stock and inventory API
+    [initialStockApi.reducerPath]: initialStockApi.reducer, // Initial stock setup API
   },
 
   // Add RTK Query middleware for caching, invalidation, etc.
@@ -169,6 +177,8 @@ export const store = configureStore({
       customerApi.middleware, // Customer management middleware
       supplierApi.middleware, // Supplier management middleware
       warehouseApi.middleware, // Warehouse management middleware
+      stockApi.middleware, // Stock and inventory middleware
+      initialStockApi.middleware, // Initial stock setup middleware
       redirectToLogoutOnSessionExpiry, // CRITICAL: Redirect to /logout page when session expires
       resetAllApiStatesOnLogout, // CRITICAL: Reset all API caches on logout
       resetAllApiStatesOnCompanySwitch // CRITICAL: Reset company-scoped caches on company switch

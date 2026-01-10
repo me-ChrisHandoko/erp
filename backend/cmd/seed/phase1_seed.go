@@ -455,8 +455,21 @@ func seedData(db *gorm.DB) error {
 	locations := []string{"RAK-A-01", "RAK-A-02", "RAK-A-03", "RAK-B-01", "RAK-B-02", "RAK-B-03", "RAK-C-01", "RAK-C-02", "RAK-C-03", "RAK-D-01"}
 
 	for i, prod := range products {
-		// Alternate between warehouses
-		warehouseIdx := i % 2
+		// 🔧 FIX: Find warehouse that belongs to the same company as the product
+		var targetWarehouse *models.Warehouse
+		for _, wh := range warehouses {
+			if wh.CompanyID == prod.CompanyID {
+				targetWarehouse = wh
+				break
+			}
+		}
+
+		// Skip if no matching warehouse found (shouldn't happen with correct seed data)
+		if targetWarehouse == nil {
+			log.Printf("  ⚠️ WARNING: No warehouse found for product %s (Company %s)", prod.Code, prod.CompanyID[:8])
+			continue
+		}
+
 		locationIdx := (i / 2) % len(locations)
 
 		// Vary stock quantities based on product type
@@ -487,7 +500,7 @@ func seedData(db *gorm.DB) error {
 		warehouseStocks = append(warehouseStocks,
 			&models.WarehouseStock{
 				ProductID:    prod.ID,
-				WarehouseID:  warehouses[warehouseIdx].ID,
+				WarehouseID:  targetWarehouse.ID,  // ✅ NOW CORRECT: Same company!
 				Quantity:     decimal.NewFromInt(quantity),
 				MinimumStock: decimal.NewFromInt(minStock),
 				MaximumStock: decimal.NewFromInt(maxStock),

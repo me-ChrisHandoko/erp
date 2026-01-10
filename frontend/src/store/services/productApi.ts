@@ -39,23 +39,24 @@ export const productApi = createApi({
      * GET /api/v1/products
      */
     listProducts: builder.query<ProductListResponse, ProductFilters | void>({
-      query: (filters = {}) => {
+      query: (filters) => {
+        const f = filters || {};
         // Build params object, explicitly handling boolean values
         const params: Record<string, any> = {
-          page: filters.page || 1,
-          page_size: filters.pageSize || 20,
-          sort_by: filters.sortBy || "code",
-          sort_order: filters.sortOrder || "asc",
+          page: f.page || 1,
+          page_size: f.pageSize || 20,
+          sort_by: f.sortBy || "code",
+          sort_order: f.sortOrder || "asc",
         };
 
         // Only add optional params if they have values
-        if (filters.search) params.search = filters.search;
-        if (filters.category) params.category = filters.category;
+        if (f.search) params.search = f.search;
+        if (f.category) params.category = f.category;
 
         // Explicitly handle boolean filters (include false values!)
-        if (filters.isActive !== undefined) params.is_active = filters.isActive;
-        if (filters.isBatchTracked !== undefined) params.is_batch_tracked = filters.isBatchTracked;
-        if (filters.isPerishable !== undefined) params.is_perishable = filters.isPerishable;
+        if (f.isActive !== undefined) params.is_active = f.isActive;
+        if (f.isBatchTracked !== undefined) params.is_batch_tracked = f.isBatchTracked;
+        if (f.isPerishable !== undefined) params.is_perishable = f.isPerishable;
 
         return {
           url: "/products",

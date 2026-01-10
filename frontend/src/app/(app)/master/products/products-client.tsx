@@ -338,7 +338,7 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
                             Baris per Halaman
                           </span>
                           <Select
-                            value={filters.pageSize.toString()}
+                            value={filters.pageSize?.toString() || "20"}
                             onValueChange={handlePageSizeChange}
                           >
                             <SelectTrigger className="w-[70px] h-8">

@@ -281,7 +281,7 @@ export const multiCompanyApi = createApi({
      * Initialize company context after login
      * Automatically fetches available companies and sets first active one
      */
-    initializeCompanyContext: builder.mutation<void, void>({
+    initializeCompanyContext: builder.mutation<{ success: boolean }, void>({
       queryFn: async (_, { dispatch }) => {
         try {
           console.log('🔄 [initializeCompanyContext] Starting...');
@@ -325,10 +325,10 @@ export const multiCompanyApi = createApi({
             });
             await dispatch(
               multiCompanyApi.endpoints.switchCompany.initiate(targetCompany.id)
-            );
+            ).unwrap();
 
-            // RTK Query requires { data: null } for void mutations, not { data: undefined }
-            return { data: null };
+            // Return success indicator for RTK Query
+            return { data: { success: true } };
           } else {
             // No companies available
             return {

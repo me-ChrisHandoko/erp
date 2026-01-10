@@ -106,29 +106,32 @@ const authSlice = createSlice({
      * Note: rememberEmail is intentionally NOT cleared to preserve "Remember Me" functionality
      * @param action.payload.reason - Optional reason for logout (e.g., "session_expired", "user_action")
      */
-    logout: (state, action: PayloadAction<{ reason?: string } | void>) => {
-      state.user = null;
-      state.accessToken = null;
-      state.activeTenant = null;
-      state.availableTenants = [];
-      state.isAuthenticated = false;
-      state.error = null;
-      state.isLoading = false;
+    logout: {
+      reducer: (state, action: PayloadAction<{ reason?: string }>) => {
+        state.user = null;
+        state.accessToken = null;
+        state.activeTenant = null;
+        state.availableTenants = [];
+        state.isAuthenticated = false;
+        state.error = null;
+        state.isLoading = false;
 
-      // Store logout reason for display on logout/login page
-      if (action.payload && typeof action.payload === 'object' && action.payload.reason) {
-        state.logoutReason = action.payload.reason;
-      } else {
-        state.logoutReason = null;
-      }
+        // Store logout reason for display on logout/login page
+        if (action.payload?.reason) {
+          state.logoutReason = action.payload.reason;
+        } else {
+          state.logoutReason = null;
+        }
 
-      // Clear localStorage (access token and company context)
-      // Note: rememberEmail is preserved for "Remember Me" functionality
-      // Note: activeCompanyId is also cleared in middleware for defense in depth
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('activeCompanyId'); // Prevent cross-user company context leak
-      }
+        // Clear localStorage (access token and company context)
+        // Note: rememberEmail is preserved for "Remember Me" functionality
+        // Note: activeCompanyId is also cleared in middleware for defense in depth
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('accessToken');
+          localStorage.removeItem('activeCompanyId'); // Prevent cross-user company context leak
+        }
+      },
+      prepare: (payload?: { reason?: string }) => ({ payload: payload || {} }),
     },
 
     /**

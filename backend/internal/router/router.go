@@ -371,6 +371,7 @@ func setupProtectedRoutes(
 		{
 			// GET endpoints - all authenticated users can view
 			warehouseGroup.GET("", warehouseHandler.ListWarehouses)
+			warehouseGroup.GET("/stock-status", warehouseHandler.GetWarehouseStockStatus)
 			warehouseGroup.GET("/:id", warehouseHandler.GetWarehouse)
 
 			// POST/PUT/DELETE endpoints - OWNER/ADMIN only

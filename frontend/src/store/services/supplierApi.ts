@@ -33,20 +33,23 @@ export const supplierApi = createApi({
      */
     listSuppliers: builder.query<SupplierListResponse, SupplierFilters | void>(
       {
-        query: (filters = {}) => ({
-          url: "/suppliers",
-          params: {
-            search: filters.search,
-            type: filters.type,
-            city: filters.city,
-            province: filters.province,
-            is_active: filters.isActive,
-            page: filters.page || 1,
-            page_size: filters.pageSize || 20,
-            sort_by: filters.sortBy || "code",
-            sort_order: filters.sortOrder || "asc",
-          },
-        }),
+        query: (filters) => {
+          const params = filters || {};
+          return {
+            url: "/suppliers",
+            params: {
+              search: params.search,
+              type: params.type,
+              city: params.city,
+              province: params.province,
+              is_active: params.isActive,
+              page: params.page || 1,
+              page_size: params.pageSize || 20,
+              sort_by: params.sortBy || "code",
+              sort_order: params.sortOrder || "asc",
+            },
+          };
+        },
         providesTags: (result) =>
           result
             ? [

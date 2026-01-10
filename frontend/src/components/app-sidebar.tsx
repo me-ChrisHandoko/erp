@@ -114,6 +114,11 @@ const staticData = {
           url: "/inventory/adjustments",
           resource: "inventory-adjustments" as Resource,
         },
+        {
+          title: "Setup Stok Awal",
+          url: "/inventory/initial-setup",
+          resource: "warehouse-stocks" as Resource,
+        },
       ],
     },
     {
