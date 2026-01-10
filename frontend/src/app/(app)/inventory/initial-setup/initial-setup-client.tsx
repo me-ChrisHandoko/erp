@@ -89,8 +89,10 @@ interface StockItemRow extends InitialStockItem {
 
 export function InitialSetupClient({
   initialWarehouseId,
-  context,
-  source,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  context: _context, // TODO: Use for onboarding flow customization
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  source: _source, // TODO: Use for analytics/UX tracking
 }: InitialSetupClientProps) {
   const router = useRouter();
 
@@ -463,9 +465,19 @@ export function InitialSetupClient({
 
       await submitInitialStock(payload).unwrap();
       setCurrentStep(5); // Success step
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage =
+        error &&
+        typeof error === "object" &&
+        "data" in error &&
+        error.data &&
+        typeof error.data === "object" &&
+        "message" in error.data &&
+        typeof error.data.message === "string"
+          ? error.data.message
+          : "Gagal menyimpan data stok awal";
       setErrors({
-        submit: error?.data?.message || "Gagal menyimpan data stok awal",
+        submit: errorMessage,
       });
     }
   };

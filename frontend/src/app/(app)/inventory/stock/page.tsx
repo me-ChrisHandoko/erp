@@ -35,7 +35,7 @@ export default async function StockPage() {
               { label: "Stok Gudang" },
             ]}
           />
-          <div className="flex flex-1 flex-col items-center justify-center min-h-[400px] gap-4 p-4">
+          <div className="flex flex-1 flex-col items-center justify-center min-h-100 gap-4 p-4">
             <div className="text-center space-y-2">
               <h3 className="text-lg font-semibold">
                 Initializing Company Context...
@@ -62,14 +62,14 @@ export default async function StockPage() {
       pageSize: number;
       totalPages: number;
     }>({
-      endpoint: '/warehouse-stocks',
+      endpoint: "/warehouse-stocks",
       params: {
         page: 1,
         pageSize: 20,
-        sortBy: 'productCode',
-        sortOrder: 'asc',
+        sortBy: "productCode",
+        sortOrder: "asc",
       },
-      cache: 'no-store', // Always fetch fresh data for now
+      cache: "no-store", // Always fetch fresh data for now
     });
 
     // Transform backend response to match our expected structure
@@ -85,7 +85,7 @@ export default async function StockPage() {
       },
     };
   } catch (error) {
-    console.error('[Stock Page] Failed to fetch initial data:', error);
+    console.error("[Stock Page] Failed to fetch initial data:", error);
 
     // Return error state - let client handle retry
     return (
@@ -98,16 +98,19 @@ export default async function StockPage() {
               { label: "Stok Gudang" },
             ]}
           />
-          <div className="flex flex-1 flex-col items-center justify-center min-h-[400px] gap-4 p-4">
+          <div className="flex flex-1 flex-col items-center justify-center min-h-100 gap-4 p-4">
             <div className="text-center space-y-2">
               <h3 className="text-lg font-semibold text-destructive">
                 Gagal Memuat Data
               </h3>
               <p className="text-sm text-muted-foreground">
-                {error instanceof Error ? error.message : 'Terjadi kesalahan saat memuat data stok'}
+                {error instanceof Error
+                  ? error.message
+                  : "Terjadi kesalahan saat memuat data stok"}
               </p>
               <p className="text-xs text-muted-foreground">
-                Silakan refresh halaman atau hubungi administrator jika masalah berlanjut
+                Silakan refresh halaman atau hubungi administrator jika masalah
+                berlanjut
               </p>
             </div>
           </div>

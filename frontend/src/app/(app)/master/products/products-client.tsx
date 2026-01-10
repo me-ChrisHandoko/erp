@@ -319,8 +319,9 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
 
                   {/* Pagination */}
                   {displayData?.pagination && (
-                    <div className="flex items-center justify-between border-t pt-4">
-                      <div className="text-sm text-muted-foreground">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t pt-4">
+                      {/* 1. Summary - Record Data */}
+                      <div className="text-sm text-muted-foreground text-center sm:text-left">
                         {(() => {
                           const pagination = displayData.pagination as any;
                           const page = pagination.page || 1;
@@ -331,28 +332,30 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
                           return `Menampilkan ${start}-${end} dari ${totalItems} item`;
                         })()}
                       </div>
-                      <div className="flex items-center gap-2">
-                        {/* Page Size Selector */}
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-muted-foreground whitespace-nowrap">
-                            Baris per Halaman
-                          </span>
-                          <Select
-                            value={filters.pageSize?.toString() || "20"}
-                            onValueChange={handlePageSizeChange}
-                          >
-                            <SelectTrigger className="w-[70px] h-8">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="10">10</SelectItem>
-                              <SelectItem value="20">20</SelectItem>
-                              <SelectItem value="50">50</SelectItem>
-                              <SelectItem value="100">100</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
 
+                      {/* 2. Page Size Selector - Baris per Halaman */}
+                      <div className="flex items-center justify-center sm:justify-start gap-2">
+                        <span className="text-sm text-muted-foreground whitespace-nowrap">
+                          Baris per Halaman
+                        </span>
+                        <Select
+                          value={filters.pageSize?.toString() || "20"}
+                          onValueChange={handlePageSizeChange}
+                        >
+                          <SelectTrigger className="w-[70px] h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="10">10</SelectItem>
+                            <SelectItem value="20">20</SelectItem>
+                            <SelectItem value="50">50</SelectItem>
+                            <SelectItem value="100">100</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* 3. Navigation Buttons - << < Halaman > >> */}
+                      <div className="flex items-center justify-center sm:justify-end gap-2">
                         {/* First Page */}
                         <Button
                           variant="outline"
