@@ -93,3 +93,15 @@ type BankAccountResponse struct {
 	CheckPrefix   string `json:"checkPrefix,omitempty"`
 	IsActive      bool   `json:"isActive"`
 }
+
+// BankAccountFilters represents bank account list filters
+// Follows the same pattern as ProductFilters for consistency
+type BankAccountFilters struct {
+	Search    string `form:"search"`                                                 // Search by bank name or account number
+	IsPrimary *bool  `form:"is_primary"`                                             // Filter by primary status
+	IsActive  *bool  `form:"is_active"`                                              // Filter by active status
+	Page      int    `form:"page" binding:"omitempty,min=1"`                         // Page number (default: 1)
+	Limit     int    `form:"page_size" binding:"omitempty,min=1,max=100"`            // Page size (default: 20)
+	SortBy    string `form:"sort_by" binding:"omitempty,oneof=bankName createdAt"`   // Sort field
+	SortOrder string `form:"sort_order" binding:"omitempty,oneof=asc desc"`          // Sort order (asc/desc)
+}

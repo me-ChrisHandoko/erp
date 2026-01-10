@@ -199,6 +199,34 @@ export interface BankAccountResponse {
 }
 
 /**
+ * Bank Account Filters
+ * Query parameters for bank account list filtering and pagination
+ */
+export interface BankAccountFilters {
+  search?: string;
+  isPrimary?: boolean;
+  isActive?: boolean;
+  page?: number;
+  pageSize?: number;
+  sortBy?: "bankName" | "createdAt";
+  sortOrder?: "asc" | "desc";
+}
+
+/**
+ * Bank Account List Response
+ * Response from GET /company/banks with pagination
+ */
+export interface BankAccountListResponse {
+  data: BankAccountResponse[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+/**
  * Indonesian Entity Types
  */
 export const ENTITY_TYPES = ["CV", "PT", "UD", "Firma"] as const;

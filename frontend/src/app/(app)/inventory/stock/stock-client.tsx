@@ -12,7 +12,7 @@
 
 import { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
-import { Search, Package, AlertTriangle } from "lucide-react";
+import { Search, Package, AlertTriangle, XCircle, TrendingUp } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -159,45 +159,84 @@ export function StockClient({ initialData }: StockClientProps) {
         {/* Stock Statistics */}
         {displayData && displayData.data.length > 0 && (
           <div className="grid gap-4 md:grid-cols-3">
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2">
-                  <Package className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">
-                    Total Item
-                  </span>
+            {/* Total Item Card */}
+            <Card className="overflow-hidden border-none shadow-md hover:shadow-lg transition-shadow duration-300 rounded-xl">
+              <CardContent className="p-0">
+                <div className="relative bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-xl">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-blue-100">
+                        Total Item
+                      </p>
+                      <p className="text-3xl font-bold text-white">
+                        {displayData.pagination.totalItems.toLocaleString('id-ID')}
+                      </p>
+                      <div className="flex items-center gap-1 text-xs text-blue-100">
+                        <TrendingUp className="h-3 w-3" />
+                        <span>Total produk di stok</span>
+                      </div>
+                    </div>
+                    <div className="rounded-full bg-white/20 p-3 backdrop-blur-sm">
+                      <Package className="h-6 w-6 text-white" />
+                    </div>
+                  </div>
                 </div>
-                <p className="text-2xl font-bold mt-2">
-                  {displayData.pagination.totalItems}
-                </p>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-yellow-500" />
-                  <span className="text-sm text-muted-foreground">
-                    Stok Rendah
-                  </span>
+            {/* Stok Rendah Card */}
+            <Card className="overflow-hidden border-none shadow-md hover:shadow-lg transition-shadow duration-300 rounded-xl">
+              <CardContent className="p-0">
+                <div className="relative bg-gradient-to-br from-amber-500 to-orange-600 p-6 rounded-xl">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-amber-100">
+                        Stok Rendah
+                      </p>
+                      <p className="text-3xl font-bold text-white">
+                        {stockStats.low.toLocaleString('id-ID')}
+                      </p>
+                      <div className="flex items-center gap-1 text-xs text-amber-100">
+                        <span>
+                          {displayData.pagination.totalItems > 0
+                            ? `${((stockStats.low / displayData.pagination.totalItems) * 100).toFixed(1)}% dari total`
+                            : 'Tidak ada data'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="rounded-full bg-white/20 p-3 backdrop-blur-sm">
+                      <AlertTriangle className="h-6 w-6 text-white" />
+                    </div>
+                  </div>
                 </div>
-                <p className="text-2xl font-bold mt-2 text-yellow-500">
-                  {stockStats.low}
-                </p>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-red-500" />
-                  <span className="text-sm text-muted-foreground">
-                    Stok Habis
-                  </span>
+            {/* Stok Habis Card */}
+            <Card className="overflow-hidden border-none shadow-md hover:shadow-lg transition-shadow duration-300 rounded-xl">
+              <CardContent className="p-0">
+                <div className="relative bg-gradient-to-br from-red-500 to-red-600 p-6 rounded-xl">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-red-100">
+                        Stok Habis
+                      </p>
+                      <p className="text-3xl font-bold text-white">
+                        {stockStats.zero.toLocaleString('id-ID')}
+                      </p>
+                      <div className="flex items-center gap-1 text-xs text-red-100">
+                        <span>
+                          {displayData.pagination.totalItems > 0
+                            ? `${((stockStats.zero / displayData.pagination.totalItems) * 100).toFixed(1)}% dari total`
+                            : 'Tidak ada data'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="rounded-full bg-white/20 p-3 backdrop-blur-sm">
+                      <XCircle className="h-6 w-6 text-white" />
+                    </div>
+                  </div>
                 </div>
-                <p className="text-2xl font-bold mt-2 text-red-500">
-                  {stockStats.zero}
-                </p>
               </CardContent>
             </Card>
           </div>
@@ -238,15 +277,14 @@ export function StockClient({ initialData }: StockClientProps) {
             {/* Clear Filters Button */}
             {(search || stockFilter !== "all") && (
               <Button
-                variant="outline"
-                size="sm"
+                variant="ghost"
                 onClick={() => {
                   setSearch("");
                   setDebouncedSearch("");
                   setStockFilter("all");
                   setFilters((prev) => ({ ...prev, page: 1 }));
                 }}
-                className="w-full sm:w-auto"
+                className="h-10 px-4"
               >
                 Reset
               </Button>
@@ -302,8 +340,9 @@ export function StockClient({ initialData }: StockClientProps) {
 
                   {/* Pagination */}
                   {displayData?.pagination && (
-                    <div className="flex items-center justify-between border-t pt-4">
-                      <div className="text-sm text-muted-foreground">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t pt-4 mt-6">
+                      {/* 1. Summary - Record Data */}
+                      <div className="text-sm text-muted-foreground text-center sm:text-left">
                         {(() => {
                           const { page, pageSize, totalItems } = displayData.pagination;
                           const start = (page - 1) * pageSize + 1;
@@ -311,28 +350,30 @@ export function StockClient({ initialData }: StockClientProps) {
                           return `Menampilkan ${start}-${end} dari ${totalItems} item`;
                         })()}
                       </div>
-                      <div className="flex items-center gap-2">
-                        {/* Page Size Selector */}
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-muted-foreground whitespace-nowrap">
-                            Baris per Halaman
-                          </span>
-                          <Select
-                            value={filters.pageSize?.toString() || "20"}
-                            onValueChange={handlePageSizeChange}
-                          >
-                            <SelectTrigger className="w-[70px] h-8">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="10">10</SelectItem>
-                              <SelectItem value="20">20</SelectItem>
-                              <SelectItem value="50">50</SelectItem>
-                              <SelectItem value="100">100</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
 
+                      {/* 2. Page Size Selector - Baris per Halaman */}
+                      <div className="flex items-center justify-center sm:justify-start gap-2">
+                        <span className="text-sm text-muted-foreground whitespace-nowrap">
+                          Baris per Halaman
+                        </span>
+                        <Select
+                          value={filters.pageSize?.toString() || "20"}
+                          onValueChange={handlePageSizeChange}
+                        >
+                          <SelectTrigger className="w-[70px] h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="10">10</SelectItem>
+                            <SelectItem value="20">20</SelectItem>
+                            <SelectItem value="50">50</SelectItem>
+                            <SelectItem value="100">100</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* 3. Navigation Buttons - << < Halaman > >> */}
+                      <div className="flex items-center justify-center sm:justify-end gap-2">
                         {/* First Page */}
                         <Button
                           variant="outline"

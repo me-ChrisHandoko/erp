@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"math"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -295,9 +296,10 @@ func (h *CompanyHandler) DeleteBankAccount(c *gin.Context) {
 	})
 }
 
-// GetBankAccounts retrieves all bank accounts for current company
+// GetBankAccounts retrieves paginated bank accounts with filters for current company
 // GET /api/v1/company/banks
 // PHASE 5: Updated to use company_id from CompanyContextMiddleware
+// Updated to support pagination and filtering (follows Products pattern)
 func (h *CompanyHandler) GetBankAccounts(c *gin.Context) {
 	// Get company ID from context (set by CompanyContextMiddleware)
 	companyID, exists := c.Get("company_id")
@@ -306,8 +308,33 @@ func (h *CompanyHandler) GetBankAccounts(c *gin.Context) {
 		return
 	}
 
-	// Call service with company ID
-	banks, err := h.companyService.GetBankAccounts(c.Request.Context(), companyID.(string))
+	// Bind query params to filters struct
+	var filters dto.BankAccountFilters
+	if err := c.ShouldBindQuery(&filters); err != nil {
+		h.handleValidationError(c, err)
+		return
+	}
+
+	// Set defaults if not provided (backward compatibility)
+	if filters.Page == 0 {
+		filters.Page = 1
+	}
+	if filters.Limit == 0 {
+		filters.Limit = 20
+	}
+	if filters.SortBy == "" {
+		filters.SortBy = "bankName"
+	}
+	if filters.SortOrder == "" {
+		filters.SortOrder = "asc"
+	}
+
+	// Call service with filters
+	banks, total, err := h.companyService.ListBankAccounts(
+		c.Request.Context(),
+		companyID.(string),
+		&filters,
+	)
 	if err != nil {
 		h.handleError(c, err)
 		return
@@ -319,9 +346,19 @@ func (h *CompanyHandler) GetBankAccounts(c *gin.Context) {
 		response = append(response, *h.mapBankToResponse(bank))
 	}
 
+	// Calculate pagination
+	totalPages := int(math.Ceil(float64(total) / float64(filters.Limit)))
+
+	// Response with pagination metadata (CONSISTENT with Products pattern)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    response,
+		"pagination": dto.PaginationInfo{
+			Page:       filters.Page,
+			Limit:      filters.Limit,
+			Total:      int(total),
+			TotalPages: totalPages,
+		},
 	})
 }
 

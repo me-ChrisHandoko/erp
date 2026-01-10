@@ -35,6 +35,26 @@ export interface ApiSuccessResponse<T> {
 }
 
 /**
+ * Pagination metadata
+ */
+export interface PaginationInfo {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+/**
+ * Paginated API success response
+ * Backend returns paginated data with pagination metadata at root level
+ */
+export interface ApiPaginatedResponse<T> {
+  success: boolean;
+  data: T[];
+  pagination: PaginationInfo;
+}
+
+/**
  * API error response envelope
  * Backend returns errors in this format
  * NOTE: Backend uses "success": false, not "status": "error"

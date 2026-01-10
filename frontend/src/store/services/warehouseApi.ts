@@ -35,23 +35,42 @@ export const warehouseApi = createApi({
       WarehouseFilters | void
     >({
       query: (filters) => {
-        const params = filters || {};
+        const f = filters || {};
+        // Build params object, explicitly handling boolean values
+        const params: Record<string, any> = {
+          page: f.page || 1,
+          page_size: f.pageSize || 20,
+          sort_by: f.sortBy || "code",
+          sort_order: f.sortOrder || "asc",
+        };
+
+        // Only add optional params if they have values
+        if (f.search) params.search = f.search;
+        if (f.type) params.type = f.type;
+        if (f.city) params.city = f.city;
+        if (f.province) params.province = f.province;
+        if (f.managerID) params.managerID = f.managerID;
+
+        // Explicitly handle boolean filters (include false values!)
+        // Note: Backend warehouse DTO uses camelCase, not snake_case
+        if (f.isActive !== undefined) params.isActive = f.isActive;
+
         return {
           url: "/warehouses",
-          params: {
-            search: params.search,
-            type: params.type,
-            city: params.city,
-            province: params.province,
-            manager_id: params.managerID, // ← snake_case for backend
-            is_active: params.isActive, // ← snake_case for backend
-            page: params.page || 1,
-            page_size: params.pageSize || 20, // ← snake_case for backend
-            sort_by: params.sortBy || "code", // ← snake_case for backend
-            sort_order: params.sortOrder || "asc", // ← snake_case for backend
-          },
+          params,
         };
       },
+      // Force RTK Query to treat different filter values as different cache keys
+      serializeQueryArgs: ({ queryArgs }) => {
+        // Create unique cache key that includes all filter values
+        return JSON.stringify(queryArgs);
+      },
+      // Always refetch when arguments change (important for filter changes!)
+      forceRefetch: ({ currentArg, previousArg }) => {
+        return JSON.stringify(currentArg) !== JSON.stringify(previousArg);
+      },
+      // Disable caching for filter changes
+      keepUnusedDataFor: 0,
       providesTags: (result) =>
         result
           ? [

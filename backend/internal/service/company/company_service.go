@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"backend/internal/dto"
 	"backend/models"
 	pkgerrors "backend/pkg/errors"
 	"backend/pkg/validator"
@@ -234,6 +235,7 @@ func (s *CompanyService) DeleteBankAccount(ctx context.Context, companyID, bankI
 
 // GetBankAccounts retrieves all active bank accounts for the current company
 // PHASE 5: Updated to accept companyID directly instead of tenantID
+// DEPRECATED: Use ListBankAccounts for paginated results
 func (s *CompanyService) GetBankAccounts(ctx context.Context, companyID string) ([]*models.CompanyBank, error) {
 	// Get all active bank accounts
 	var banks []*models.CompanyBank
@@ -245,6 +247,67 @@ func (s *CompanyService) GetBankAccounts(ctx context.Context, companyID string) 
 	}
 
 	return banks, nil
+}
+
+// ListBankAccounts retrieves paginated bank accounts with filters
+// Follows the same pattern as ListProducts for consistency
+func (s *CompanyService) ListBankAccounts(ctx context.Context, companyID string, filters *dto.BankAccountFilters) ([]*models.CompanyBank, int64, error) {
+	var banks []*models.CompanyBank
+	var total int64
+
+	// Build base query
+	query := s.db.WithContext(ctx).
+		Model(&models.CompanyBank{}).
+		Where("company_id = ?", companyID)
+
+	// Apply search filter (search by bank name or account number)
+	if filters.Search != "" {
+		searchTerm := "%" + filters.Search + "%"
+		query = query.Where(
+			"bank_name LIKE ? OR account_number LIKE ?",
+			searchTerm, searchTerm,
+		)
+	}
+
+	// Apply isPrimary filter
+	if filters.IsPrimary != nil {
+		query = query.Where("is_primary = ?", *filters.IsPrimary)
+	}
+
+	// Apply isActive filter
+	if filters.IsActive != nil {
+		query = query.Where("is_active = ?", *filters.IsActive)
+	} else {
+		// Default: only show active banks if not explicitly filtering
+		query = query.Where("is_active = ?", true)
+	}
+
+	// Count total records (before pagination)
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to count bank accounts: %w", err)
+	}
+
+	// Apply sorting - Map camelCase to snake_case for database columns
+	sortByColumn := filters.SortBy
+	switch filters.SortBy {
+	case "bankName":
+		sortByColumn = "bank_name"
+	case "createdAt":
+		sortByColumn = "created_at"
+	}
+	orderClause := sortByColumn + " " + filters.SortOrder
+	query = query.Order(orderClause)
+
+	// Apply pagination
+	offset := (filters.Page - 1) * filters.Limit
+	query = query.Offset(offset).Limit(filters.Limit)
+
+	// Execute query
+	if err := query.Find(&banks).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to list bank accounts: %w", err)
+	}
+
+	return banks, total, nil
 }
 
 // GetBankAccountByID retrieves a single bank account by ID for the current company

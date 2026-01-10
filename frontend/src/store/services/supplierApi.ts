@@ -34,22 +34,40 @@ export const supplierApi = createApi({
     listSuppliers: builder.query<SupplierListResponse, SupplierFilters | void>(
       {
         query: (filters) => {
-          const params = filters || {};
+          const f = filters || {};
+          // Build params object, explicitly handling boolean values
+          const params: Record<string, any> = {
+            page: f.page || 1,
+            page_size: f.pageSize || 20,
+            sort_by: f.sortBy || "code",
+            sort_order: f.sortOrder || "asc",
+          };
+
+          // Only add optional params if they have values
+          if (f.search) params.search = f.search;
+          if (f.type) params.type = f.type;
+          if (f.city) params.city = f.city;
+          if (f.province) params.province = f.province;
+
+          // Explicitly handle boolean filters (include false values!)
+          if (f.isActive !== undefined) params.is_active = f.isActive;
+
           return {
             url: "/suppliers",
-            params: {
-              search: params.search,
-              type: params.type,
-              city: params.city,
-              province: params.province,
-              is_active: params.isActive,
-              page: params.page || 1,
-              page_size: params.pageSize || 20,
-              sort_by: params.sortBy || "code",
-              sort_order: params.sortOrder || "asc",
-            },
+            params,
           };
         },
+        // Force RTK Query to treat different filter values as different cache keys
+        serializeQueryArgs: ({ queryArgs }) => {
+          // Create unique cache key that includes all filter values
+          return JSON.stringify(queryArgs);
+        },
+        // Always refetch when arguments change (important for filter changes!)
+        forceRefetch: ({ currentArg, previousArg }) => {
+          return JSON.stringify(currentArg) !== JSON.stringify(previousArg);
+        },
+        // Disable caching for filter changes
+        keepUnusedDataFor: 0,
         providesTags: (result) =>
           result
             ? [

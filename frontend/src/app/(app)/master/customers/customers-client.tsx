@@ -11,6 +11,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSelector } from "react-redux";
 import { Plus, Search, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +31,7 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { CustomersTable } from "@/components/customers/customers-table";
 import { CreateCustomerDialog } from "@/components/customers/create-customer-dialog";
 import type { CustomerFilters, CustomerType, CustomerListResponse } from "@/types/customer.types";
+import type { RootState } from "@/store";
 
 interface CustomersClientProps {
   initialData: CustomerListResponse;
@@ -55,6 +57,12 @@ export function CustomersClient({ initialData }: CustomersClientProps) {
   // Get permissions hook
   const permissions = usePermissions();
 
+  // 🔑 Get activeCompanyId from Redux to trigger refetch on company switch
+  // This is the key to making switch company work without page reload
+  const activeCompanyId = useSelector(
+    (state: RootState) => state.company.activeCompany?.id
+  );
+
   // Compute permission checks ONCE at top level
   const canCreateCustomers = permissions.canCreate("customers");
   const canEditCustomers = permissions.canEdit("customers");
@@ -70,26 +78,47 @@ export function CustomersClient({ initialData }: CustomersClientProps) {
   }, [search]);
 
   // Fetch customers with filters
-  // 🎯 KEY: Use initialData from server for first render
+  // 🎯 KEY: Skip query until company context is ready
+  // When activeCompanyId changes, RTK Query will auto-refetch with new company context
+  const queryParams = {
+    ...filters,
+    search: debouncedSearch || undefined,
+    customerType: typeFilter,
+    isActive: statusFilter,
+  };
+
   const {
-    data: customersData = initialData,
+    data: customersData,
     isLoading,
     error,
     refetch,
-  } = useListCustomersQuery(
-    {
-      ...filters,
-      search: debouncedSearch || undefined,
-      customerType: typeFilter,
-      isActive: statusFilter,
-    },
-    {
-      skip: false, // Always query (for updates)
+  } = useListCustomersQuery(queryParams, {
+    // Skip query until company context is available
+    // This ensures we don't fetch with wrong company ID
+    skip: !activeCompanyId,
+  });
+
+  // Use initialData as fallback only for first render before query completes
+  const displayData = customersData || initialData;
+
+  // 🔑 CRITICAL: Explicit refetch when company changes
+  // Cache invalidation alone doesn't trigger refetch for skipped queries
+  useEffect(() => {
+    if (activeCompanyId) {
+      refetch();
     }
-  );
+  }, [activeCompanyId, refetch]);
 
   const handlePageChange = (newPage: number) => {
     setFilters((prev) => ({ ...prev, page: newPage }));
+  };
+
+  const handlePageSizeChange = (newPageSize: string) => {
+    setFilters((prev) => ({
+      ...prev,
+      pageSize: parseInt(newPageSize),
+      page: 1, // Reset to page 1 when changing page size
+    }));
   };
 
   const handleSortChange = (sortBy: string) => {
@@ -188,10 +217,10 @@ export function CustomersClient({ initialData }: CustomersClientProps) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Semua Tipe</SelectItem>
-                {customersData?.data &&
+                {displayData?.data &&
                   Array.from(
                     new Set(
-                      customersData.data
+                      displayData.data
                         .map((c) => c.customerType)
                         .filter((type): type is CustomerType => type != null)
                     )
@@ -245,7 +274,7 @@ export function CustomersClient({ initialData }: CustomersClientProps) {
           </div>
 
           {/* Loading State (only for refetching) */}
-          {isLoading && !customersData && (
+          {isLoading && !displayData && (
             <div className="flex items-center justify-center py-12">
               <div className="text-center space-y-3">
                 <LoadingSpinner size="lg" />
@@ -270,8 +299,8 @@ export function CustomersClient({ initialData }: CustomersClientProps) {
           {/* Empty State (no data at all) */}
           {!isLoading &&
             !error &&
-            customersData?.data &&
-            customersData.data.length === 0 &&
+            displayData?.data &&
+            displayData.data.length === 0 &&
             !hasActiveFilters && (
               <div className="py-12">
                 <EmptyState
@@ -291,7 +320,7 @@ export function CustomersClient({ initialData }: CustomersClientProps) {
             )}
 
           {/* Data Display */}
-          {!error && customersData?.data && customersData.data.length > 0 && (
+          {!error && displayData?.data && displayData.data.length > 0 && (
             <>
               {/* Subtle loading indicator for refetching */}
               {isLoading && (
@@ -301,7 +330,7 @@ export function CustomersClient({ initialData }: CustomersClientProps) {
               )}
 
               <CustomersTable
-                customers={customersData.data}
+                customers={displayData.data}
                 sortBy={filters.sortBy}
                 sortOrder={filters.sortOrder}
                 onSortChange={handleSortChange}
@@ -309,36 +338,100 @@ export function CustomersClient({ initialData }: CustomersClientProps) {
               />
 
               {/* Pagination */}
-              {customersData.pagination.totalPages > 1 && (
-                <div className="mt-6 flex items-center justify-between border-t pt-4">
-                  <div className="text-sm text-muted-foreground">
-                    Halaman {customersData.pagination.page} dari{" "}
-                    {customersData.pagination.totalPages} (
-                    {customersData.pagination.totalItems} total)
+              {displayData?.pagination && (
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t pt-4 mt-6">
+                  {/* 1. Summary - Record Data */}
+                  <div className="text-sm text-muted-foreground text-center sm:text-left">
+                    {(() => {
+                      const pagination = displayData.pagination as any;
+                      const page = pagination.page || 1;
+                      const pageSize = pagination.limit || pagination.pageSize || 20;
+                      const totalItems = pagination.total || pagination.totalItems || 0;
+                      const start = (page - 1) * pageSize + 1;
+                      const end = Math.min(page * pageSize, totalItems);
+                      return `Menampilkan ${start}-${end} dari ${totalItems} item`;
+                    })()}
                   </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        handlePageChange(customersData.pagination.page - 1)
-                      }
-                      disabled={customersData.pagination.page === 1}
+
+                  {/* 2. Page Size Selector - Baris per Halaman */}
+                  <div className="flex items-center justify-center sm:justify-start gap-2">
+                    <span className="text-sm text-muted-foreground whitespace-nowrap">
+                      Baris per Halaman
+                    </span>
+                    <Select
+                      value={filters.pageSize?.toString() || "20"}
+                      onValueChange={handlePageSizeChange}
                     >
-                      Sebelumnya
+                      <SelectTrigger className="w-[70px] h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="10">10</SelectItem>
+                        <SelectItem value="20">20</SelectItem>
+                        <SelectItem value="50">50</SelectItem>
+                        <SelectItem value="100">100</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* 3. Navigation Buttons - << < Halaman > >> */}
+                  <div className="flex items-center justify-center sm:justify-end gap-2">
+                    {/* First Page */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePageChange(1)}
+                      disabled={displayData.pagination.page === 1}
+                    >
+                      &laquo;
                     </Button>
+
+                    {/* Previous Page */}
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() =>
-                        handlePageChange(customersData.pagination.page + 1)
+                        handlePageChange(displayData.pagination.page - 1)
+                      }
+                      disabled={displayData.pagination.page === 1}
+                    >
+                      &lsaquo;
+                    </Button>
+
+                    {/* Current Page Info */}
+                    <span className="text-sm text-muted-foreground px-2">
+                      Halaman {displayData.pagination.page} dari{" "}
+                      {displayData.pagination.totalPages}
+                    </span>
+
+                    {/* Next Page */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        handlePageChange(displayData.pagination.page + 1)
                       }
                       disabled={
-                        customersData.pagination.page >=
-                        customersData.pagination.totalPages
+                        displayData.pagination.page >=
+                        displayData.pagination.totalPages
                       }
                     >
-                      Selanjutnya
+                      &rsaquo;
+                    </Button>
+
+                    {/* Last Page */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        handlePageChange(displayData.pagination.totalPages)
+                      }
+                      disabled={
+                        displayData.pagination.page >=
+                        displayData.pagination.totalPages
+                      }
+                    >
+                      &raquo;
                     </Button>
                   </div>
                 </div>

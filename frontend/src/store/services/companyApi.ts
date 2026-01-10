@@ -11,10 +11,12 @@ import type {
   CompanyResponse,
   UpdateCompanyRequest,
   BankAccountResponse,
+  BankAccountFilters,
+  BankAccountListResponse,
   AddBankAccountRequest,
   UpdateBankAccountRequest,
 } from "@/types/company.types";
-import type { ApiSuccessResponse } from "@/types/api";
+import type { ApiSuccessResponse, ApiPaginatedResponse } from "@/types/api";
 
 export const companyApi = createApi({
   reducerPath: "companyApi",
@@ -67,17 +69,34 @@ export const companyApi = createApi({
     // ==================== Bank Accounts ====================
 
     /**
-     * Get Bank Accounts
+     * Get Bank Accounts (with pagination and filters)
      * GET /api/v1/company/banks
      */
-    getBankAccounts: builder.query<BankAccountResponse[], void>({
-      query: () => "/company/banks",
-      transformResponse: (response: ApiSuccessResponse<BankAccountResponse[]>) =>
-        response.data,
+    getBankAccounts: builder.query<BankAccountListResponse, BankAccountFilters | void>({
+      query: (filters) => {
+        const params = new URLSearchParams();
+
+        if (filters) {
+          if (filters.search) params.append("search", filters.search);
+          if (filters.isPrimary !== undefined) params.append("is_primary", String(filters.isPrimary));
+          if (filters.isActive !== undefined) params.append("is_active", String(filters.isActive));
+          if (filters.page) params.append("page", String(filters.page));
+          if (filters.pageSize) params.append("page_size", String(filters.pageSize));
+          if (filters.sortBy) params.append("sort_by", filters.sortBy);
+          if (filters.sortOrder) params.append("sort_order", filters.sortOrder);
+        }
+
+        const queryString = params.toString();
+        return queryString ? `/company/banks?${queryString}` : "/company/banks";
+      },
+      transformResponse: (response: ApiPaginatedResponse<BankAccountResponse>) => ({
+        data: response.data,
+        pagination: response.pagination,
+      }),
       providesTags: (result) =>
-        result
+        result?.data
           ? [
-              ...result.map(({ id }) => ({ type: "Banks" as const, id })),
+              ...result.data.map(({ id }) => ({ type: "Banks" as const, id })),
               { type: "Banks", id: "LIST" },
             ]
           : [{ type: "Banks", id: "LIST" }],
