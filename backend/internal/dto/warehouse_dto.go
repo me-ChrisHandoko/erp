@@ -88,6 +88,8 @@ type WarehouseListQuery struct {
 type WarehouseStockResponse struct {
 	ID            string     `json:"id"`
 	WarehouseID   string     `json:"warehouseID"`
+	WarehouseName string     `json:"warehouseName"`
+	WarehouseCode string     `json:"warehouseCode"`
 	ProductID     string     `json:"productID"`
 	ProductCode   string     `json:"productCode"`
 	ProductName   string     `json:"productName"`

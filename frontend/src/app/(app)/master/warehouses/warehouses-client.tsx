@@ -339,8 +339,8 @@ export function WarehousesClient({ initialData }: WarehousesClientProps) {
                         {(() => {
                           const pagination = displayData.pagination;
                           const page = pagination.page || 1;
-                          const pageSize = pagination.limit || pagination.pageSize || 20;
-                          const totalItems = pagination.total || pagination.totalItems || 0;
+                          const pageSize = pagination.limit || 20;
+                          const totalItems = pagination.total || 0;
                           const start = (page - 1) * pageSize + 1;
                           const end = Math.min(page * pageSize, totalItems);
                           return `Menampilkan ${start}-${end} dari ${totalItems} item`;

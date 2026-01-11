@@ -31,7 +31,13 @@ import {
   AlertCircle,
   DollarSign,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -109,7 +115,8 @@ export function InitialSetupClient({
   // Excel upload state
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
-  const [validationResult, setValidationResult] = useState<ExcelValidationResult | null>(null);
+  const [validationResult, setValidationResult] =
+    useState<ExcelValidationResult | null>(null);
 
   // Fetch data
   const { data: warehousesData, isLoading: isLoadingWarehouses } =
@@ -144,7 +151,10 @@ export function InitialSetupClient({
   // Force refetch existing stocks when entering step 3
   useEffect(() => {
     if (currentStep === 3 && selectedWarehouseId) {
-      console.log("🔄 Step 3 entered, force refetching stocks for warehouse:", selectedWarehouseId);
+      console.log(
+        "🔄 Step 3 entered, force refetching stocks for warehouse:",
+        selectedWarehouseId
+      );
       refetchExistingStocks();
     }
   }, [currentStep, selectedWarehouseId, refetchExistingStocks]);
@@ -157,7 +167,9 @@ export function InitialSetupClient({
 
   // Check if warehouse already has stock
   const warehouseHasStock = useMemo(
-    () => statusData?.find((s) => s.warehouseId === selectedWarehouseId)?.hasInitialStock,
+    () =>
+      statusData?.find((s) => s.warehouseId === selectedWarehouseId)
+        ?.hasInitialStock,
     [statusData, selectedWarehouseId]
   );
 
@@ -168,8 +180,12 @@ export function InitialSetupClient({
     }
 
     // Check for existing stocks conflicts or duplicates in file
-    const hasConflicts = validationResult.existingStocks && validationResult.existingStocks.length > 0;
-    const hasDuplicates = validationResult.duplicatesInFile && validationResult.duplicatesInFile.length > 0;
+    const hasConflicts =
+      validationResult.existingStocks &&
+      validationResult.existingStocks.length > 0;
+    const hasDuplicates =
+      validationResult.duplicatesInFile &&
+      validationResult.duplicatesInFile.length > 0;
 
     return hasConflicts || hasDuplicates;
   }, [currentStep, inputMethod, validationResult]);
@@ -198,7 +214,9 @@ export function InitialSetupClient({
     console.log("  - Selected warehouse ID:", selectedWarehouseId);
 
     // Filter out products that already have stock
-    const filtered = productsData.data.filter((product) => !productsWithStock.has(product.id));
+    const filtered = productsData.data.filter(
+      (product) => !productsWithStock.has(product.id)
+    );
     console.log("  - Available products after filter:", filtered.length);
 
     return filtered;
@@ -227,7 +245,11 @@ export function InitialSetupClient({
   };
 
   // Helper: Update row field
-  const handleUpdateRow = (tempId: string, field: keyof StockItemRow, value: string) => {
+  const handleUpdateRow = (
+    tempId: string,
+    field: keyof StockItemRow,
+    value: string
+  ) => {
     setStockItems(
       stockItems.map((item) => {
         if (item.tempId === tempId) {
@@ -257,7 +279,9 @@ export function InitialSetupClient({
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `Template_Stok_Awal_${new Date().toISOString().split("T")[0]}.xlsx`;
+      link.download = `Template_Stok_Awal_${
+        new Date().toISOString().split("T")[0]
+      }.xlsx`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -277,9 +301,14 @@ export function InitialSetupClient({
 
     try {
       // Check if data is still loading
-      if (isLoadingProducts || isLoadingExistingStocks || isFetchingExistingStocks) {
+      if (
+        isLoadingProducts ||
+        isLoadingExistingStocks ||
+        isFetchingExistingStocks
+      ) {
         setErrors({
-          upload: "Sedang memuat data produk dan stok. Mohon tunggu sebentar...",
+          upload:
+            "Sedang memuat data produk dan stok. Mohon tunggu sebentar...",
         });
         setIsUploadingFile(false);
         return;
@@ -295,10 +324,17 @@ export function InitialSetupClient({
       console.log("  - existingStocksError:", existingStocksError);
       console.log("  - isLoading:", isLoadingExistingStocks);
       console.log("  - isFetching:", isFetchingExistingStocks);
-      console.log("  - Validating with existing stocks:", existingStocksData?.data?.length || 0, "items");
+      console.log(
+        "  - Validating with existing stocks:",
+        existingStocksData?.data?.length || 0,
+        "items"
+      );
 
       if (existingStocksError) {
-        console.error("❌ Error fetching existing stocks:", existingStocksError);
+        console.error(
+          "❌ Error fetching existing stocks:",
+          existingStocksError
+        );
       }
 
       const result = validateExcelData(
@@ -311,22 +347,26 @@ export function InitialSetupClient({
 
       // 3. If validation successful, convert to stock items
       if (result.success) {
-        const newItems: StockItemRow[] = result.validItems.map((item, index) => {
-          const product = productsData?.data?.find((p) => p.id === item.productId);
-          return {
-            tempId: `excel-${Date.now()}-${index}`,
-            productId: item.productId,
-            productCode: product?.code,
-            productName: product?.name,
-            baseUnit: product?.baseUnit,
-            quantity: item.quantity,
-            costPerUnit: item.costPerUnit,
-            location: item.location,
-            minimumStock: item.minimumStock,
-            maximumStock: item.maximumStock,
-            notes: item.notes,
-          };
-        });
+        const newItems: StockItemRow[] = result.validItems.map(
+          (item, index) => {
+            const product = productsData?.data?.find(
+              (p) => p.id === item.productId
+            );
+            return {
+              tempId: `excel-${Date.now()}-${index}`,
+              productId: item.productId,
+              productCode: product?.code,
+              productName: product?.name,
+              baseUnit: product?.baseUnit,
+              quantity: item.quantity,
+              costPerUnit: item.costPerUnit,
+              location: item.location,
+              minimumStock: item.minimumStock,
+              maximumStock: item.maximumStock,
+              notes: item.notes,
+            };
+          }
+        );
         setStockItems(newItems);
       } else {
         // Show errors
@@ -345,7 +385,8 @@ export function InitialSetupClient({
     } catch (error) {
       console.error("Error parsing Excel:", error);
       setErrors({
-        upload: error instanceof Error ? error.message : "Gagal membaca file Excel",
+        upload:
+          error instanceof Error ? error.message : "Gagal membaca file Excel",
       });
       setValidationResult(null);
     } finally {
@@ -411,12 +452,22 @@ export function InitialSetupClient({
           newErrors.upload = "Upload file Excel terlebih dahulu";
         } else if (validationResult && !validationResult.success) {
           newErrors.validation = "File Excel memiliki error validasi";
-        } else if (validationResult && validationResult.existingStocks && validationResult.existingStocks.length > 0) {
+        } else if (
+          validationResult &&
+          validationResult.existingStocks &&
+          validationResult.existingStocks.length > 0
+        ) {
           // Check for existing stocks conflicts
-          newErrors.existingStocks = "Tidak dapat melanjutkan - produk sudah memiliki stok di gudang";
-        } else if (validationResult && validationResult.duplicatesInFile && validationResult.duplicatesInFile.length > 0) {
+          newErrors.existingStocks =
+            "Tidak dapat melanjutkan - produk sudah memiliki stok di gudang";
+        } else if (
+          validationResult &&
+          validationResult.duplicatesInFile &&
+          validationResult.duplicatesInFile.length > 0
+        ) {
           // Check for duplicates in file
-          newErrors.duplicates = "Tidak dapat melanjutkan - ada produk duplikat dalam file";
+          newErrors.duplicates =
+            "Tidak dapat melanjutkan - ada produk duplikat dalam file";
         } else if (stockItems.length === 0) {
           newErrors.items = "File Excel tidak mengandung data yang valid";
         }
@@ -485,15 +536,16 @@ export function InitialSetupClient({
   // Step 1: Warehouse Selection - Enhanced Design
   const renderWarehouseSelection = () => (
     <Card className="border-2">
-      <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 dark:from-blue-950 dark:to-blue-900/50">
+      <CardHeader className="bg-linear-to-r from-blue-50 to-blue-100/50 dark:from-blue-950 dark:to-blue-900/50">
         <CardTitle className="flex items-center gap-2 sm:gap-3 text-lg md:text-xl">
-          <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-blue-600 text-white flex-shrink-0">
+          <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-blue-600 text-white shrink-0">
             <Building2 className="h-4 w-4 sm:h-5 sm:w-5" />
           </div>
           <span>Pilih Gudang</span>
         </CardTitle>
         <CardDescription className="text-sm md:text-base mt-2">
-          Pilih gudang yang akan diisi stok awal. Anda dapat setup stok untuk produk yang belum pernah memiliki record.
+          Pilih gudang yang akan diisi stok awal. Anda dapat setup stok untuk
+          produk yang belum pernah memiliki record.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 p-6">
@@ -520,18 +572,25 @@ export function InitialSetupClient({
                     <CardContent className="p-5">
                       <div className="flex items-start justify-between">
                         <div className="flex items-start gap-4">
-                          <div className={`flex h-12 w-12 items-center justify-center rounded-lg transition-colors ${
-                            selectedWarehouseId === warehouse.id
-                              ? "bg-blue-600 text-white"
-                              : "bg-gray-100 text-gray-600"
-                          }`}>
+                          <div
+                            className={`flex h-12 w-12 items-center justify-center rounded-lg transition-colors ${
+                              selectedWarehouseId === warehouse.id
+                                ? "bg-blue-600 text-white"
+                                : "bg-gray-100 text-gray-600"
+                            }`}
+                          >
                             <Building2 className="h-6 w-6" />
                           </div>
                           <div className="space-y-2">
                             <div className="flex items-center gap-2">
-                              <p className="font-semibold text-lg">{warehouse.name}</p>
+                              <p className="font-semibold text-lg">
+                                {warehouse.name}
+                              </p>
                               {hasStock && (
-                                <Badge variant="secondary" className="text-xs bg-amber-100 text-amber-800 border-amber-300">
+                                <Badge
+                                  variant="secondary"
+                                  className="text-xs bg-amber-100 text-amber-800 border-amber-300"
+                                >
                                   <AlertCircle className="mr-1 h-3 w-3" />
                                   Ada Stok
                                 </Badge>
@@ -566,7 +625,11 @@ export function InitialSetupClient({
                   💡 Informasi Gudang
                 </AlertTitle>
                 <AlertDescription className="text-blue-800 dark:text-blue-200">
-                  Gudang ini sudah memiliki beberapa produk dengan stok. Setup stok awal hanya dapat dilakukan untuk produk yang <strong>belum pernah memiliki record stok</strong> di gudang ini. Produk yang sudah ada (termasuk yang quantity 0) tidak akan muncul dalam daftar.
+                  Gudang ini sudah memiliki beberapa produk dengan stok. Setup
+                  stok awal hanya dapat dilakukan untuk produk yang{" "}
+                  <strong>belum pernah memiliki record stok</strong> di gudang
+                  ini. Produk yang sudah ada (termasuk yang quantity 0) tidak
+                  akan muncul dalam daftar.
                 </AlertDescription>
               </Alert>
             )}
@@ -582,7 +645,8 @@ export function InitialSetupClient({
               ⚠️ Tidak Ada Gudang
             </AlertTitle>
             <AlertDescription className="text-amber-800 dark:text-amber-200">
-              Belum ada gudang aktif. Silakan buat gudang terlebih dahulu di menu
+              Belum ada gudang aktif. Silakan buat gudang terlebih dahulu di
+              menu
               <strong> Master → Gudang</strong>.
             </AlertDescription>
           </Alert>
@@ -594,15 +658,16 @@ export function InitialSetupClient({
   // Step 2: Input Method Selection - Enhanced
   const renderInputMethodSelection = () => (
     <Card className="border-2">
-      <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 dark:from-blue-950 dark:to-blue-900/50">
+      <CardHeader className="bg-linear-to-r from-blue-50 to-blue-100/50 dark:from-blue-950 dark:to-blue-900/50">
         <CardTitle className="flex items-center gap-2 sm:gap-3 text-lg md:text-xl">
-          <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-blue-600 text-white flex-shrink-0">
+          <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-blue-600 text-white shrink-0">
             <Edit3 className="h-4 w-4 sm:h-5 sm:w-5" />
           </div>
           <span>Metode Input</span>
         </CardTitle>
         <CardDescription className="text-sm md:text-base mt-2">
-          Pilih cara untuk memasukkan data stok awal. Anda bisa input manual atau import dari Excel.
+          Pilih cara untuk memasukkan data stok awal. Anda bisa input manual
+          atau import dari Excel.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 p-6">
@@ -618,12 +683,16 @@ export function InitialSetupClient({
           >
             <CardContent className="p-8">
               <div className="flex flex-col items-center text-center space-y-4">
-                <div className={`flex h-16 w-16 items-center justify-center rounded-2xl transition-colors ${
-                  inputMethod === "manual" ? "bg-blue-600" : "bg-blue-100"
-                }`}>
-                  <Edit3 className={`h-8 w-8 ${
-                    inputMethod === "manual" ? "text-white" : "text-blue-600"
-                  }`} />
+                <div
+                  className={`flex h-16 w-16 items-center justify-center rounded-2xl transition-colors ${
+                    inputMethod === "manual" ? "bg-blue-600" : "bg-blue-100"
+                  }`}
+                >
+                  <Edit3
+                    className={`h-8 w-8 ${
+                      inputMethod === "manual" ? "text-white" : "text-blue-600"
+                    }`}
+                  />
                 </div>
                 <div>
                   <h3 className="font-bold text-lg mb-2">Input Manual</h3>
@@ -651,12 +720,16 @@ export function InitialSetupClient({
           >
             <CardContent className="p-8">
               <div className="flex flex-col items-center text-center space-y-4">
-                <div className={`flex h-16 w-16 items-center justify-center rounded-2xl transition-colors ${
-                  inputMethod === "excel" ? "bg-green-600" : "bg-green-100"
-                }`}>
-                  <FileSpreadsheet className={`h-8 w-8 ${
-                    inputMethod === "excel" ? "text-white" : "text-green-600"
-                  }`} />
+                <div
+                  className={`flex h-16 w-16 items-center justify-center rounded-2xl transition-colors ${
+                    inputMethod === "excel" ? "bg-green-600" : "bg-green-100"
+                  }`}
+                >
+                  <FileSpreadsheet
+                    className={`h-8 w-8 ${
+                      inputMethod === "excel" ? "text-white" : "text-green-600"
+                    }`}
+                  />
                 </div>
                 <div>
                   <h3 className="font-bold text-lg mb-2">Import Excel</h3>
@@ -684,15 +757,16 @@ export function InitialSetupClient({
   // Step 3a: Manual Entry - Enhanced
   const renderManualEntry = () => (
     <Card className="border-2">
-      <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 dark:from-blue-950 dark:to-blue-900/50">
+      <CardHeader className="bg-linear-to-r from-blue-50 to-blue-100/50 dark:from-blue-950 dark:to-blue-900/50">
         <CardTitle className="flex items-center gap-2 sm:gap-3 text-lg md:text-xl">
-          <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-blue-600 text-white flex-shrink-0">
+          <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-blue-600 text-white shrink-0">
             <Edit3 className="h-4 w-4 sm:h-5 sm:w-5" />
           </div>
           <span>Input Manual</span>
         </CardTitle>
         <CardDescription className="text-sm md:text-base">
-          Masukkan data stok untuk gudang: <strong>{selectedWarehouse?.name}</strong>
+          Masukkan data stok untuk gudang:{" "}
+          <strong>{selectedWarehouse?.name}</strong>
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 p-6">
@@ -702,8 +776,10 @@ export function InitialSetupClient({
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Peringatan: Data Tidak Lengkap</AlertTitle>
             <AlertDescription>
-              Gudang ini memiliki lebih dari {existingStocksData.pagination.totalItems} produk dengan stok.
-              Beberapa produk mungkin tidak terfilter dengan benar. Silakan hubungi administrator.
+              Gudang ini memiliki lebih dari{" "}
+              {existingStocksData.pagination.totalItems} produk dengan stok.
+              Beberapa produk mungkin tidak terfilter dengan benar. Silakan
+              hubungi administrator.
             </AlertDescription>
           </Alert>
         )}
@@ -715,9 +791,13 @@ export function InitialSetupClient({
             💡 Produk Tersedia: {availableProducts.length} produk
           </AlertTitle>
           <AlertDescription className="text-blue-800 dark:text-blue-200">
-            Hanya produk yang <strong>belum pernah memiliki record stok</strong> di <strong>{selectedWarehouse?.name}</strong> yang dapat dipilih untuk setup stok awal.
-            {availableProducts.length === 0 && " Semua produk sudah memiliki record stok di gudang ini."}
-            {existingStocksData?.data && ` (${existingStocksData.data.length} produk sudah memiliki record stok)`}
+            Hanya produk yang <strong>belum pernah memiliki record stok</strong>{" "}
+            di <strong>{selectedWarehouse?.name}</strong> yang dapat dipilih
+            untuk setup stok awal.
+            {availableProducts.length === 0 &&
+              " Semua produk sudah memiliki record stok di gudang ini."}
+            {existingStocksData?.data &&
+              ` (${existingStocksData.data.length} produk sudah memiliki record stok)`}
           </AlertDescription>
         </Alert>
 
@@ -747,14 +827,14 @@ export function InitialSetupClient({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[250px]">Produk *</TableHead>
-                  <TableHead className="w-[120px]">Quantity *</TableHead>
-                  <TableHead className="w-[150px]">Harga Beli *</TableHead>
-                  <TableHead className="w-[150px]">Lokasi</TableHead>
-                  <TableHead className="w-[120px]">Min. Stok</TableHead>
-                  <TableHead className="w-[120px]">Max. Stok</TableHead>
-                  <TableHead className="w-[200px]">Catatan</TableHead>
-                  <TableHead className="w-[80px]">Aksi</TableHead>
+                  <TableHead className="w-62.5">Produk *</TableHead>
+                  <TableHead className="w-30">Quantity *</TableHead>
+                  <TableHead className="w-37.5">Harga Beli *</TableHead>
+                  <TableHead className="w-37.5">Lokasi</TableHead>
+                  <TableHead className="w-30">Min. Stok</TableHead>
+                  <TableHead className="w-30">Max. Stok</TableHead>
+                  <TableHead className="w-50">Catatan</TableHead>
+                  <TableHead className="w-20">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -768,11 +848,17 @@ export function InitialSetupClient({
                           handleUpdateRow(item.tempId, "productId", value)
                         }
                       >
-                        <SelectTrigger className={errors[`product-${index}`] ? "border-red-500" : ""}>
+                        <SelectTrigger
+                          className={
+                            errors[`product-${index}`] ? "border-red-500" : ""
+                          }
+                        >
                           <SelectValue placeholder="Pilih produk..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {isLoadingProducts || isLoadingExistingStocks || isFetchingExistingStocks ? (
+                          {isLoadingProducts ||
+                          isLoadingExistingStocks ||
+                          isFetchingExistingStocks ? (
                             <div className="p-2 text-sm text-muted-foreground">
                               Loading...
                             </div>
@@ -804,10 +890,16 @@ export function InitialSetupClient({
                           step="0.01"
                           value={item.quantity}
                           onChange={(e) =>
-                            handleUpdateRow(item.tempId, "quantity", e.target.value)
+                            handleUpdateRow(
+                              item.tempId,
+                              "quantity",
+                              e.target.value
+                            )
                           }
                           placeholder="0"
-                          className={errors[`quantity-${index}`] ? "border-red-500" : ""}
+                          className={
+                            errors[`quantity-${index}`] ? "border-red-500" : ""
+                          }
                         />
                         {item.baseUnit && (
                           <p className="text-xs text-muted-foreground">
@@ -829,10 +921,16 @@ export function InitialSetupClient({
                         step="0.01"
                         value={item.costPerUnit}
                         onChange={(e) =>
-                          handleUpdateRow(item.tempId, "costPerUnit", e.target.value)
+                          handleUpdateRow(
+                            item.tempId,
+                            "costPerUnit",
+                            e.target.value
+                          )
                         }
                         placeholder="0"
-                        className={errors[`cost-${index}`] ? "border-red-500" : ""}
+                        className={
+                          errors[`cost-${index}`] ? "border-red-500" : ""
+                        }
                       />
                       {errors[`cost-${index}`] && (
                         <p className="text-xs text-red-500 mt-1">
@@ -846,7 +944,11 @@ export function InitialSetupClient({
                       <Input
                         value={item.location || ""}
                         onChange={(e) =>
-                          handleUpdateRow(item.tempId, "location", e.target.value)
+                          handleUpdateRow(
+                            item.tempId,
+                            "location",
+                            e.target.value
+                          )
                         }
                         placeholder="Rak A1"
                       />
@@ -859,7 +961,11 @@ export function InitialSetupClient({
                         step="0.01"
                         value={item.minimumStock || ""}
                         onChange={(e) =>
-                          handleUpdateRow(item.tempId, "minimumStock", e.target.value)
+                          handleUpdateRow(
+                            item.tempId,
+                            "minimumStock",
+                            e.target.value
+                          )
                         }
                         placeholder="0"
                       />
@@ -872,7 +978,11 @@ export function InitialSetupClient({
                         step="0.01"
                         value={item.maximumStock || ""}
                         onChange={(e) =>
-                          handleUpdateRow(item.tempId, "maximumStock", e.target.value)
+                          handleUpdateRow(
+                            item.tempId,
+                            "maximumStock",
+                            e.target.value
+                          )
                         }
                         placeholder="0"
                       />
@@ -931,7 +1041,8 @@ export function InitialSetupClient({
           <span>Import Excel</span>
         </CardTitle>
         <CardDescription className="text-sm md:text-base">
-          Upload file Excel untuk gudang: <strong>{selectedWarehouse?.name}</strong>
+          Upload file Excel untuk gudang:{" "}
+          <strong>{selectedWarehouse?.name}</strong>
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6 p-6">
@@ -942,7 +1053,8 @@ export function InitialSetupClient({
             📥 Template Excel
           </AlertTitle>
           <AlertDescription className="text-blue-800 dark:text-blue-200">
-            Download template Excel terlebih dahulu dan isi sesuai format yang disediakan.
+            Download template Excel terlebih dahulu dan isi sesuai format yang
+            disediakan.
             <Button
               variant="link"
               className="p-0 h-auto ml-2 text-blue-600 hover:text-blue-700 font-semibold"
@@ -971,11 +1083,19 @@ export function InitialSetupClient({
               accept=".xlsx,.xls"
               className="hidden"
               onChange={handleFileInputChange}
-              disabled={isUploadingFile || isLoadingExistingStocks || isFetchingExistingStocks}
+              disabled={
+                isUploadingFile ||
+                isLoadingExistingStocks ||
+                isFetchingExistingStocks
+              }
             />
             <Button
               onClick={() => document.getElementById("excel-upload")?.click()}
-              disabled={isUploadingFile || isLoadingExistingStocks || isFetchingExistingStocks}
+              disabled={
+                isUploadingFile ||
+                isLoadingExistingStocks ||
+                isFetchingExistingStocks
+              }
               size="lg"
               className="h-11 px-8 bg-green-600 hover:bg-green-700"
             >
@@ -1023,7 +1143,9 @@ export function InitialSetupClient({
           <Alert variant="destructive" className="border-2">
             <AlertCircle className="h-5 w-5" />
             <AlertTitle className="font-semibold">Error Upload</AlertTitle>
-            <AlertDescription className="text-base">{errors.upload}</AlertDescription>
+            <AlertDescription className="text-base">
+              {errors.upload}
+            </AlertDescription>
           </Alert>
         )}
 
@@ -1035,18 +1157,23 @@ export function InitialSetupClient({
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle>
-                  Produk Duplikat dalam File ({validationResult.duplicatesInFile.length})
+                  Produk Duplikat dalam File (
+                  {validationResult.duplicatesInFile.length})
                 </AlertTitle>
                 <AlertDescription>
                   <div className="mt-2 space-y-1">
-                    {validationResult.duplicatesInFile.slice(0, 5).map((conflict, idx) => (
-                      <div key={idx} className="text-sm">
-                        • Baris {conflict.row}: {conflict.productCode} - {conflict.productName}
-                      </div>
-                    ))}
+                    {validationResult.duplicatesInFile
+                      .slice(0, 5)
+                      .map((conflict, idx) => (
+                        <div key={idx} className="text-sm">
+                          • Baris {conflict.row}: {conflict.productCode} -{" "}
+                          {conflict.productName}
+                        </div>
+                      ))}
                     {validationResult.duplicatesInFile.length > 5 && (
                       <div className="text-sm font-semibold">
-                        ... dan {validationResult.duplicatesInFile.length - 5} lainnya
+                        ... dan {validationResult.duplicatesInFile.length - 5}{" "}
+                        lainnya
                       </div>
                     )}
                   </div>
@@ -1055,54 +1182,72 @@ export function InitialSetupClient({
             )}
 
             {/* Info: Products without stock (valid for initial stock input) */}
-            {validationResult.noStockProducts && validationResult.noStockProducts.length > 0 && (
-              <Alert className="border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950">
-                <AlertCircle className="h-4 w-4 text-blue-600" />
-                <AlertTitle className="text-blue-900 dark:text-blue-100">
-                  Produk Belum Memiliki Stok ({validationResult.noStockProducts.length})
-                </AlertTitle>
-                <AlertDescription className="text-blue-800 dark:text-blue-200">
-                  <p className="mb-2 text-sm">
-                    Produk berikut <strong>belum pernah memiliki record stok</strong> di <strong>{selectedWarehouse?.name}</strong> dan siap untuk input stok awal:
-                  </p>
-                  <div className="mt-2 space-y-1">
-                    {validationResult.noStockProducts.slice(0, 5).map((product, idx) => (
-                      <div key={idx} className="text-sm">
-                        • Baris {product.row}: <strong>{product.productCode}</strong> - {product.productName}
-                        <span className="ml-2 text-xs">({product.quantity} unit)</span>
-                      </div>
-                    ))}
-                    {validationResult.noStockProducts.length > 5 && (
-                      <div className="text-sm font-semibold">
-                        ... dan {validationResult.noStockProducts.length - 5} produk lainnya
-                      </div>
-                    )}
-                  </div>
-                </AlertDescription>
-              </Alert>
-            )}
+            {validationResult.noStockProducts &&
+              validationResult.noStockProducts.length > 0 && (
+                <Alert className="border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950">
+                  <AlertCircle className="h-4 w-4 text-blue-600" />
+                  <AlertTitle className="text-blue-900 dark:text-blue-100">
+                    Produk Belum Memiliki Stok (
+                    {validationResult.noStockProducts.length})
+                  </AlertTitle>
+                  <AlertDescription className="text-blue-800 dark:text-blue-200">
+                    <p className="mb-2 text-sm">
+                      Produk berikut{" "}
+                      <strong>belum pernah memiliki record stok</strong> di{" "}
+                      <strong>{selectedWarehouse?.name}</strong> dan siap untuk
+                      input stok awal:
+                    </p>
+                    <div className="mt-2 space-y-1">
+                      {validationResult.noStockProducts
+                        .slice(0, 5)
+                        .map((product, idx) => (
+                          <div key={idx} className="text-sm">
+                            • Baris {product.row}:{" "}
+                            <strong>{product.productCode}</strong> -{" "}
+                            {product.productName}
+                            <span className="ml-2 text-xs">
+                              ({product.quantity} unit)
+                            </span>
+                          </div>
+                        ))}
+                      {validationResult.noStockProducts.length > 5 && (
+                        <div className="text-sm font-semibold">
+                          ... dan {validationResult.noStockProducts.length - 5}{" "}
+                          produk lainnya
+                        </div>
+                      )}
+                    </div>
+                  </AlertDescription>
+                </Alert>
+              )}
 
             {/* Existing Stock Conflicts */}
             {validationResult.existingStocks.length > 0 && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle>
-                  Produk Sudah Memiliki Stok ({validationResult.existingStocks.length})
+                  Produk Sudah Memiliki Stok (
+                  {validationResult.existingStocks.length})
                 </AlertTitle>
                 <AlertDescription>
                   <div className="mt-2 space-y-1">
-                    {validationResult.existingStocks.slice(0, 5).map((conflict, idx) => (
-                      <div key={idx} className="text-sm">
-                        • Baris {conflict.row}: {conflict.productCode} - {conflict.productName}
-                        <br />
-                        <span className="ml-4 text-xs">
-                          Stok saat ini: {conflict.currentQuantity} | Stok baru: {conflict.newQuantity}
-                        </span>
-                      </div>
-                    ))}
+                    {validationResult.existingStocks
+                      .slice(0, 5)
+                      .map((conflict, idx) => (
+                        <div key={idx} className="text-sm">
+                          • Baris {conflict.row}: {conflict.productCode} -{" "}
+                          {conflict.productName}
+                          <br />
+                          <span className="ml-4 text-xs">
+                            Stok saat ini: {conflict.currentQuantity} | Stok
+                            baru: {conflict.newQuantity}
+                          </span>
+                        </div>
+                      ))}
                     {validationResult.existingStocks.length > 5 && (
                       <div className="text-sm font-semibold">
-                        ... dan {validationResult.existingStocks.length - 5} lainnya
+                        ... dan {validationResult.existingStocks.length - 5}{" "}
+                        lainnya
                       </div>
                     )}
                   </div>
@@ -1121,12 +1266,14 @@ export function InitialSetupClient({
                   <div className="mt-2 space-y-1">
                     {validationResult.errors.slice(0, 5).map((error, idx) => (
                       <div key={idx} className="text-sm">
-                        • Baris {error.row}, Kolom {error.field}: {error.message}
+                        • Baris {error.row}, Kolom {error.field}:{" "}
+                        {error.message}
                       </div>
                     ))}
                     {validationResult.errors.length > 5 && (
                       <div className="text-sm font-semibold">
-                        ... dan {validationResult.errors.length - 5} error lainnya
+                        ... dan {validationResult.errors.length - 5} error
+                        lainnya
                       </div>
                     )}
                   </div>
@@ -1142,7 +1289,8 @@ export function InitialSetupClient({
             <CheckCircle2 className="h-4 w-4 text-green-500" />
             <AlertTitle>Validasi Berhasil</AlertTitle>
             <AlertDescription>
-              {validationResult.validItems.length} produk berhasil divalidasi dan siap untuk disimpan.
+              {validationResult.validItems.length} produk berhasil divalidasi
+              dan siap untuk disimpan.
             </AlertDescription>
           </Alert>
         )}
@@ -1203,8 +1351,12 @@ export function InitialSetupClient({
                     <Package className="h-6 w-6" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total Item</p>
-                    <p className="text-3xl font-bold text-blue-600">{totalItems}</p>
+                    <p className="text-sm font-medium text-muted-foreground">
+                      Total Item
+                    </p>
+                    <p className="text-3xl font-bold text-blue-600">
+                      {totalItems}
+                    </p>
                   </div>
                 </div>
               </CardContent>
@@ -1216,7 +1368,9 @@ export function InitialSetupClient({
                     <Package className="h-6 w-6" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total Quantity</p>
+                    <p className="text-sm font-medium text-muted-foreground">
+                      Total Quantity
+                    </p>
                     <p className="text-3xl font-bold text-purple-600">
                       {totalQuantity.toLocaleString("id-ID")}
                     </p>
@@ -1231,7 +1385,9 @@ export function InitialSetupClient({
                     <DollarSign className="h-6 w-6" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total Nilai</p>
+                    <p className="text-sm font-medium text-muted-foreground">
+                      Total Nilai
+                    </p>
                     <p className="text-2xl font-bold text-green-600">
                       Rp {totalValue.toLocaleString("id-ID")}
                     </p>
@@ -1249,10 +1405,10 @@ export function InitialSetupClient({
                   <Building2 className="h-6 w-6" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">Gudang</p>
-                  <p className="text-lg font-bold">
-                    {selectedWarehouse?.name}
+                  <p className="text-sm font-medium text-muted-foreground">
+                    Gudang
                   </p>
+                  <p className="text-lg font-bold">{selectedWarehouse?.name}</p>
                   <p className="text-sm text-muted-foreground">
                     Kode: {selectedWarehouse?.code}
                   </p>
@@ -1267,16 +1423,24 @@ export function InitialSetupClient({
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <Package className="h-5 w-5 text-blue-600" />
-              <Label className="text-base font-semibold">Daftar Produk ({stockItems.length} item)</Label>
+              <Label className="text-base font-semibold">
+                Daftar Produk ({stockItems.length} item)
+              </Label>
             </div>
             <div className="rounded-lg border-2 overflow-hidden shadow-sm">
               <Table>
                 <TableHeader className="bg-gray-50 dark:bg-gray-900">
                   <TableRow>
                     <TableHead className="font-semibold">Produk</TableHead>
-                    <TableHead className="text-right font-semibold">Quantity</TableHead>
-                    <TableHead className="text-right font-semibold">Harga Beli</TableHead>
-                    <TableHead className="text-right font-semibold">Subtotal</TableHead>
+                    <TableHead className="text-right font-semibold">
+                      Quantity
+                    </TableHead>
+                    <TableHead className="text-right font-semibold">
+                      Harga Beli
+                    </TableHead>
+                    <TableHead className="text-right font-semibold">
+                      Subtotal
+                    </TableHead>
                     <TableHead className="font-semibold">Lokasi</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1288,7 +1452,11 @@ export function InitialSetupClient({
                     return (
                       <TableRow
                         key={item.tempId}
-                        className={index % 2 === 0 ? "bg-white dark:bg-gray-950" : "bg-gray-50/50 dark:bg-gray-900/50"}
+                        className={
+                          index % 2 === 0
+                            ? "bg-white dark:bg-gray-950"
+                            : "bg-gray-50/50 dark:bg-gray-900/50"
+                        }
                       >
                         <TableCell>
                           <div className="flex items-center gap-3">
@@ -1296,7 +1464,9 @@ export function InitialSetupClient({
                               <Package className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                             </div>
                             <div>
-                              <p className="font-semibold">{item.productName}</p>
+                              <p className="font-semibold">
+                                {item.productName}
+                              </p>
                               <p className="text-sm text-muted-foreground">
                                 {item.productCode}
                               </p>
@@ -1312,7 +1482,8 @@ export function InitialSetupClient({
                           </span>
                         </TableCell>
                         <TableCell className="text-right font-medium">
-                          Rp {parseFloat(item.costPerUnit).toLocaleString("id-ID")}
+                          Rp{" "}
+                          {parseFloat(item.costPerUnit).toLocaleString("id-ID")}
                         </TableCell>
                         <TableCell className="text-right">
                           <span className="font-bold text-green-600">
@@ -1354,8 +1525,12 @@ export function InitialSetupClient({
           {errors.submit && (
             <Alert variant="destructive" className="border-2">
               <AlertCircle className="h-5 w-5" />
-              <AlertTitle className="font-semibold">Terjadi Kesalahan</AlertTitle>
-              <AlertDescription className="text-base">{errors.submit}</AlertDescription>
+              <AlertTitle className="font-semibold">
+                Terjadi Kesalahan
+              </AlertTitle>
+              <AlertDescription className="text-base">
+                {errors.submit}
+              </AlertDescription>
             </Alert>
           )}
         </CardContent>
@@ -1382,7 +1557,10 @@ export function InitialSetupClient({
               🎉 Setup Stok Awal Berhasil!
             </h2>
             <p className="text-muted-foreground max-w-md text-lg">
-              Data stok awal untuk gudang <strong className="text-green-700">{selectedWarehouse?.name}</strong>{" "}
+              Data stok awal untuk gudang{" "}
+              <strong className="text-green-700">
+                {selectedWarehouse?.name}
+              </strong>{" "}
               telah berhasil disimpan ke sistem.
             </p>
           </div>
@@ -1393,11 +1571,13 @@ export function InitialSetupClient({
               <p className="text-2xl font-bold text-green-700">
                 {stockItems.length}
               </p>
-              <p className="text-sm text-muted-foreground">Produk Ditambahkan</p>
+              <p className="text-sm text-muted-foreground">
+                Produk Ditambahkan
+              </p>
             </div>
             <div className="rounded-lg border-2 border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30">
               <p className="text-2xl font-bold text-blue-700">
-                {selectedWarehouse?.name.split(' ')[0]}
+                {selectedWarehouse?.name.split(" ")[0]}
               </p>
               <p className="text-sm text-muted-foreground">Gudang</p>
             </div>
@@ -1465,9 +1645,12 @@ export function InitialSetupClient({
               <Package className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white">Setup Stok Awal</h1>
+              <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white">
+                Setup Stok Awal
+              </h1>
               <p className="text-blue-100 mt-1 text-xs sm:text-sm">
-                Setup stok pertama kali untuk produk yang belum pernah memiliki record di gudang
+                Setup stok pertama kali untuk produk yang belum pernah memiliki
+                record di gudang
               </p>
             </div>
           </div>
@@ -1505,9 +1688,13 @@ export function InitialSetupClient({
                           <item.icon className="h-4 w-4" />
                         )}
                       </div>
-                      <p className={`text-[10px] font-semibold text-center ${
-                        currentStep >= item.step ? "text-blue-600" : "text-gray-500"
-                      }`}>
+                      <p
+                        className={`text-[10px] font-semibold text-center ${
+                          currentStep >= item.step
+                            ? "text-blue-600"
+                            : "text-gray-500"
+                        }`}
+                      >
                         {item.label}
                       </p>
                     </div>
@@ -1554,14 +1741,22 @@ export function InitialSetupClient({
                       )}
                     </div>
                     <div className="flex flex-col items-center">
-                      <p className={`text-xs font-semibold ${
-                        currentStep >= item.step ? "text-blue-600" : "text-gray-500"
-                      }`}>
+                      <p
+                        className={`text-xs font-semibold ${
+                          currentStep >= item.step
+                            ? "text-blue-600"
+                            : "text-gray-500"
+                        }`}
+                      >
                         Step {item.step}
                       </p>
-                      <p className={`text-sm font-medium ${
-                        currentStep >= item.step ? "text-gray-900" : "text-gray-500"
-                      }`}>
+                      <p
+                        className={`text-sm font-medium ${
+                          currentStep >= item.step
+                            ? "text-gray-900"
+                            : "text-gray-500"
+                        }`}
+                      >
                         {item.label}
                       </p>
                     </div>
@@ -1609,7 +1804,9 @@ export function InitialSetupClient({
                   onClick={handleNext}
                   disabled={isSubmitting || hasValidationConflicts}
                   className={`h-10 sm:h-12 px-6 sm:px-8 text-sm sm:text-base font-medium bg-blue-600 hover:bg-blue-700 w-full sm:w-auto ${
-                    hasValidationConflicts ? "opacity-50 cursor-not-allowed" : ""
+                    hasValidationConflicts
+                      ? "opacity-50 cursor-not-allowed"
+                      : ""
                   }`}
                 >
                   Selanjutnya

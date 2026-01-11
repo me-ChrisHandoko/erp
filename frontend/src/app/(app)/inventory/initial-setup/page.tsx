@@ -41,7 +41,7 @@ export default async function InitialSetupPage({
               { label: "Setup Stok Awal" },
             ]}
           />
-          <div className="flex flex-1 flex-col items-center justify-center min-h-[400px] gap-4 p-4">
+          <div className="flex flex-1 flex-col items-center justify-center min-h-100 gap-4 p-4">
             <div className="text-center space-y-2">
               <h3 className="text-lg font-semibold">
                 Initializing Company Context...

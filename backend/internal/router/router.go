@@ -15,6 +15,7 @@ import (
 	"backend/internal/service/customer"
 	"backend/internal/service/permission"
 	"backend/internal/service/product"
+	"backend/internal/service/stock_transfer"
 	"backend/internal/service/supplier"
 	"backend/internal/service/tenant"
 	"backend/internal/service/warehouse"
@@ -389,6 +390,31 @@ func setupProtectedRoutes(
 
 			// PUT endpoint - OWNER/ADMIN only (update stock settings, not quantity)
 			warehouseStockGroup.PUT("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), warehouseHandler.UpdateWarehouseStock)
+		}
+
+		// ============================================================================
+		// STOCK TRANSFER MANAGEMENT ROUTES (PHASE 2 - Inventory Management)
+		// Reference: Inter-warehouse stock transfer operations
+		// ============================================================================
+		stockTransferService := stock_transfer.NewStockTransferService(db)
+		stockTransferHandler := handler.NewStockTransferHandler(stockTransferService)
+
+		stockTransferGroup := businessProtected.Group("/stock-transfers")
+		stockTransferGroup.Use(middleware.CompanyContextMiddleware(db))
+		{
+			// GET endpoints - all authenticated users can view
+			stockTransferGroup.GET("", stockTransferHandler.ListStockTransfers)
+			stockTransferGroup.GET("/:id", stockTransferHandler.GetStockTransfer)
+
+			// POST/PUT/DELETE endpoints - OWNER/ADMIN only
+			stockTransferGroup.POST("", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockTransferHandler.CreateStockTransfer)
+			stockTransferGroup.PUT("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockTransferHandler.UpdateStockTransfer)
+			stockTransferGroup.DELETE("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockTransferHandler.DeleteStockTransfer)
+
+			// Status transition endpoints - OWNER/ADMIN only
+			stockTransferGroup.POST("/:id/ship", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockTransferHandler.ShipStockTransfer)
+			stockTransferGroup.POST("/:id/receive", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockTransferHandler.ReceiveStockTransfer)
+			stockTransferGroup.POST("/:id/cancel", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockTransferHandler.CancelStockTransfer)
 		}
 
 		// Example of role-based routes

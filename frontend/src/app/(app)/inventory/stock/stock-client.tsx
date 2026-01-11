@@ -12,7 +12,13 @@
 
 import { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
-import { Search, Package, AlertTriangle, XCircle, TrendingUp } from "lucide-react";
+import {
+  Search,
+  Package,
+  AlertTriangle,
+  XCircle,
+  TrendingUp,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -26,9 +32,13 @@ import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { ErrorDisplay } from "@/components/shared/error-display";
 import { useListStocksQuery } from "@/store/services/stockApi";
+import { useListWarehousesQuery } from "@/store/services/warehouseApi";
 import { usePermissions } from "@/hooks/use-permissions";
 import { StockTable } from "@/components/stock/stock-table";
-import type { StockFilters, WarehouseStockListResponse } from "@/types/stock.types";
+import type {
+  StockFilters,
+  WarehouseStockListResponse,
+} from "@/types/stock.types";
 import type { RootState } from "@/store";
 
 interface StockClientProps {
@@ -39,6 +49,7 @@ export function StockClient({ initialData }: StockClientProps) {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [stockFilter, setStockFilter] = useState<string>("all");
+  const [warehouseFilter, setWarehouseFilter] = useState<string>("all");
   const [filters, setFilters] = useState<StockFilters>({
     page: 1,
     pageSize: 20,
@@ -55,10 +66,24 @@ export function StockClient({ initialData }: StockClientProps) {
   );
 
   // Compute permission check - users with OWNER or ADMIN can edit stock settings
-  const canEditStock = permissions.canEdit('warehouse-stocks') ||
-                       permissions.canEdit('warehouses') ||
-                       permissions.role === 'OWNER' ||
-                       permissions.role === 'ADMIN';
+  const canEditStock =
+    permissions.canEdit("warehouse-stocks") ||
+    permissions.canEdit("warehouses") ||
+    permissions.role === "OWNER" ||
+    permissions.role === "ADMIN";
+
+  // Fetch active warehouses for filter dropdown
+  const { data: warehousesData } = useListWarehousesQuery(
+    {
+      isActive: true,
+      pageSize: 100, // Get all active warehouses
+      sortBy: "name",
+      sortOrder: "asc",
+    },
+    {
+      skip: !activeCompanyId,
+    }
+  );
 
   // Debounce search input (wait 500ms after user stops typing)
   useEffect(() => {
@@ -74,6 +99,7 @@ export function StockClient({ initialData }: StockClientProps) {
   const queryParams: StockFilters = {
     ...filters,
     search: debouncedSearch || undefined,
+    warehouseID: warehouseFilter !== "all" ? warehouseFilter : undefined,
     lowStock: stockFilter === "lowStock" ? true : undefined,
     zeroStock: stockFilter === "zeroStock" ? true : undefined,
   };
@@ -134,12 +160,17 @@ export function StockClient({ initialData }: StockClientProps) {
     setFilters((prev) => ({ ...prev, page: 1 }));
   };
 
+  const handleWarehouseFilterChange = (warehouseId: string) => {
+    setWarehouseFilter(warehouseId);
+    setFilters((prev) => ({ ...prev, page: 1 }));
+  };
+
   // Calculate stock statistics
   const stockStats = displayData?.data
     ? {
         total: displayData.data.length,
-        low: displayData.data.filter((s) =>
-          Number(s.quantity) < Number(s.minimumStock)
+        low: displayData.data.filter(
+          (s) => Number(s.quantity) < Number(s.minimumStock)
         ).length,
         zero: displayData.data.filter((s) => Number(s.quantity) === 0).length,
       }
@@ -162,14 +193,16 @@ export function StockClient({ initialData }: StockClientProps) {
             {/* Total Item Card */}
             <Card className="overflow-hidden border-none shadow-md hover:shadow-lg transition-shadow duration-300 rounded-xl">
               <CardContent className="p-0">
-                <div className="relative bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-xl">
+                <div className="relative bg-linear-to-br from-blue-500 to-blue-600 p-6 rounded-xl">
                   <div className="flex items-start justify-between">
                     <div className="space-y-2">
                       <p className="text-sm font-medium text-blue-100">
                         Total Item
                       </p>
                       <p className="text-3xl font-bold text-white">
-                        {displayData.pagination.totalItems.toLocaleString('id-ID')}
+                        {displayData.pagination.totalItems.toLocaleString(
+                          "id-ID"
+                        )}
                       </p>
                       <div className="flex items-center gap-1 text-xs text-blue-100">
                         <TrendingUp className="h-3 w-3" />
@@ -187,20 +220,24 @@ export function StockClient({ initialData }: StockClientProps) {
             {/* Stok Rendah Card */}
             <Card className="overflow-hidden border-none shadow-md hover:shadow-lg transition-shadow duration-300 rounded-xl">
               <CardContent className="p-0">
-                <div className="relative bg-gradient-to-br from-amber-500 to-orange-600 p-6 rounded-xl">
+                <div className="relative bg-linear-to-br from-amber-500 to-orange-600 p-6 rounded-xl">
                   <div className="flex items-start justify-between">
                     <div className="space-y-2">
                       <p className="text-sm font-medium text-amber-100">
                         Stok Rendah
                       </p>
                       <p className="text-3xl font-bold text-white">
-                        {stockStats.low.toLocaleString('id-ID')}
+                        {stockStats.low.toLocaleString("id-ID")}
                       </p>
                       <div className="flex items-center gap-1 text-xs text-amber-100">
                         <span>
                           {displayData.pagination.totalItems > 0
-                            ? `${((stockStats.low / displayData.pagination.totalItems) * 100).toFixed(1)}% dari total`
-                            : 'Tidak ada data'}
+                            ? `${(
+                                (stockStats.low /
+                                  displayData.pagination.totalItems) *
+                                100
+                              ).toFixed(1)}% dari total`
+                            : "Tidak ada data"}
                         </span>
                       </div>
                     </div>
@@ -215,20 +252,24 @@ export function StockClient({ initialData }: StockClientProps) {
             {/* Stok Habis Card */}
             <Card className="overflow-hidden border-none shadow-md hover:shadow-lg transition-shadow duration-300 rounded-xl">
               <CardContent className="p-0">
-                <div className="relative bg-gradient-to-br from-red-500 to-red-600 p-6 rounded-xl">
+                <div className="relative bg-linear-to-br from-red-500 to-red-600 p-6 rounded-xl">
                   <div className="flex items-start justify-between">
                     <div className="space-y-2">
                       <p className="text-sm font-medium text-red-100">
                         Stok Habis
                       </p>
                       <p className="text-3xl font-bold text-white">
-                        {stockStats.zero.toLocaleString('id-ID')}
+                        {stockStats.zero.toLocaleString("id-ID")}
                       </p>
                       <div className="flex items-center gap-1 text-xs text-red-100">
                         <span>
                           {displayData.pagination.totalItems > 0
-                            ? `${((stockStats.zero / displayData.pagination.totalItems) * 100).toFixed(1)}% dari total`
-                            : 'Tidak ada data'}
+                            ? `${(
+                                (stockStats.zero /
+                                  displayData.pagination.totalItems) *
+                                100
+                              ).toFixed(1)}% dari total`
+                            : "Tidak ada data"}
                         </span>
                       </div>
                     </div>
@@ -259,12 +300,27 @@ export function StockClient({ initialData }: StockClientProps) {
               />
             </div>
 
-            {/* Stock Filter */}
+            {/* Warehouse Filter */}
             <Select
-              value={stockFilter}
-              onValueChange={handleStockFilterChange}
+              value={warehouseFilter}
+              onValueChange={handleWarehouseFilterChange}
             >
-              <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectTrigger className="w-full sm:w-50">
+                <SelectValue placeholder="Semua Gudang" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Gudang</SelectItem>
+                {warehousesData?.data?.map((warehouse) => (
+                  <SelectItem key={warehouse.id} value={warehouse.id}>
+                    {warehouse.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Stock Filter */}
+            <Select value={stockFilter} onValueChange={handleStockFilterChange}>
+              <SelectTrigger className="w-full sm:w-45">
                 <SelectValue placeholder="Filter Stok" />
               </SelectTrigger>
               <SelectContent>
@@ -275,12 +331,13 @@ export function StockClient({ initialData }: StockClientProps) {
             </Select>
 
             {/* Clear Filters Button */}
-            {(search || stockFilter !== "all") && (
+            {(search || warehouseFilter !== "all" || stockFilter !== "all") && (
               <Button
                 variant="ghost"
                 onClick={() => {
                   setSearch("");
                   setDebouncedSearch("");
+                  setWarehouseFilter("all");
                   setStockFilter("all");
                   setFilters((prev) => ({ ...prev, page: 1 }));
                 }}
@@ -310,7 +367,9 @@ export function StockClient({ initialData }: StockClientProps) {
           {/* Data Display */}
           {!error && displayData && displayData.data && (
             <>
-              {displayData.data.length === 0 && !search && stockFilter === "all" ? (
+              {displayData.data.length === 0 &&
+              !search &&
+              stockFilter === "all" ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <Package className="mb-4 h-12 w-12 text-muted-foreground" />
                   <h3 className="mb-2 text-lg font-semibold">
@@ -344,7 +403,8 @@ export function StockClient({ initialData }: StockClientProps) {
                       {/* 1. Summary - Record Data */}
                       <div className="text-sm text-muted-foreground text-center sm:text-left">
                         {(() => {
-                          const { page, pageSize, totalItems } = displayData.pagination;
+                          const { page, pageSize, totalItems } =
+                            displayData.pagination;
                           const start = (page - 1) * pageSize + 1;
                           const end = Math.min(page * pageSize, totalItems);
                           return `Menampilkan ${start}-${end} dari ${totalItems} item`;
@@ -360,7 +420,7 @@ export function StockClient({ initialData }: StockClientProps) {
                           value={filters.pageSize?.toString() || "20"}
                           onValueChange={handlePageSizeChange}
                         >
-                          <SelectTrigger className="w-[70px] h-8">
+                          <SelectTrigger className="w-17.5 h-8">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>

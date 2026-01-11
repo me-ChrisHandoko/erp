@@ -510,6 +510,7 @@ func (s *WarehouseService) ListWarehouseStocks(ctx context.Context, tenantID, co
 	var stocks []models.WarehouseStock
 	if err := baseQuery.Order(orderClause).
 		Preload("Product").
+		Preload("Warehouse").
 		Limit(pageSize).
 		Offset(offset).
 		Find(&stocks).Error; err != nil {
@@ -696,9 +697,18 @@ func mapWarehouseStockToResponse(stock *models.WarehouseStock) dto.WarehouseStoc
 		productName = stock.Product.Name
 	}
 
+	warehouseName := ""
+	warehouseCode := ""
+	if stock.Warehouse.ID != "" {
+		warehouseName = stock.Warehouse.Name
+		warehouseCode = stock.Warehouse.Code
+	}
+
 	return dto.WarehouseStockResponse{
 		ID:            stock.ID,
 		WarehouseID:   stock.WarehouseID,
+		WarehouseName: warehouseName,
+		WarehouseCode: warehouseCode,
 		ProductID:     stock.ProductID,
 		ProductCode:   productCode,
 		ProductName:   productName,
