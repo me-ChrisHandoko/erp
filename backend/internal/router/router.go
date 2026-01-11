@@ -16,6 +16,7 @@ import (
 	"backend/internal/service/permission"
 	"backend/internal/service/product"
 	"backend/internal/service/stock_transfer"
+	"backend/internal/service/stockopname"
 	"backend/internal/service/supplier"
 	"backend/internal/service/tenant"
 	"backend/internal/service/warehouse"
@@ -415,6 +416,37 @@ func setupProtectedRoutes(
 			stockTransferGroup.POST("/:id/ship", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockTransferHandler.ShipStockTransfer)
 			stockTransferGroup.POST("/:id/receive", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockTransferHandler.ReceiveStockTransfer)
 			stockTransferGroup.POST("/:id/cancel", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockTransferHandler.CancelStockTransfer)
+		}
+
+		// ============================================================================
+		// STOCK OPNAME MANAGEMENT ROUTES (PHASE 2 - Inventory Management)
+		// Reference: Physical inventory count and stock adjustment operations
+		// ============================================================================
+		stockOpnameService := stockopname.NewStockOpnameService(db)
+		stockOpnameHandler := handler.NewStockOpnameHandler(stockOpnameService)
+
+		stockOpnameGroup := businessProtected.Group("/stock-opnames")
+		stockOpnameGroup.Use(middleware.CompanyContextMiddleware(db))
+		{
+			// GET endpoints - all authenticated users can view
+			stockOpnameGroup.GET("", stockOpnameHandler.ListStockOpnames)
+			stockOpnameGroup.GET("/:id", stockOpnameHandler.GetStockOpname)
+
+			// POST/PUT/DELETE endpoints - OWNER/ADMIN only
+			stockOpnameGroup.POST("", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockOpnameHandler.CreateStockOpname)
+			stockOpnameGroup.PUT("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockOpnameHandler.UpdateStockOpname)
+			stockOpnameGroup.DELETE("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockOpnameHandler.DeleteStockOpname)
+
+			// Approval endpoint - OWNER/ADMIN only
+			stockOpnameGroup.POST("/:id/approve", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockOpnameHandler.ApproveStockOpname)
+
+			// Item management endpoints - OWNER/ADMIN only
+			stockOpnameGroup.POST("/:id/items", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockOpnameHandler.AddStockOpnameItem)
+			stockOpnameGroup.PUT("/:id/items/:itemId", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockOpnameHandler.UpdateStockOpnameItem)
+			stockOpnameGroup.DELETE("/:id/items/:itemId", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockOpnameHandler.DeleteStockOpnameItem)
+
+			// Bulk import endpoint - OWNER/ADMIN only
+			stockOpnameGroup.POST("/:id/import-products", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockOpnameHandler.ImportWarehouseProducts)
 		}
 
 		// Example of role-based routes

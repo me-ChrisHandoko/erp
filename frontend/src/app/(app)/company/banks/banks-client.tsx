@@ -198,7 +198,7 @@ export function BanksClient({ initialData }: BanksClientProps) {
                       value={filters.pageSize?.toString() || "20"}
                       onValueChange={handlePageSizeChange}
                     >
-                      <SelectTrigger className="w-[70px] h-8">
+                      <SelectTrigger className="w-[70px] h-8 bg-background">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>

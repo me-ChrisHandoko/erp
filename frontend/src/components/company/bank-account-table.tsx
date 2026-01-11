@@ -29,7 +29,15 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Star, Pencil, Trash2 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Star, Pencil, Trash2, MoreHorizontal } from "lucide-react";
 import { useDeleteBankAccountMutation } from "@/store/services/companyApi";
 import { toast } from "sonner";
 import type { BankAccountResponse } from "@/types/company.types";
@@ -78,7 +86,9 @@ export function BankAccountTable({ banks }: BankAccountTableProps) {
               <TableHead>Nama Pemilik</TableHead>
               <TableHead>Cabang</TableHead>
               <TableHead>Prefix Cek</TableHead>
-              <TableHead className="w-24 text-right">Aksi</TableHead>
+              <TableHead className="w-[70px]">
+                <span className="sr-only">Aksi</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -108,25 +118,41 @@ export function BankAccountTable({ banks }: BankAccountTableProps) {
                     )}
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setEditingBank(bank)}
-                        aria-label="Edit rekening bank"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setDeletingBank(bank)}
-                        aria-label="Hapus rekening bank"
-                        disabled={banks.length === 1}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                          <span className="sr-only">Open menu</span>
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Aksi</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+
+                        {/* Edit */}
+                        <DropdownMenuItem
+                          onClick={() => setEditingBank(bank)}
+                          className="cursor-pointer"
+                        >
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Edit Rekening
+                        </DropdownMenuItem>
+
+                        {/* Delete - Only if not the last bank */}
+                        {banks.length > 1 && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => setDeletingBank(bank)}
+                              className="cursor-pointer text-red-600 focus:text-red-600"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Hapus
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
               ))

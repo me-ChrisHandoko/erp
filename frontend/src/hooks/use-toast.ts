@@ -1,9 +1,9 @@
 /**
- * Simple toast hook
- * For production, consider using sonner or react-hot-toast
+ * Toast hook using sonner
  */
 
-import { useState, useCallback } from "react";
+import { toast as sonnerToast } from "sonner";
+import { useCallback } from "react";
 
 export interface Toast {
   title: string;
@@ -12,20 +12,17 @@ export interface Toast {
 }
 
 export function useToast() {
-  const [toasts, setToasts] = useState<Toast[]>([]);
-
   const toast = useCallback((props: Toast) => {
-    // For now, just use console.log
-    // In production, integrate with a proper toast library
     if (props.variant === "destructive") {
-      console.error(`[Toast] ${props.title}:`, props.description);
+      sonnerToast.error(props.title, {
+        description: props.description,
+      });
     } else {
-      console.log(`[Toast] ${props.title}:`, props.description);
+      sonnerToast.success(props.title, {
+        description: props.description,
+      });
     }
-
-    // TODO: Integrate with actual toast UI library (sonner recommended)
-    setToasts((prev) => [...prev, props]);
   }, []);
 
-  return { toast, toasts };
+  return { toast };
 }

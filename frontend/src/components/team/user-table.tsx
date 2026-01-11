@@ -26,7 +26,16 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Pencil, Trash2, Shield, ShieldCheck } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Pencil, Trash2, Shield, ShieldCheck, MoreHorizontal, Search } from "lucide-react";
 import { format } from "date-fns";
 import { EmptyState } from "@/components/shared/empty-state";
 import { EditRoleForm } from "./edit-role-form";
@@ -36,8 +45,10 @@ import type { TenantUser, UserRole } from "@/types/tenant.types";
 
 interface UserTableProps {
   users: TenantUser[];
+  search?: string;
   roleFilter?: UserRole;
   statusFilter?: boolean;
+  onSearchChange: (search: string) => void;
   onRoleFilterChange: (role: UserRole | undefined) => void;
   onStatusFilterChange: (status: boolean | undefined) => void;
   onUpdate: () => void;
@@ -45,8 +56,10 @@ interface UserTableProps {
 
 export function UserTable({
   users,
+  search,
   roleFilter,
   statusFilter,
+  onSearchChange,
   onRoleFilterChange,
   onStatusFilterChange,
   onUpdate,
@@ -63,10 +76,14 @@ export function UserTable({
         return "destructive";
       case "ADMIN":
         return "default";
+      case "FINANCE":
+        return "secondary";
+      case "SALES":
+        return "secondary";
+      case "WAREHOUSE":
+        return "secondary";
       case "STAFF":
         return "secondary";
-      case "VIEWER":
-        return "outline";
       default:
         return "outline";
     }
@@ -92,62 +109,73 @@ export function UserTable({
 
   return (
     <>
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-4 mb-4">
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium">Role:</label>
-          <Select
-            value={roleFilter || "all"}
-            onValueChange={(value) =>
-              onRoleFilterChange(value === "all" ? undefined : (value as UserRole))
-            }
-          >
-            <SelectTrigger className="w-[150px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Roles</SelectItem>
-              <SelectItem value="OWNER">Owner</SelectItem>
-              <SelectItem value="ADMIN">Admin</SelectItem>
-              <SelectItem value="STAFF">Staff</SelectItem>
-              <SelectItem value="VIEWER">Viewer</SelectItem>
-            </SelectContent>
-          </Select>
+      {/* Search and Filters */}
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+        {/* Search */}
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Cari nama atau email..."
+            value={search || ""}
+            onChange={(e) => onSearchChange(e.target.value)}
+            className="pl-9 bg-background"
+          />
         </div>
 
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium">Status:</label>
-          <Select
-            value={
-              statusFilter === undefined ? "all" : statusFilter ? "active" : "inactive"
-            }
-            onValueChange={(value) =>
-              onStatusFilterChange(
-                value === "all" ? undefined : value === "active"
-              )
-            }
-          >
-            <SelectTrigger className="w-[150px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Users</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="inactive">Inactive</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        {/* Role Filter */}
+        <Select
+          value={roleFilter || "all"}
+          onValueChange={(value) =>
+            onRoleFilterChange(value === "all" ? undefined : (value as UserRole))
+          }
+        >
+          <SelectTrigger className="w-full sm:w-[150px] bg-background">
+            <SelectValue placeholder="Semua Role" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Semua Role</SelectItem>
+            <SelectItem value="OWNER">Owner</SelectItem>
+            <SelectItem value="ADMIN">Admin</SelectItem>
+            <SelectItem value="FINANCE">Keuangan</SelectItem>
+            <SelectItem value="SALES">Penjualan</SelectItem>
+            <SelectItem value="WAREHOUSE">Gudang</SelectItem>
+            <SelectItem value="STAFF">Staf</SelectItem>
+          </SelectContent>
+        </Select>
 
-        {(roleFilter || statusFilter !== undefined) && (
+        {/* Status Filter */}
+        <Select
+          value={
+            statusFilter === undefined ? "all" : statusFilter ? "active" : "inactive"
+          }
+          onValueChange={(value) =>
+            onStatusFilterChange(
+              value === "all" ? undefined : value === "active"
+            )
+          }
+        >
+          <SelectTrigger className="w-full sm:w-[180px] bg-background">
+            <SelectValue placeholder="Semua Pengguna" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Semua Pengguna</SelectItem>
+            <SelectItem value="active">Aktif</SelectItem>
+            <SelectItem value="inactive">Tidak Aktif</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {/* Clear Filters */}
+        {(search || roleFilter || statusFilter !== undefined) && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
+              onSearchChange("");
               onRoleFilterChange(undefined);
               onStatusFilterChange(undefined);
             }}
           >
-            Clear Filters
+            Hapus Filter
           </Button>
         )}
       </div>
@@ -162,7 +190,9 @@ export function UserTable({
               <TableHead>Role</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Last Login</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead className="w-[70px]">
+                <span className="sr-only">Actions</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -193,41 +223,60 @@ export function UserTable({
                   </TableCell>
                   <TableCell>
                     <Badge variant={user.isActive ? "default" : "outline"}>
-                      {user.isActive ? "Active" : "Inactive"}
+                      {user.isActive ? "Aktif" : "Tidak Aktif"}
                     </Badge>
                   </TableCell>
                   <TableCell>
                     {user.lastLoginAt
                       ? format(new Date(user.lastLoginAt), "MMM dd, yyyy HH:mm")
-                      : "Never"}
+                      : "Belum Pernah"}
                   </TableCell>
-                  <TableCell className="text-right space-x-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setEditingUser(user)}
-                      disabled={user.role === "OWNER"}
-                      title={
-                        user.role === "OWNER"
-                          ? "Cannot edit OWNER role"
-                          : "Edit user role"
-                      }
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setRemovingUser(user)}
-                      disabled={user.role === "OWNER"}
-                      title={
-                        user.role === "OWNER"
-                          ? "Cannot remove OWNER"
-                          : "Remove user"
-                      }
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                  <TableCell className="text-right">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                          <span className="sr-only">Open menu</span>
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+
+                        {/* Edit Role - Only if not OWNER */}
+                        {user.role !== "OWNER" && (
+                          <DropdownMenuItem
+                            onClick={() => setEditingUser(user)}
+                            className="cursor-pointer"
+                          >
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Edit Role
+                          </DropdownMenuItem>
+                        )}
+
+                        {/* Remove User - Only if not OWNER */}
+                        {user.role !== "OWNER" && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => setRemovingUser(user)}
+                              className="cursor-pointer text-red-600 focus:text-red-600"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Hapus User
+                            </DropdownMenuItem>
+                          </>
+                        )}
+
+                        {/* Show message for OWNER */}
+                        {user.role === "OWNER" && (
+                          <DropdownMenuItem disabled className="text-muted-foreground">
+                            <Shield className="mr-2 h-4 w-4" />
+                            Protected Role
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
               ))

@@ -1,7 +1,7 @@
 // Tenant and User Management Types
 // Aligned with backend API: /api/v1/tenant endpoints
 
-export type UserRole = 'OWNER' | 'ADMIN' | 'STAFF' | 'VIEWER';
+export type UserRole = 'OWNER' | 'ADMIN' | 'FINANCE' | 'SALES' | 'WAREHOUSE' | 'STAFF';
 
 export type SubscriptionStatus = 'ACTIVE' | 'EXPIRED' | 'TRIAL' | 'SUSPENDED';
 

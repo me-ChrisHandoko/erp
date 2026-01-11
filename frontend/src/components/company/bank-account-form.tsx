@@ -105,7 +105,7 @@ export function BankAccountForm({
           onValueChange={(value) => setValue("bankName", value)}
           disabled={isLoading}
         >
-          <SelectTrigger id="bankName" className="w-full">
+          <SelectTrigger id="bankName" className="w-full bg-background">
             <SelectValue placeholder="Pilih bank" />
           </SelectTrigger>
           <SelectContent>
@@ -130,7 +130,7 @@ export function BankAccountForm({
           id="accountNumber"
           {...register("accountNumber")}
           placeholder="1234567890"
-          className="font-mono"
+          className="font-mono bg-background"
           disabled={isLoading}
         />
         {errors.accountNumber && (
@@ -151,6 +151,7 @@ export function BankAccountForm({
           {...register("accountName")}
           placeholder="PT Example Indonesia"
           disabled={isLoading}
+          className="bg-background"
         />
         {errors.accountName && (
           <p className="text-sm text-red-500">{errors.accountName.message}</p>
@@ -168,6 +169,7 @@ export function BankAccountForm({
           {...register("branchName")}
           placeholder="Cabang Sudirman"
           disabled={isLoading}
+          className="bg-background"
         />
         {errors.branchName && (
           <p className="text-sm text-red-500">{errors.branchName.message}</p>
@@ -183,6 +185,7 @@ export function BankAccountForm({
           placeholder="CHK"
           disabled={isLoading}
           maxLength={20}
+          className="bg-background"
         />
         {errors.checkPrefix && (
           <p className="text-sm text-red-500">{errors.checkPrefix.message}</p>

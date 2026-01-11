@@ -63,8 +63,8 @@ export function EditRoleForm({ user, onSuccess, onCancel }: EditRoleFormProps) {
         data,
       }).unwrap();
 
-      toast.success("Role updated successfully", {
-        description: `${user.name} is now a ${data.role}`,
+      toast.success("Role berhasil diperbarui", {
+        description: `${user.name} sekarang memiliki role ${data.role}`,
       });
       onSuccess?.();
     } catch (error: unknown) {
@@ -73,22 +73,22 @@ export function EditRoleForm({ user, onSuccess, onCancel }: EditRoleFormProps) {
         (errorData && typeof errorData === 'object' && 'error' in errorData &&
          errorData.error && typeof errorData.error === 'object' && 'message' in errorData.error
           ? (errorData.error.message as string)
-          : null) || "Failed to update role";
+          : null) || "Gagal memperbarui role";
 
       if (errorMessage.includes("OWNER")) {
-        toast.error("Cannot modify OWNER role", {
-          description: "OWNER role is permanent and cannot be changed",
+        toast.error("Tidak Dapat Mengubah Role OWNER", {
+          description: "Role OWNER bersifat permanen dan tidak dapat diubah",
         });
       } else if (errorMessage.includes("last ADMIN")) {
-        toast.error("Cannot change last ADMIN", {
-          description: "At least one ADMIN is required in the organization",
+        toast.error("Tidak Dapat Mengubah ADMIN Terakhir", {
+          description: "Minimal harus ada satu ADMIN di organisasi",
         });
       } else if (errorMessage.includes("permission denied")) {
-        toast.error("Permission denied", {
-          description: "You don't have permission to modify this user's role",
+        toast.error("Akses Ditolak", {
+          description: "Anda tidak memiliki izin untuk mengubah role user ini",
         });
       } else {
-        toast.error("Failed to update role", {
+        toast.error("Gagal memperbarui role", {
           description: errorMessage,
         });
       }
@@ -103,16 +103,16 @@ export function EditRoleForm({ user, onSuccess, onCancel }: EditRoleFormProps) {
           <div className="flex items-center gap-2 mb-2">
             <ShieldCheck className="h-5 w-5 text-yellow-600" />
             <p className="font-semibold text-yellow-800 dark:text-yellow-200">
-              OWNER Role Protection
+              Proteksi Role OWNER
             </p>
           </div>
           <p className="text-sm text-yellow-700 dark:text-yellow-300">
-            The OWNER role is permanent and cannot be changed. This ensures that the
-            organization always has an owner with full administrative privileges.
+            Role OWNER bersifat permanen dan tidak dapat diubah. Ini memastikan bahwa
+            organisasi selalu memiliki pemilik dengan hak akses administratif penuh.
           </p>
         </div>
         <div className="flex justify-end">
-          <Button onClick={onCancel}>Close</Button>
+          <Button onClick={onCancel}>Tutup</Button>
         </div>
       </div>
     );
@@ -121,11 +121,19 @@ export function EditRoleForm({ user, onSuccess, onCancel }: EditRoleFormProps) {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       {/* User Info */}
-      <div className="rounded-md bg-muted p-3 space-y-1">
-        <p className="text-sm font-medium">{user.name}</p>
-        <p className="text-sm text-muted-foreground">{user.email}</p>
-        <div className="flex items-center gap-2">
-          <span className="text-sm">Current Role:</span>
+      <div className="rounded-md bg-muted p-3 space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Nama</p>
+            <p className="text-sm font-medium">{user.name}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Email</p>
+            <p className="text-sm font-medium">{user.email}</p>
+          </div>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground mb-1">Role Saat Ini</p>
           <Badge>{user.role}</Badge>
         </div>
       </div>
@@ -133,14 +141,14 @@ export function EditRoleForm({ user, onSuccess, onCancel }: EditRoleFormProps) {
       {/* New Role Selection */}
       <div className="space-y-2">
         <Label htmlFor="role">
-          New Role <span className="text-red-500">*</span>
+          Role Baru <span className="text-red-500">*</span>
         </Label>
         <Select
           value={watch("role")}
-          onValueChange={(value) => setValue("role", value as "ADMIN" | "STAFF" | "VIEWER")}
+          onValueChange={(value) => setValue("role", value as "ADMIN" | "FINANCE" | "SALES" | "WAREHOUSE" | "STAFF")}
           disabled={isLoading}
         >
-          <SelectTrigger>
+          <SelectTrigger className="w-full bg-background">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -148,23 +156,39 @@ export function EditRoleForm({ user, onSuccess, onCancel }: EditRoleFormProps) {
               <div className="flex flex-col items-start">
                 <span className="font-semibold">Admin</span>
                 <span className="text-xs text-muted-foreground">
-                  Full access to all features and settings
+                  Akses penuh ke semua fitur dan pengaturan
+                </span>
+              </div>
+            </SelectItem>
+            <SelectItem value="FINANCE">
+              <div className="flex flex-col items-start">
+                <span className="font-semibold">Keuangan</span>
+                <span className="text-xs text-muted-foreground">
+                  Dapat mengelola transaksi keuangan dan laporan
+                </span>
+              </div>
+            </SelectItem>
+            <SelectItem value="SALES">
+              <div className="flex flex-col items-start">
+                <span className="font-semibold">Penjualan</span>
+                <span className="text-xs text-muted-foreground">
+                  Dapat mengelola pesanan penjualan dan relasi pelanggan
+                </span>
+              </div>
+            </SelectItem>
+            <SelectItem value="WAREHOUSE">
+              <div className="flex flex-col items-start">
+                <span className="font-semibold">Gudang</span>
+                <span className="text-xs text-muted-foreground">
+                  Dapat mengelola gudang dan operasi inventori
                 </span>
               </div>
             </SelectItem>
             <SelectItem value="STAFF">
               <div className="flex flex-col items-start">
-                <span className="font-semibold">Staff</span>
+                <span className="font-semibold">Staf</span>
                 <span className="text-xs text-muted-foreground">
-                  Can manage daily operations and transactions
-                </span>
-              </div>
-            </SelectItem>
-            <SelectItem value="VIEWER">
-              <div className="flex flex-col items-start">
-                <span className="font-semibold">Viewer</span>
-                <span className="text-xs text-muted-foreground">
-                  Read-only access to view data
+                  Dapat mengelola operasi harian dan transaksi
                 </span>
               </div>
             </SelectItem>
@@ -179,8 +203,8 @@ export function EditRoleForm({ user, onSuccess, onCancel }: EditRoleFormProps) {
       {user.role === "ADMIN" && watch("role") !== "ADMIN" && (
         <div className="rounded-md bg-yellow-50 dark:bg-yellow-950 p-3 border border-yellow-200 dark:border-yellow-800">
           <p className="text-sm text-yellow-800 dark:text-yellow-200">
-            ⚠️ You are changing an ADMIN role. Make sure there is at least one other
-            ADMIN in your organization.
+            ⚠️ Anda akan mengubah role ADMIN. Pastikan masih ada minimal satu
+            ADMIN lain di organisasi Anda.
           </p>
         </div>
       )}
@@ -189,17 +213,17 @@ export function EditRoleForm({ user, onSuccess, onCancel }: EditRoleFormProps) {
       <div className="flex justify-end gap-2 pt-4">
         {onCancel && (
           <Button type="button" variant="outline" onClick={onCancel} disabled={isLoading}>
-            Cancel
+            Batal
           </Button>
         )}
         <Button type="submit" disabled={isLoading || watch("role") === user.role}>
           {isLoading ? (
             <>
               <LoadingSpinner size="sm" className="mr-2" />
-              Updating Role...
+              Memperbarui Role...
             </>
           ) : (
-            "Update Role"
+            "Perbarui Role"
           )}
         </Button>
       </div>

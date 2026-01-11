@@ -116,7 +116,7 @@ export function CompanyProfileForm({
                 <FormItem>
                   <FormLabel>Nama Perusahaan *</FormLabel>
                   <FormControl>
-                    <Input placeholder="PT Maju Jaya" {...field} />
+                    <Input placeholder="PT Maju Jaya" {...field} className="bg-background" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -130,7 +130,7 @@ export function CompanyProfileForm({
                 <FormItem>
                   <FormLabel>Nama Legal *</FormLabel>
                   <FormControl>
-                    <Input placeholder="PT Maju Jaya Sejahtera" {...field} />
+                    <Input placeholder="PT Maju Jaya Sejahtera" {...field} className="bg-background" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -145,7 +145,7 @@ export function CompanyProfileForm({
                   <FormLabel>Jenis Badan Usaha</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
-                      <SelectTrigger>
+                      <SelectTrigger className="bg-background">
                         <SelectValue placeholder="Pilih jenis badan usaha" />
                       </SelectTrigger>
                     </FormControl>
@@ -184,6 +184,7 @@ export function CompanyProfileForm({
                       placeholder="Jl. Contoh No. 123"
                       {...field}
                       value={field.value || ""}
+                      className="bg-background"
                     />
                   </FormControl>
                   <FormMessage />
@@ -202,6 +203,7 @@ export function CompanyProfileForm({
                       placeholder="Jakarta"
                       {...field}
                       value={field.value || ""}
+                      className="bg-background"
                     />
                   </FormControl>
                   <FormMessage />
@@ -220,7 +222,7 @@ export function CompanyProfileForm({
                     defaultValue={field.value}
                   >
                     <FormControl>
-                      <SelectTrigger>
+                      <SelectTrigger className="bg-background">
                         <SelectValue placeholder="Pilih provinsi" />
                       </SelectTrigger>
                     </FormControl>
@@ -248,6 +250,7 @@ export function CompanyProfileForm({
                       placeholder="12345"
                       {...field}
                       value={field.value || ""}
+                      className="bg-background"
                     />
                   </FormControl>
                   <FormMessage />
@@ -266,6 +269,7 @@ export function CompanyProfileForm({
                       placeholder="+628123456789"
                       {...field}
                       value={field.value || ""}
+                      className="bg-background"
                     />
                   </FormControl>
                   <FormDescription>
@@ -288,6 +292,7 @@ export function CompanyProfileForm({
                       placeholder="info@perusahaan.com"
                       {...field}
                       value={field.value || ""}
+                      className="bg-background"
                     />
                   </FormControl>
                   <FormMessage />
@@ -306,6 +311,7 @@ export function CompanyProfileForm({
                       placeholder="https://www.perusahaan.com"
                       {...field}
                       value={field.value || ""}
+                      className="bg-background"
                     />
                   </FormControl>
                   <FormMessage />
@@ -335,6 +341,7 @@ export function CompanyProfileForm({
                       placeholder="12.345.678.9-012.345"
                       {...field}
                       value={field.value || ""}
+                      className="bg-background"
                     />
                   </FormControl>
                   <FormDescription>
@@ -356,6 +363,7 @@ export function CompanyProfileForm({
                       placeholder="1234567890123"
                       {...field}
                       value={field.value || ""}
+                      className="bg-background"
                     />
                   </FormControl>
                   <FormDescription>Nomor Induk Berusaha</FormDescription>
@@ -401,6 +409,7 @@ export function CompanyProfileForm({
                         onChange={(e) =>
                           field.onChange(parseFloat(e.target.value))
                         }
+                        className="bg-background"
                       />
                     </FormControl>
                     <FormDescription>Tarif PPN saat ini: 11%</FormDescription>
@@ -432,6 +441,7 @@ export function CompanyProfileForm({
                       placeholder="INV"
                       {...field}
                       value={field.value || ""}
+                      className="bg-background"
                     />
                   </FormControl>
                   <FormDescription>

@@ -178,10 +178,11 @@ const (
 type StockOpnameStatus string
 
 const (
-	StockOpnameStatusDraft     StockOpnameStatus = "DRAFT"     // Being counted
-	StockOpnameStatusCompleted StockOpnameStatus = "COMPLETED" // Counting done
-	StockOpnameStatusApproved  StockOpnameStatus = "APPROVED"  // Approved, adjustments posted
-	StockOpnameStatusCancelled StockOpnameStatus = "CANCELLED" // Cancelled
+	StockOpnameStatusDraft      StockOpnameStatus = "DRAFT"       // Created, not started
+	StockOpnameStatusInProgress StockOpnameStatus = "IN_PROGRESS" // Being counted
+	StockOpnameStatusCompleted  StockOpnameStatus = "COMPLETED"   // Counting done
+	StockOpnameStatusApproved   StockOpnameStatus = "APPROVED"    // Approved, adjustments posted
+	StockOpnameStatusCancelled  StockOpnameStatus = "CANCELLED"   // Cancelled
 )
 
 // StockTransferStatus - Inter-warehouse transfer workflow

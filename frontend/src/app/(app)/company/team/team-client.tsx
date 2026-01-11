@@ -16,7 +16,8 @@ import { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { UserPlus, Users } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { UserPlus, Users, Search } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
@@ -49,6 +50,8 @@ interface TeamClientProps {
 
 export function TeamClient({ initialData }: TeamClientProps) {
   const [showInviteDialog, setShowInviteDialog] = useState(false);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<UserRole | undefined>(undefined);
   const [statusFilter, setStatusFilter] = useState<boolean | undefined>(
     undefined
@@ -62,6 +65,16 @@ export function TeamClient({ initialData }: TeamClientProps) {
   const activeCompanyId = useSelector(
     (state: RootState) => state.company.activeCompany?.id
   );
+
+  // Debounce search input (wait 500ms after user stops typing)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setCurrentPage(1); // Reset to page 1 on search
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [search]);
 
   // Fetch tenant info with RTK Query
   // 🎯 KEY: Skip query until company context is ready
@@ -101,9 +114,21 @@ export function TeamClient({ initialData }: TeamClientProps) {
   // Client-side pagination logic
   // Filter users first
   const filteredUsers = allUsers.filter((user) => {
+    // Search filter (name or email)
+    if (debouncedSearch) {
+      const searchLower = debouncedSearch.toLowerCase();
+      const matchesName = user.name.toLowerCase().includes(searchLower);
+      const matchesEmail = user.email.toLowerCase().includes(searchLower);
+      if (!matchesName && !matchesEmail) return false;
+    }
+
+    // Role filter
     if (roleFilter && user.role !== roleFilter) return false;
+
+    // Status filter
     if (statusFilter !== undefined && user.isActive !== statusFilter)
       return false;
+
     return true;
   });
 
@@ -214,6 +239,8 @@ export function TeamClient({ initialData }: TeamClientProps) {
                   {/* Users Table */}
                   <UserTable
                     users={displayUsers}
+                    search={search}
+                    onSearchChange={setSearch}
                     onRoleFilterChange={setRoleFilter}
                     onStatusFilterChange={setStatusFilter}
                     roleFilter={roleFilter}
@@ -246,7 +273,7 @@ export function TeamClient({ initialData }: TeamClientProps) {
                           value={pageSize.toString()}
                           onValueChange={handlePageSizeChange}
                         >
-                          <SelectTrigger className="w-[70px] h-8">
+                          <SelectTrigger className="w-[70px] h-8 bg-background">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>

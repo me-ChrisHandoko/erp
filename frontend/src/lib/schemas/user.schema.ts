@@ -25,8 +25,8 @@ export const inviteUserSchema = z.object({
     .max(255, "Name must be less than 255 characters")
     .regex(/^[a-zA-Z\s.'-]+$/, "Name can only contain letters, spaces, and . ' -"),
 
-  role: z.enum(["ADMIN", "STAFF", "VIEWER"], {
-    message: "Invalid role. Must be ADMIN, STAFF, or VIEWER",
+  role: z.enum(["ADMIN", "FINANCE", "SALES", "WAREHOUSE", "STAFF"], {
+    message: "Invalid role. Must be ADMIN, FINANCE, SALES, WAREHOUSE, or STAFF",
   }),
 });
 
@@ -37,8 +37,8 @@ export type InviteUserFormData = z.infer<typeof inviteUserSchema>;
  * Used for changing existing user roles
  */
 export const updateUserRoleSchema = z.object({
-  role: z.enum(["ADMIN", "STAFF", "VIEWER"], {
-    message: "Invalid role. Must be ADMIN, STAFF, or VIEWER",
+  role: z.enum(["ADMIN", "FINANCE", "SALES", "WAREHOUSE", "STAFF"], {
+    message: "Invalid role. Must be ADMIN, FINANCE, SALES, WAREHOUSE, or STAFF",
   }),
 });
 

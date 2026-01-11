@@ -55,8 +55,8 @@ export function InviteUserForm({ onSuccess, onCancel }: InviteUserFormProps) {
   const onSubmit = async (data: InviteUserFormData) => {
     try {
       await inviteUser(data).unwrap();
-      toast.success("Invitation sent successfully", {
-        description: `An email has been sent to ${data.email}`,
+      toast.success("Undangan berhasil dikirim", {
+        description: `Email telah dikirim ke ${data.email}`,
       });
       onSuccess?.();
     } catch (error: unknown) {
@@ -65,24 +65,24 @@ export function InviteUserForm({ onSuccess, onCancel }: InviteUserFormProps) {
         (errorData && typeof errorData === 'object' && 'error' in errorData &&
          errorData.error && typeof errorData.error === 'object' && 'message' in errorData.error
           ? (errorData.error.message as string)
-          : null) || "Failed to send invitation";
+          : null) || "Gagal mengirim undangan";
 
       // Handle rate limiting
       const errorStatus = error && typeof error === 'object' && 'status' in error ? error.status : null;
       if (errorStatus === 429) {
-        toast.error("Rate limit exceeded", {
-          description: "Please wait before sending another invitation (max 5 per minute)",
+        toast.error("Batas pengiriman terlampaui", {
+          description: "Harap tunggu sebelum mengirim undangan lagi (maksimal 5 per menit)",
         });
       } else if (errorMessage.includes("user limit")) {
-        toast.error("User limit reached", {
-          description: "Upgrade your subscription to add more users",
+        toast.error("Batas pengguna tercapai", {
+          description: "Tingkatkan langganan Anda untuk menambah lebih banyak pengguna",
         });
       } else if (errorMessage.includes("already exists")) {
-        toast.error("User already exists", {
-          description: "This email is already registered in your organization",
+        toast.error("Pengguna sudah ada", {
+          description: "Email ini sudah terdaftar di organisasi Anda",
         });
       } else {
-        toast.error("Failed to send invitation", {
+        toast.error("Gagal mengirim undangan", {
           description: errorMessage,
         });
       }
@@ -100,8 +100,9 @@ export function InviteUserForm({ onSuccess, onCancel }: InviteUserFormProps) {
           id="email"
           type="email"
           {...register("email")}
-          placeholder="user@example.com"
+          placeholder="pengguna@example.com"
           disabled={isLoading}
+          className="bg-background"
         />
         {errors.email && (
           <p className="text-sm text-red-500">{errors.email.message}</p>
@@ -111,13 +112,14 @@ export function InviteUserForm({ onSuccess, onCancel }: InviteUserFormProps) {
       {/* Name */}
       <div className="space-y-2">
         <Label htmlFor="name">
-          Full Name <span className="text-red-500">*</span>
+          Nama Lengkap <span className="text-red-500">*</span>
         </Label>
         <Input
           id="name"
           {...register("name")}
-          placeholder="John Doe"
+          placeholder="Nama Lengkap"
           disabled={isLoading}
+          className="bg-background"
         />
         {errors.name && (
           <p className="text-sm text-red-500">{errors.name.message}</p>
@@ -131,10 +133,10 @@ export function InviteUserForm({ onSuccess, onCancel }: InviteUserFormProps) {
         </Label>
         <Select
           value={watch("role")}
-          onValueChange={(value) => setValue("role", value as "ADMIN" | "STAFF" | "VIEWER")}
+          onValueChange={(value) => setValue("role", value as "ADMIN" | "FINANCE" | "SALES" | "WAREHOUSE" | "STAFF")}
           disabled={isLoading}
         >
-          <SelectTrigger>
+          <SelectTrigger className="w-full bg-background">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -142,23 +144,39 @@ export function InviteUserForm({ onSuccess, onCancel }: InviteUserFormProps) {
               <div className="flex flex-col items-start">
                 <span className="font-semibold">Admin</span>
                 <span className="text-xs text-muted-foreground">
-                  Full access to all features and settings
+                  Akses penuh ke semua fitur dan pengaturan
+                </span>
+              </div>
+            </SelectItem>
+            <SelectItem value="FINANCE">
+              <div className="flex flex-col items-start">
+                <span className="font-semibold">Keuangan</span>
+                <span className="text-xs text-muted-foreground">
+                  Dapat mengelola transaksi keuangan dan laporan
+                </span>
+              </div>
+            </SelectItem>
+            <SelectItem value="SALES">
+              <div className="flex flex-col items-start">
+                <span className="font-semibold">Penjualan</span>
+                <span className="text-xs text-muted-foreground">
+                  Dapat mengelola pesanan penjualan dan relasi pelanggan
+                </span>
+              </div>
+            </SelectItem>
+            <SelectItem value="WAREHOUSE">
+              <div className="flex flex-col items-start">
+                <span className="font-semibold">Gudang</span>
+                <span className="text-xs text-muted-foreground">
+                  Dapat mengelola gudang dan operasi inventori
                 </span>
               </div>
             </SelectItem>
             <SelectItem value="STAFF">
               <div className="flex flex-col items-start">
-                <span className="font-semibold">Staff</span>
+                <span className="font-semibold">Staf</span>
                 <span className="text-xs text-muted-foreground">
-                  Can manage daily operations and transactions
-                </span>
-              </div>
-            </SelectItem>
-            <SelectItem value="VIEWER">
-              <div className="flex flex-col items-start">
-                <span className="font-semibold">Viewer</span>
-                <span className="text-xs text-muted-foreground">
-                  Read-only access to view data
+                  Dapat mengelola operasi harian dan transaksi
                 </span>
               </div>
             </SelectItem>
@@ -168,7 +186,7 @@ export function InviteUserForm({ onSuccess, onCancel }: InviteUserFormProps) {
           <p className="text-sm text-red-500">{errors.role.message}</p>
         )}
         <p className="text-xs text-muted-foreground">
-          Note: OWNER role cannot be assigned through invitation
+          Catatan: Role OWNER tidak dapat diberikan melalui undangan
         </p>
       </div>
 
@@ -176,17 +194,17 @@ export function InviteUserForm({ onSuccess, onCancel }: InviteUserFormProps) {
       <div className="flex justify-end gap-2 pt-4">
         {onCancel && (
           <Button type="button" variant="outline" onClick={onCancel} disabled={isLoading}>
-            Cancel
+            Batal
           </Button>
         )}
         <Button type="submit" disabled={isLoading}>
           {isLoading ? (
             <>
               <LoadingSpinner size="sm" className="mr-2" />
-              Sending Invitation...
+              Mengirim Undangan...
             </>
           ) : (
-            "Send Invitation"
+            "Kirim Undangan"
           )}
         </Button>
       </div>
