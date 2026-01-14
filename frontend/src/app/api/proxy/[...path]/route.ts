@@ -6,6 +6,7 @@ import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 
 const BACKEND_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+const FRONTEND_URL = process.env.NEXT_PUBLIC_FRONTEND_URL || 'http://localhost:3000';
 
 // Helper to construct cookie header string
 async function buildCookieHeader(cookieStore: Awaited<ReturnType<typeof cookies>>): Promise<string> {
@@ -39,7 +40,7 @@ export async function GET(
     // Build headers
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
-      'Origin': 'http://localhost:3000',
+      'Origin': FRONTEND_URL,
     };
 
     // Add authentication token
@@ -79,11 +80,18 @@ export async function GET(
 
     const data = await response.json();
 
-    if (!response.ok) {
-      return NextResponse.json(data, { status: response.status });
+    // Create NextResponse with data
+    const nextResponse = NextResponse.json(data, { status: response.status });
+
+    // Forward Set-Cookie headers from backend
+    const setCookieHeaders = response.headers.getSetCookie();
+    if (setCookieHeaders && setCookieHeaders.length > 0) {
+      setCookieHeaders.forEach((cookie) => {
+        nextResponse.headers.append('Set-Cookie', cookie);
+      });
     }
 
-    return NextResponse.json(data);
+    return nextResponse;
   } catch (error) {
     console.error('[API Proxy] GET Error:', error);
     return NextResponse.json(
@@ -102,12 +110,23 @@ export async function POST(
   const { path: pathArray } = await context.params;
   const path = pathArray.join('/');
   const url = `${BACKEND_URL}/api/v1/${path}`;
-  const body = await request.json();
 
   try {
+    // Parse body - handle empty body for endpoints like logout
+    let body = null;
+    const contentType = request.headers.get('content-type');
+    if (contentType?.includes('application/json')) {
+      try {
+        body = await request.json();
+      } catch {
+        // Empty body is OK for some endpoints
+        body = {};
+      }
+    }
+
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
-      'Origin': 'http://localhost:3000',
+      'Origin': FRONTEND_URL,
     };
 
     const accessToken = cookieStore.get('access_token')?.value;
@@ -136,17 +155,24 @@ export async function POST(
     const response = await fetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify(body),
+      body: body ? JSON.stringify(body) : undefined,
       credentials: 'include',
     });
 
     const data = await response.json();
 
-    if (!response.ok) {
-      return NextResponse.json(data, { status: response.status });
+    // Create NextResponse with data
+    const nextResponse = NextResponse.json(data, { status: response.status });
+
+    // Forward Set-Cookie headers from backend (important for logout, token refresh, etc.)
+    const setCookieHeaders = response.headers.getSetCookie();
+    if (setCookieHeaders && setCookieHeaders.length > 0) {
+      setCookieHeaders.forEach((cookie) => {
+        nextResponse.headers.append('Set-Cookie', cookie);
+      });
     }
 
-    return NextResponse.json(data);
+    return nextResponse;
   } catch (error) {
     console.error('[API Proxy] POST Error:', error);
     return NextResponse.json(
@@ -165,12 +191,22 @@ export async function PUT(
   const { path: pathArray } = await context.params;
   const path = pathArray.join('/');
   const url = `${BACKEND_URL}/api/v1/${path}`;
-  const body = await request.json();
 
   try {
+    // Parse body - handle empty body gracefully
+    let body = null;
+    const contentType = request.headers.get('content-type');
+    if (contentType?.includes('application/json')) {
+      try {
+        body = await request.json();
+      } catch {
+        body = {};
+      }
+    }
+
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
-      'Origin': 'http://localhost:3000',
+      'Origin': FRONTEND_URL,
     };
 
     const accessToken = cookieStore.get('access_token')?.value;
@@ -191,7 +227,7 @@ export async function PUT(
       headers['X-CSRF-Token'] = csrfToken;
     }
 
-    const cookieHeader = await buildCookieHeader(cookieStore); // ✅ FIXED: Added await
+    const cookieHeader = await buildCookieHeader(cookieStore);
     if (cookieHeader) {
       headers['Cookie'] = cookieHeader;
     }
@@ -199,17 +235,24 @@ export async function PUT(
     const response = await fetch(url, {
       method: 'PUT',
       headers,
-      body: JSON.stringify(body),
+      body: body ? JSON.stringify(body) : undefined,
       credentials: 'include',
     });
 
     const data = await response.json();
 
-    if (!response.ok) {
-      return NextResponse.json(data, { status: response.status });
+    // Create NextResponse with data
+    const nextResponse = NextResponse.json(data, { status: response.status });
+
+    // Forward Set-Cookie headers from backend
+    const setCookieHeaders = response.headers.getSetCookie();
+    if (setCookieHeaders && setCookieHeaders.length > 0) {
+      setCookieHeaders.forEach((cookie) => {
+        nextResponse.headers.append('Set-Cookie', cookie);
+      });
     }
 
-    return NextResponse.json(data);
+    return nextResponse;
   } catch (error) {
     console.error('[API Proxy] PUT Error:', error);
     return NextResponse.json(
@@ -227,12 +270,22 @@ export async function PATCH(
   const { path: pathArray } = await context.params;
   const path = pathArray.join('/');
   const url = `${BACKEND_URL}/api/v1/${path}`;
-  const body = await request.json();
 
   try {
+    // Parse body - handle empty body gracefully
+    let body = null;
+    const contentType = request.headers.get('content-type');
+    if (contentType?.includes('application/json')) {
+      try {
+        body = await request.json();
+      } catch {
+        body = {};
+      }
+    }
+
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
-      'Origin': 'http://localhost:3000',
+      'Origin': FRONTEND_URL,
     };
 
     const accessToken = cookieStore.get('access_token')?.value;
@@ -253,7 +306,7 @@ export async function PATCH(
       headers['X-CSRF-Token'] = csrfToken;
     }
 
-    const cookieHeader = await buildCookieHeader(cookieStore); // ✅ FIXED: Added await
+    const cookieHeader = await buildCookieHeader(cookieStore);
     if (cookieHeader) {
       headers['Cookie'] = cookieHeader;
     }
@@ -261,17 +314,24 @@ export async function PATCH(
     const response = await fetch(url, {
       method: 'PATCH',
       headers,
-      body: JSON.stringify(body),
+      body: body ? JSON.stringify(body) : undefined,
       credentials: 'include',
     });
 
     const data = await response.json();
 
-    if (!response.ok) {
-      return NextResponse.json(data, { status: response.status });
+    // Create NextResponse with data
+    const nextResponse = NextResponse.json(data, { status: response.status });
+
+    // Forward Set-Cookie headers from backend
+    const setCookieHeaders = response.headers.getSetCookie();
+    if (setCookieHeaders && setCookieHeaders.length > 0) {
+      setCookieHeaders.forEach((cookie) => {
+        nextResponse.headers.append('Set-Cookie', cookie);
+      });
     }
 
-    return NextResponse.json(data);
+    return nextResponse;
   } catch (error) {
     console.error('[API Proxy] PATCH Error:', error);
     return NextResponse.json(
@@ -293,7 +353,7 @@ export async function DELETE(
   try {
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
-      'Origin': 'http://localhost:3000',
+      'Origin': FRONTEND_URL,
     };
 
     const accessToken = cookieStore.get('access_token')?.value;
@@ -327,11 +387,18 @@ export async function DELETE(
 
     const data = await response.json();
 
-    if (!response.ok) {
-      return NextResponse.json(data, { status: response.status });
+    // Create NextResponse with data
+    const nextResponse = NextResponse.json(data, { status: response.status });
+
+    // Forward Set-Cookie headers from backend
+    const setCookieHeaders = response.headers.getSetCookie();
+    if (setCookieHeaders && setCookieHeaders.length > 0) {
+      setCookieHeaders.forEach((cookie) => {
+        nextResponse.headers.append('Set-Cookie', cookie);
+      });
     }
 
-    return NextResponse.json(data);
+    return nextResponse;
   } catch (error) {
     console.error('[API Proxy] DELETE Error:', error);
     return NextResponse.json(

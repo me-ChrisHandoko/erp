@@ -1,6 +1,7 @@
 "use client";
 
 import { AppSidebar } from "@/components/app-sidebar";
+import { AuthGuard } from "@/components/auth-guard";
 import { CompanyInitializer } from "@/components/company-initializer";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { useState, useEffect } from "react";
@@ -32,10 +33,12 @@ export default function AppLayout({
   }, []);
 
   return (
-    <SidebarProvider open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
-      <CompanyInitializer />
-      <AppSidebar />
-      <SidebarInset>{children}</SidebarInset>
-    </SidebarProvider>
+    <AuthGuard>
+      <SidebarProvider open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
+        <CompanyInitializer />
+        <AppSidebar />
+        <SidebarInset>{children}</SidebarInset>
+      </SidebarProvider>
+    </AuthGuard>
   );
 }

@@ -3,18 +3,18 @@ package handler
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
-	"gorm.io/gorm" // ✅ NEW: Import gorm for database queries
+	"gorm.io/gorm"
 
 	"backend/internal/config"
 	"backend/internal/dto"
 	"backend/internal/service/auth"
+	"backend/pkg/audit"
 	"backend/pkg/errors"
+	"backend/pkg/logger"
 	customValidator "backend/pkg/validator"
 )
 
@@ -54,9 +54,18 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// Call auth service
 	response, err := h.authService.Login(c.Request.Context(), &req)
 	if err != nil {
+		// Audit: Log failed login attempt
+		audit.LogLoginFailed(req.Email, req.IPAddress, req.UserAgent, err.Error())
 		h.handleError(c, err)
 		return
 	}
+
+	// Audit: Log successful login
+	tenantID := ""
+	if response.User != nil && response.User.CurrentTenant != nil {
+		tenantID = response.User.CurrentTenant.ID
+	}
+	audit.LogLogin(response.User.ID, response.User.Email, tenantID, req.IPAddress, req.UserAgent)
 
 	// Set refresh token as httpOnly cookie
 	h.setRefreshTokenCookie(c, response.RefreshToken)
@@ -114,60 +123,50 @@ func (h *AuthHandler) Login(c *gin.Context) {
 // POST /api/v1/auth/refresh
 // Reference: BACKEND-IMPLEMENTATION.md lines 1014-1053
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	// Get refresh token from cookie
 	refreshToken, err := c.Cookie("refresh_token")
 	if err != nil {
-		fmt.Println("🚨 DEBUG [RefreshToken]: No refresh_token cookie found")
+		logger.Debugf("[RefreshToken] No refresh_token cookie found")
+		audit.LogTokenRefresh("", ipAddress, userAgent, false, "No refresh token cookie")
 		c.JSON(http.StatusUnauthorized, errors.NewAuthenticationError("Refresh token not found"))
 		return
 	}
 
-	// Log token preview for debugging (first 16 chars only)
-	tokenPreview := refreshToken
-	if len(refreshToken) > 16 {
-		tokenPreview = refreshToken[:16] + "..."
-	}
-	fmt.Printf("🔍 DEBUG [RefreshToken]: Cookie token preview: %s\n", tokenPreview)
-	fmt.Printf("🔍 DEBUG [RefreshToken]: Client IP: %s\n", c.ClientIP())
-	fmt.Printf("🔍 DEBUG [RefreshToken]: User-Agent: %s\n", c.Request.UserAgent())
+	logger.Debugf("[RefreshToken] Processing refresh request from IP: %s", ipAddress)
 
 	req := &dto.RefreshTokenRequest{
 		RefreshToken: refreshToken,
 	}
 
 	// Call auth service
-	fmt.Println("🔍 DEBUG [RefreshToken]: Calling authService.RefreshToken...")
 	response, err := h.authService.RefreshToken(c.Request.Context(), req)
 	if err != nil {
-		fmt.Println("🚨 DEBUG [RefreshToken]: Error:", err)
+		logger.Debugf("[RefreshToken] Error: %v", err)
+		audit.LogTokenRefresh("", ipAddress, userAgent, false, err.Error())
 		h.handleError(c, err)
 		return
 	}
-	fmt.Println("✅ DEBUG [RefreshToken]: Success")
 
-	// Log new token being set
-	newTokenPreview := response.RefreshToken
-	if len(response.RefreshToken) > 16 {
-		newTokenPreview = response.RefreshToken[:16] + "..."
+	// Audit: Log successful token refresh
+	userID := ""
+	if response.User != nil {
+		userID = response.User.ID
 	}
-	fmt.Printf("🍪 DEBUG [RefreshToken]: Setting new cookie with token: %s\n", newTokenPreview)
-	fmt.Printf("🍪 DEBUG [RefreshToken]: Cookie config - Domain: '%s', Secure: %v, SameSite: %s\n",
-		h.cfg.Cookie.Domain, h.cfg.Cookie.Secure, h.cfg.Cookie.SameSite)
+	audit.LogTokenRefresh(userID, ipAddress, userAgent, true, "")
+	logger.Debugf("[RefreshToken] Token refresh successful for user %s", userID)
 
 	// Set new refresh token as httpOnly cookie
 	h.setRefreshTokenCookie(c, response.RefreshToken)
 
-	// ✅ NEW: Set new access token as httpOnly cookie for server-side rendering
+	// Set new access token as httpOnly cookie for server-side rendering
 	h.setAccessTokenCookie(c, response.AccessToken)
 
-	// 🔐 FIX #1: Regenerate CSRF token for renewed session security
-	// This prevents 403 errors after long sleep (>24h) when CSRF cookie expires
-	// but refresh token is still valid (7 days)
-	fmt.Println("🔐 DEBUG [RefreshToken]: Regenerating CSRF token...")
+	// Regenerate CSRF token for renewed session security (M1: CSRF Rotation)
 	h.setCSRFToken(c)
-	fmt.Println("✅ DEBUG [RefreshToken]: CSRF token regenerated")
-
-	fmt.Println("✅ DEBUG [RefreshToken]: New cookie set successfully")
+	logger.Debugf("[RefreshToken] CSRF token regenerated")
 
 	// Don't send refresh token in response body
 	response.RefreshToken = ""
@@ -182,11 +181,26 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 // POST /api/v1/auth/logout
 // Reference: BACKEND-IMPLEMENTATION.md lines 1054-1071
 func (h *AuthHandler) Logout(c *gin.Context) {
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
+	// Get user ID from context if available
+	userID := ""
+	if uid, exists := c.Get("user_id"); exists {
+		userID = uid.(string)
+	}
+
 	// Get refresh token from cookie
 	refreshToken, err := c.Cookie("refresh_token")
 	if err != nil {
 		// Even if cookie not found, clear it anyway
 		h.clearRefreshTokenCookie(c)
+		h.clearAccessTokenCookie(c)
+		h.clearCSRFCookie(c)
+
+		// Audit: Log logout (even without refresh token)
+		audit.LogLogout(userID, ipAddress, userAgent)
+
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"message": "Logged out successfully",
@@ -204,10 +218,13 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		return
 	}
 
+	// Audit: Log successful logout
+	audit.LogLogout(userID, ipAddress, userAgent)
+
 	// Clear refresh token cookie
 	h.clearRefreshTokenCookie(c)
 
-	// ✅ NEW: Clear access token cookie
+	// Clear access token cookie
 	h.clearAccessTokenCookie(c)
 
 	// Clear CSRF token cookie
@@ -233,6 +250,9 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	ipAddress := c.ClientIP()
 	userAgent := c.Request.UserAgent()
 
+	// Audit: Log password reset request (before service call for security monitoring)
+	audit.LogPasswordResetRequest(req.Email, ipAddress, userAgent)
+
 	// Call auth service
 	if err := h.authService.ForgotPassword(c.Request.Context(), &req, ipAddress, userAgent); err != nil {
 		h.handleError(c, err)
@@ -251,6 +271,9 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 // POST /api/v1/auth/reset-password
 // Reference: PHASE2-MVP-ANALYSIS.md lines 180-220
 func (h *AuthHandler) ResetPassword(c *gin.Context) {
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	var req dto.PasswordResetConfirmRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.handleValidationError(c, err)
@@ -263,7 +286,12 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 		return
 	}
 
-	// Clear CSRF cookie on password reset (force re-login)
+	// Audit: Log password reset completion
+	audit.LogPasswordReset("", ipAddress, userAgent)
+
+	// Clear all session cookies on password reset (force re-login)
+	h.clearRefreshTokenCookie(c)
+	h.clearAccessTokenCookie(c)
 	h.clearCSRFCookie(c)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -305,11 +333,20 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 // Requires authentication
 // Reference: PHASE3-MVP-ANALYSIS.md
 func (h *AuthHandler) SwitchTenant(c *gin.Context) {
-	// Get user ID from context (set by JWTAuthMiddleware)
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
+	// Get user ID and current tenant ID from context (set by JWTAuthMiddleware)
 	userID, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, errors.NewAuthenticationError("User not authenticated"))
 		return
+	}
+
+	// Get current tenant ID for audit logging
+	currentTenantID := ""
+	if tid, exists := c.Get("tenant_id"); exists {
+		currentTenantID = tid.(string)
 	}
 
 	var req dto.SwitchTenantRequest
@@ -325,12 +362,20 @@ func (h *AuthHandler) SwitchTenant(c *gin.Context) {
 		return
 	}
 
+	// Audit: Log tenant switch
+	audit.LogSwitchTenant(userID.(string), currentTenantID, tenant.ID, ipAddress, userAgent)
+
+	// M1: Rotate CSRF token after sensitive operation
+	h.setCSRFToken(c)
+
+	// Set new access token cookie
+	h.setAccessTokenCookie(c, accessToken)
+
 	// Build tenant info
 	tenantInfo := &dto.TenantInfo{
 		ID:     tenant.ID,
 		Name:   tenant.Name,
 		Status: string(tenant.Status),
-		// Role will be set by the service
 	}
 
 	// Get user's role in this tenant
@@ -358,6 +403,9 @@ func (h *AuthHandler) SwitchTenant(c *gin.Context) {
 // Requires authentication
 // Returns new JWT with activeCompanyID claim
 func (h *AuthHandler) SwitchCompany(c *gin.Context) {
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	// Get user ID and tenant ID from context
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -371,14 +419,20 @@ func (h *AuthHandler) SwitchCompany(c *gin.Context) {
 		return
 	}
 
+	// Get current company ID for audit logging
+	currentCompanyID := ""
+	if cid, exists := c.Get("active_company_id"); exists {
+		currentCompanyID = cid.(string)
+	}
+
 	var req dto.SwitchCompanyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("❌ ERROR [SwitchCompany]: Binding error - %v", err)
+		logger.Debugf("[SwitchCompany] Binding error: %v", err)
 		h.handleValidationError(c, err)
 		return
 	}
 
-	log.Printf("🔄 DEBUG [SwitchCompany]: Request - UserID: %s, TenantID: %s, CompanyID: %s", userID, tenantID, req.CompanyID)
+	logger.Debugf("[SwitchCompany] Request - UserID: %s, TenantID: %s, CompanyID: %s", userID, tenantID, req.CompanyID)
 
 	// Call auth service
 	accessToken, company, err := h.authService.SwitchCompany(userID.(string), tenantID.(string), req.CompanyID)
@@ -387,13 +441,16 @@ func (h *AuthHandler) SwitchCompany(c *gin.Context) {
 		return
 	}
 
-	// Set new refresh token cookie (optional - keep existing refresh token)
-	// Refresh token is tenant-scoped, not company-scoped
+	// Audit: Log company switch
+	audit.LogSwitchCompany(userID.(string), tenantID.(string), currentCompanyID, company.ID, ipAddress, userAgent)
 
-	// ✅ NEW: Set new access token cookie with updated company context
+	// M1: Rotate CSRF token after sensitive operation
+	h.setCSRFToken(c)
+
+	// Set new access token cookie with updated company context
 	h.setAccessTokenCookie(c, accessToken)
 
-	// ✅ NEW: Set active company ID cookie for server-side rendering
+	// Set active company ID cookie for server-side rendering
 	h.setCompanyIDCookie(c, company.ID)
 
 	response := &dto.SwitchCompanyResponse{
@@ -543,6 +600,9 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 // Requires authentication
 // Reference: PHASE3-MVP-ANALYSIS.md
 func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	// Get user ID from context (set by JWTAuthMiddleware)
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -558,14 +618,18 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 
 	// Call auth service
 	if err := h.authService.ChangePassword(userID.(string), req.CurrentPassword, req.NewPassword); err != nil {
+		// Audit: Log failed password change
+		audit.LogPasswordChange(userID.(string), ipAddress, userAgent, false, err.Error())
 		h.handleError(c, err)
 		return
 	}
 
-	// Clear refresh token cookie (force re-login)
-	h.clearRefreshTokenCookie(c)
+	// Audit: Log successful password change
+	audit.LogPasswordChange(userID.(string), ipAddress, userAgent, true, "")
 
-	// Clear CSRF cookie
+	// Clear all session cookies (force re-login with new password)
+	h.clearRefreshTokenCookie(c)
+	h.clearAccessTokenCookie(c)
 	h.clearCSRFCookie(c)
 
 	c.JSON(http.StatusOK, gin.H{

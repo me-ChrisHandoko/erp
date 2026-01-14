@@ -49,10 +49,10 @@ const authSlice = createSlice({
       state.isLoading = false;
       state.error = null;
 
-      // Save access token to localStorage for persistence
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('accessToken', action.payload.accessToken);
-      }
+      // NOTE: accessToken is NOT stored in localStorage for security reasons
+      // - localStorage is vulnerable to XSS attacks
+      // - Backend already sends httpOnly cookie for access_token
+      // - Proxy route reads token from httpOnly cookie, not localStorage
     },
 
     /**
@@ -61,11 +61,8 @@ const authSlice = createSlice({
      */
     setAccessToken: (state, action: PayloadAction<string>) => {
       state.accessToken = action.payload;
-
-      // Update localStorage
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('accessToken', action.payload);
-      }
+      // NOTE: accessToken is NOT stored in localStorage (XSS vulnerability)
+      // Backend httpOnly cookie handles secure token persistence
     },
 
     /**
@@ -123,11 +120,11 @@ const authSlice = createSlice({
           state.logoutReason = null;
         }
 
-        // Clear localStorage (access token and company context)
+        // Clear localStorage (company context only)
+        // Note: accessToken is no longer stored in localStorage (security fix)
         // Note: rememberEmail is preserved for "Remember Me" functionality
         // Note: activeCompanyId is also cleared in middleware for defense in depth
         if (typeof window !== 'undefined') {
-          localStorage.removeItem('accessToken');
           localStorage.removeItem('activeCompanyId'); // Prevent cross-user company context leak
         }
       },

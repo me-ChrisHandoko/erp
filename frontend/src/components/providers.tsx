@@ -249,6 +249,15 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
 
         // If we reach here, localStorage restoration failed
         // Try to restore from refresh_token cookie by calling /auth/refresh
+        // Skip if we're on login page to avoid unnecessary 401 errors in console
+        const isLoginPage = typeof window !== 'undefined' && window.location.pathname === '/login';
+
+        if (isLoginPage) {
+          console.log("[Auth] On login page, skipping session restore attempt");
+          setIsRestoring(false);
+          return;
+        }
+
         console.log("[Auth] No valid localStorage token, attempting session restore from refresh token cookie...");
 
         try {

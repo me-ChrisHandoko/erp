@@ -50,12 +50,11 @@ export function NavUser({
       // Call logout API
       await logout().unwrap()
       console.log("[NavUser] Logout successful")
+      // AuthGuard will handle redirect when Redux isAuthenticated becomes false
     } catch (err) {
       console.error("[NavUser] Logout API failed:", err)
-    } finally {
-      // Always redirect to login, even if API call fails
-      // Redux state is already cleared by the mutation's onQueryStarted
-      router.push("/login")
+      // Force redirect on error since cookies might not be cleared
+      window.location.href = "/login"
     }
   }
 

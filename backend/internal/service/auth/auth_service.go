@@ -17,6 +17,7 @@ import (
 	"backend/models"
 	"backend/pkg/errors"
 	"backend/pkg/jwt"
+	"backend/pkg/logger"
 	"backend/pkg/security"
 )
 
@@ -73,35 +74,34 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 		return nil, errors.NewInternalError(err)
 	}
 
-	// DEBUG: Print loaded password hash
-	fmt.Printf("🔍 DEBUG: Loaded hash length: %d\n", len(user.PasswordHash))
-	fmt.Printf("🔍 DEBUG: Loaded hash: %s\n", user.PasswordHash)
+	// Log authentication attempt (without exposing sensitive data)
+	logger.Debugf("[Auth.Login] Validating credentials for user: %s", user.Email)
 
 	// Check if user is active
 	if !user.IsActive {
-		fmt.Println("🚨 DEBUG: User is inactive:", user.Email)
+		logger.Debugf("[Auth.Login] User is inactive: %s", user.Email)
 		// Record failed attempt - account inactive
 		reason := FailureReasonAccountInactive
 		s.recordLoginAttempt(ctx, req.Email, req.IPAddress, req.UserAgent, false, &reason)
 		return nil, errors.NewAuthenticationError("Account is inactive")
 	}
-	fmt.Println("✅ DEBUG: User is active:", user.Email)
+	logger.Debugf("[Auth.Login] User is active: %s", user.Email)
 
 	// Verify password
-	fmt.Println("🔍 DEBUG: Verifying password for:", user.Email)
+	logger.Debugf("[Auth.Login] Verifying password for: %s", user.Email)
 	valid, err := s.passwordHasher.VerifyPassword(req.Password, user.PasswordHash)
 	if err != nil {
-		fmt.Println("🚨 DEBUG: Password verification error:", err)
+		logger.Errorf("[Auth.Login] Password verification error for %s: %v", user.Email, err)
 		return nil, errors.NewInternalError(err)
 	}
 	if !valid {
-		fmt.Println("🚨 DEBUG: Invalid password for:", user.Email)
+		logger.Debugf("[Auth.Login] Invalid password for: %s", user.Email)
 		// Record failed attempt - invalid password
 		reason := FailureReasonInvalidPassword
 		s.recordLoginAttempt(ctx, req.Email, req.IPAddress, req.UserAgent, false, &reason)
 		return nil, errors.NewAuthenticationError("Invalid email or password")
 	}
-	fmt.Println("✅ DEBUG: Password valid for:", user.Email)
+	logger.Debugf("[Auth.Login] Password valid for: %s", user.Email)
 
 	// NOTE: Email verification check disabled for internal ERP system
 	// In production with self-registration, you may want to enable this:
@@ -112,13 +112,13 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 
 	// Get user's tenant access - Support both Tier 1 (user_tenants) and Tier 2 (user_company_roles)
 	// IMPORTANT: Bypass tenant isolation for authentication - we don't have tenant context yet!
-	fmt.Println("🔍 DEBUG: Getting user tenants...")
+	logger.Debugf("[Auth.Login] Getting tenants for user: %s", user.Email)
 	var userTenants []UserTenant
 	if err := s.db.Set("bypass_tenant", true).Where("user_id = ? AND is_active = ?", user.ID, true).Find(&userTenants).Error; err != nil {
-		fmt.Println("🚨 DEBUG: Error getting tenants:", err)
+		logger.Errorf("[Auth.Login] Error getting tenants: %v", err)
 		return nil, errors.NewInternalError(err)
 	}
-	fmt.Printf("✅ DEBUG: Found %d user_tenants records (Tier 1)\n", len(userTenants))
+	logger.Debugf("[Auth.Login] Found %d user_tenants records (Tier 1)", len(userTenants))
 
 	var tenantID string
 	var userRole string
@@ -129,22 +129,22 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 		defaultUserTenant := userTenants[0]
 		tenantID = defaultUserTenant.TenantID
 		userRole = defaultUserTenant.Role
-		fmt.Printf("✅ DEBUG: Using Tier 1 access - Tenant: %s, Role: %s\n", tenantID, userRole)
+		logger.Debugf("[Auth.Login] Using Tier 1 access - Tenant: %s, Role: %s", tenantID, userRole)
 	} else {
 		// Tier 2: Check user_company_roles (SALES, FINANCE, WAREHOUSE, etc.)
-		fmt.Println("🔍 DEBUG: No Tier 1 access, checking user_company_roles (Tier 2)...")
+		logger.Debugf("[Auth.Login] No Tier 1 access, checking user_company_roles (Tier 2)")
 		var userCompanyRoles []models.UserCompanyRole
 		if err := s.db.Set("bypass_tenant", true).
 			Where("user_id = ? AND is_active = ?", user.ID, true).
 			Find(&userCompanyRoles).Error; err != nil {
-			fmt.Println("🚨 DEBUG: Error getting user_company_roles:", err)
+			logger.Errorf("[Auth.Login] Error getting user_company_roles: %v", err)
 			return nil, errors.NewInternalError(err)
 		}
-		fmt.Printf("✅ DEBUG: Found %d user_company_roles records (Tier 2)\n", len(userCompanyRoles))
+		logger.Debugf("[Auth.Login] Found %d user_company_roles records (Tier 2)", len(userCompanyRoles))
 
 		if len(userCompanyRoles) == 0 {
 			// No access at all - neither Tier 1 nor Tier 2
-			fmt.Println("🚨 DEBUG: No Tier 1 or Tier 2 access for user")
+			logger.Debugf("[Auth.Login] No Tier 1 or Tier 2 access for user: %s", user.Email)
 			reason := FailureReasonNoTenantAccess
 			s.recordLoginAttempt(ctx, req.Email, req.IPAddress, req.UserAgent, false, &reason)
 			return nil, errors.NewAuthorizationError("User has no active tenant access")
@@ -153,22 +153,22 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 		// User has Tier 2 access - get tenant_id from first company role
 		tenantID = userCompanyRoles[0].TenantID
 		userRole = string(userCompanyRoles[0].Role)
-		fmt.Printf("✅ DEBUG: Using Tier 2 access - Tenant: %s, Role: %s\n", tenantID, userRole)
+		logger.Debugf("[Auth.Login] Using Tier 2 access - Tenant: %s, Role: %s", tenantID, userRole)
 	}
 
 	// Get tenant details
 	// IMPORTANT: Bypass tenant isolation - we're validating tenant before setting context
-	fmt.Println("🔍 DEBUG: Getting tenant details...")
+	logger.Debugf("[Auth.Login] Getting tenant details for: %s", tenantID)
 	var tenant Tenant
 	if err := s.db.Set("bypass_tenant", true).Where("id = ?", tenantID).First(&tenant).Error; err != nil {
-		fmt.Println("🚨 DEBUG: Error getting tenant details:", err)
+		logger.Errorf("[Auth.Login] Error getting tenant details: %v", err)
 		return nil, errors.NewInternalError(err)
 	}
-	fmt.Printf("✅ DEBUG: Tenant status: %s\n", tenant.Status)
+	logger.Debugf("[Auth.Login] Tenant status: %s", tenant.Status)
 
 	// Check tenant status and subscription
 	if tenant.Status != "ACTIVE" && tenant.Status != "TRIAL" {
-		fmt.Println("🚨 DEBUG: Tenant not active or trial")
+		logger.Debugf("[Auth.Login] Tenant not active or trial: %s", tenant.Status)
 		// Record failed attempt - tenant inactive
 		reason := FailureReasonTenantInactive
 		s.recordLoginAttempt(ctx, req.Email, req.IPAddress, req.UserAgent, false, &reason)
@@ -177,7 +177,7 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 
 	// Check trial expiry
 	if tenant.Status == "TRIAL" && tenant.TrialEndsAt != nil && time.Now().After(*tenant.TrialEndsAt) {
-		fmt.Println("🚨 DEBUG: Trial expired")
+		logger.Debugf("[Auth.Login] Trial expired for tenant: %s", tenantID)
 		// Record failed attempt - trial expired
 		reason := FailureReasonTrialExpired
 		s.recordLoginAttempt(ctx, req.Email, req.IPAddress, req.UserAgent, false, &reason)
@@ -192,7 +192,7 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 	}
 
 	// Generate JWT tokens
-	fmt.Println("🔍 DEBUG: Generating access token...")
+	logger.Debugf("[Auth.Login] Generating tokens for user: %s", user.Email)
 	accessToken, err := s.tokenService.GenerateAccessToken(
 		user.ID,
 		user.Email,
@@ -202,31 +202,25 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 		companyAccess,
 	)
 	if err != nil {
-		fmt.Println("🚨 DEBUG: Error generating access token:", err)
+		logger.Errorf("[Auth.Login] Error generating access token: %v", err)
 		return nil, errors.NewInternalError(fmt.Errorf("failed to generate access token: %w", err))
 	}
-	fmt.Println("✅ DEBUG: Access token generated")
 
-	fmt.Println("🔍 DEBUG: Generating refresh token...")
 	refreshToken, err := s.tokenService.GenerateRefreshToken(user.ID)
 	if err != nil {
-		fmt.Println("🚨 DEBUG: Error generating refresh token:", err)
+		logger.Errorf("[Auth.Login] Error generating refresh token: %v", err)
 		return nil, errors.NewInternalError(fmt.Errorf("failed to generate refresh token: %w", err))
 	}
-	fmt.Println("✅ DEBUG: Refresh token generated")
 
 	// Store refresh token
-	fmt.Println("🔍 DEBUG: Storing refresh token...")
 	if err := s.storeRefreshToken(ctx, user.ID, refreshToken, req.DeviceInfo, req.IPAddress, req.UserAgent); err != nil {
-		fmt.Println("🚨 DEBUG: Error storing refresh token:", err)
+		logger.Errorf("[Auth.Login] Error storing refresh token: %v", err)
 		return nil, err
 	}
-	fmt.Println("✅ DEBUG: Refresh token stored")
 
 	// Record successful login
-	fmt.Println("🔍 DEBUG: Recording successful login...")
 	s.recordLoginAttempt(ctx, req.Email, req.IPAddress, req.UserAgent, true, nil) // nil = no failure reason for success
-	fmt.Println("✅ DEBUG: Login recorded")
+	logger.Infof("[Auth.Login] Login successful for user: %s", user.Email)
 
 	return &dto.AuthResponse{
 		AccessToken:  accessToken,
@@ -277,8 +271,8 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *dto.RefreshTokenReq
 	var refreshTokenRecord RefreshToken
 	tokenHash := hashToken(req.RefreshToken)
 
-	// Log token hash being searched (for debugging)
-	fmt.Printf("🔍 DEBUG [RefreshToken]: Searching for token hash with row lock: %s\n", tokenHash[:16]+"...")
+	// Log token hash being searched
+	logger.Debugf("[RefreshToken] Searching for token hash with row lock: %s...", tokenHash[:16])
 
 	// Use Clauses(clause.Locking{Strength: "UPDATE"}) for row-level locking
 	// Second concurrent request will WAIT here until first transaction commits
@@ -290,18 +284,18 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *dto.RefreshTokenReq
 			// Check if token exists but is revoked
 			var revokedToken RefreshToken
 			if err2 := s.db.Where("token_hash = ?", tokenHash).First(&revokedToken).Error; err2 == nil {
-				fmt.Printf("🚨 DEBUG [RefreshToken]: Token found but REVOKED at %v\n", revokedToken.RevokedAt)
-				fmt.Printf("🚨 DEBUG [RefreshToken]: Token was created at %v, revoked after %v\n",
+				logger.Warnf("[RefreshToken] Token found but REVOKED at %v", revokedToken.RevokedAt)
+				logger.Debugf("[RefreshToken] Token was created at %v, revoked after %v",
 					revokedToken.CreatedAt, revokedToken.RevokedAt.Sub(revokedToken.CreatedAt))
 			} else {
-				fmt.Println("🚨 DEBUG [RefreshToken]: Token hash not found in database at all")
+				logger.Warnf("[RefreshToken] Token hash not found in database at all")
 			}
 			return nil, errors.NewAuthenticationError("Refresh token not found or revoked")
 		}
 		return nil, errors.NewInternalError(err)
 	}
 
-	fmt.Printf("✅ DEBUG [RefreshToken]: Token found and locked - Created: %v, Expires: %v\n",
+	logger.Debugf("[RefreshToken] Token found and locked - Created: %v, Expires: %v",
 		refreshTokenRecord.CreatedAt, refreshTokenRecord.ExpiresAt)
 
 	// Check expiry
@@ -323,42 +317,42 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *dto.RefreshTokenReq
 	// Check if user is active
 	if !user.IsActive {
 		tx.Rollback()
-		fmt.Println("🚨 DEBUG [RefreshToken]: User is inactive")
+		logger.Warnf("[RefreshToken] User %s is inactive", user.ID)
 		return nil, errors.NewAuthenticationError("Account is inactive")
 	}
-	fmt.Println("✅ DEBUG [RefreshToken]: User is active")
+	logger.Debugf("[RefreshToken] User %s is active", user.ID)
 
 	// Get user's active tenants
 	// IMPORTANT: Bypass tenant isolation for refresh - we don't have tenant context yet!
-	fmt.Println("🔍 DEBUG [RefreshToken]: Getting user tenants...")
+	logger.Debugf("[RefreshToken] Getting user tenants for user %s", user.ID)
 	var userTenants []UserTenant
 	if err := s.db.Set("bypass_tenant", true).Where("user_id = ? AND is_active = ?", user.ID, true).Find(&userTenants).Error; err != nil {
 		tx.Rollback()
-		fmt.Println("🚨 DEBUG [RefreshToken]: Error getting tenants:", err)
+		logger.Errorf("[RefreshToken] Error getting tenants: %v", err)
 		return nil, errors.NewInternalError(err)
 	}
-	fmt.Printf("✅ DEBUG [RefreshToken]: Found %d tenants\n", len(userTenants))
+	logger.Debugf("[RefreshToken] Found %d tenants for user %s", len(userTenants), user.ID)
 
 	if len(userTenants) == 0 {
 		tx.Rollback()
-		fmt.Println("🚨 DEBUG [RefreshToken]: No active tenants for user")
+		logger.Warnf("[RefreshToken] No active tenants for user %s", user.ID)
 		return nil, errors.NewAuthorizationError("User has no active tenant access")
 	}
 
 	// Use first tenant as default
 	defaultUserTenant := userTenants[0]
-	fmt.Printf("✅ DEBUG [RefreshToken]: Using tenant: %s (role: %s)\n", defaultUserTenant.TenantID, defaultUserTenant.Role)
+	logger.Debugf("[RefreshToken] Using tenant: %s (role: %s)", defaultUserTenant.TenantID, defaultUserTenant.Role)
 
 	// Get tenant and check subscription status
 	// IMPORTANT: Bypass tenant isolation - we're validating tenant before setting context
-	fmt.Println("🔍 DEBUG [RefreshToken]: Getting tenant details...")
+	logger.Debugf("[RefreshToken] Getting tenant details for %s", defaultUserTenant.TenantID)
 	var tenant Tenant
 	if err := s.db.Set("bypass_tenant", true).Where("id = ?", defaultUserTenant.TenantID).First(&tenant).Error; err != nil {
 		tx.Rollback()
-		fmt.Println("🚨 DEBUG [RefreshToken]: Error getting tenant details:", err)
+		logger.Errorf("[RefreshToken] Error getting tenant details: %v", err)
 		return nil, errors.NewInternalError(err)
 	}
-	fmt.Printf("✅ DEBUG [RefreshToken]: Tenant status: %s\n", tenant.Status)
+	logger.Debugf("[RefreshToken] Tenant %s status: %s", tenant.ID, tenant.Status)
 
 	// CRITICAL: Check subscription status before issuing new tokens
 	// Reference: BACKEND-IMPLEMENTATION-ANALYSIS.md - Recommendation #2
@@ -370,7 +364,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *dto.RefreshTokenReq
 	// Check trial expiry
 	if tenant.Status == "TRIAL" && tenant.TrialEndsAt != nil && time.Now().After(*tenant.TrialEndsAt) {
 		tx.Rollback()
-		fmt.Println("🚨 DEBUG [RefreshToken]: Trial expired")
+		logger.Warnf("[RefreshToken] Trial expired for tenant %s", tenant.ID)
 		return nil, errors.NewSubscriptionError("Trial period has expired")
 	}
 
@@ -382,7 +376,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *dto.RefreshTokenReq
 	}
 
 	// Generate new access token (token generation is stateless, no rollback needed)
-	fmt.Println("🔍 DEBUG [RefreshToken]: Generating new access token...")
+	logger.Debugf("[RefreshToken] Generating new access token for user %s", user.ID)
 	accessToken, err := s.tokenService.GenerateAccessToken(
 		user.ID,
 		user.Email,
@@ -393,24 +387,24 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *dto.RefreshTokenReq
 	)
 	if err != nil {
 		tx.Rollback()
-		fmt.Println("🚨 DEBUG [RefreshToken]: Error generating access token:", err)
+		logger.Errorf("[RefreshToken] Error generating access token: %v", err)
 		return nil, errors.NewInternalError(fmt.Errorf("failed to generate access token: %w", err))
 	}
-	fmt.Println("✅ DEBUG [RefreshToken]: Access token generated")
+	logger.Debugf("[RefreshToken] Access token generated for user %s", user.ID)
 
 	// Optionally rotate refresh token (best practice)
-	fmt.Println("🔍 DEBUG [RefreshToken]: Generating new refresh token...")
+	logger.Debugf("[RefreshToken] Generating new refresh token for user %s", user.ID)
 	newRefreshToken, err := s.tokenService.GenerateRefreshToken(user.ID)
 	if err != nil {
 		tx.Rollback()
-		fmt.Println("🚨 DEBUG [RefreshToken]: Error generating refresh token:", err)
+		logger.Errorf("[RefreshToken] Error generating refresh token: %v", err)
 		return nil, errors.NewInternalError(fmt.Errorf("failed to generate refresh token: %w", err))
 	}
-	fmt.Println("✅ DEBUG [RefreshToken]: New refresh token generated")
+	logger.Debugf("[RefreshToken] New refresh token generated for user %s", user.ID)
 
 	// Revoke old refresh token within the transaction
 	// CRITICAL: Use tx instead of s.db to ensure atomicity
-	fmt.Printf("🔍 DEBUG [RefreshToken]: Revoking old token in transaction (hash: %s...)\n", tokenHash[:16])
+	logger.Debugf("[RefreshToken] Revoking old token in transaction (hash: %s...)", tokenHash[:16])
 	result := tx.Model(&RefreshToken{}).
 		Where("token_hash = ?", tokenHash).
 		Updates(map[string]interface{}{
@@ -421,34 +415,34 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *dto.RefreshTokenReq
 
 	if result.Error != nil {
 		tx.Rollback()
-		fmt.Println("🚨 DEBUG [RefreshToken]: Error revoking old token:", result.Error)
+		logger.Errorf("[RefreshToken] Error revoking old token: %v", result.Error)
 		return nil, errors.NewInternalError(result.Error)
 	}
 
-	fmt.Printf("✅ DEBUG [RefreshToken]: Old token revoked in transaction (%d rows affected)\n", result.RowsAffected)
+	logger.Debugf("[RefreshToken] Old token revoked in transaction (%d rows affected)", result.RowsAffected)
 	if result.RowsAffected == 0 {
 		tx.Rollback()
-		fmt.Println("⚠️  WARNING: No rows affected during revocation - token may have been already revoked")
+		logger.Warnf("[RefreshToken] No rows affected during revocation - token may have been already revoked")
 		return nil, errors.NewAuthenticationError("Failed to revoke old token")
 	}
 
 	// Store new refresh token within the transaction
 	// CRITICAL: Use tx for storeRefreshToken to ensure atomicity
-	fmt.Println("🔍 DEBUG [RefreshToken]: Storing new refresh token in transaction...")
+	logger.Debugf("[RefreshToken] Storing new refresh token in transaction for user %s", user.ID)
 	if err := s.storeRefreshTokenTx(ctx, tx, user.ID, newRefreshToken, refreshTokenRecord.DeviceInfo, refreshTokenRecord.IPAddress, refreshTokenRecord.UserAgent); err != nil {
 		tx.Rollback()
-		fmt.Println("🚨 DEBUG [RefreshToken]: Error storing new token:", err)
+		logger.Errorf("[RefreshToken] Error storing new token: %v", err)
 		return nil, err
 	}
-	fmt.Println("✅ DEBUG [RefreshToken]: New refresh token stored in transaction")
+	logger.Debugf("[RefreshToken] New refresh token stored in transaction for user %s", user.ID)
 
 	// Commit the transaction
 	// All operations succeeded - commit atomically
 	if err := tx.Commit().Error; err != nil {
-		fmt.Println("🚨 DEBUG [RefreshToken]: Error committing transaction:", err)
+		logger.Errorf("[RefreshToken] Error committing transaction: %v", err)
 		return nil, errors.NewInternalError(fmt.Errorf("failed to commit transaction: %w", err))
 	}
-	fmt.Println("✅ DEBUG [RefreshToken]: Transaction committed successfully")
+	logger.Infof("[RefreshToken] Token refresh completed successfully for user %s", user.ID)
 
 	return &dto.AuthResponse{
 		AccessToken:  accessToken,
@@ -690,11 +684,11 @@ func (s *AuthService) storeRefreshTokenTx(ctx context.Context, tx *gorm.DB, user
 			"revoked_at": time.Now(),
 			"updated_at": time.Now(),
 		}); result.Error != nil {
-		fmt.Printf("⚠️  WARNING: Failed to revoke expired tokens: %v\n", result.Error)
+		logger.Warnf("[StoreTokenTx] Failed to revoke expired tokens: %v", result.Error)
 	} else {
 		expiredCount = result.RowsAffected
 		if expiredCount > 0 {
-			fmt.Printf("🗑️  DEBUG [StoreToken]: Revoked %d expired tokens\n", expiredCount)
+			logger.Debugf("[StoreTokenTx] Revoked %d expired tokens", expiredCount)
 		}
 	}
 
@@ -703,9 +697,9 @@ func (s *AuthService) storeRefreshTokenTx(ctx context.Context, tx *gorm.DB, user
 	if err := tx.Model(&RefreshToken{}).
 		Where("user_id = ? AND is_revoked = ? AND expires_at > ?", userID, false, time.Now()).
 		Count(&activeTokenCount).Error; err != nil {
-		fmt.Printf("⚠️  WARNING: Failed to count active tokens: %v\n", err)
+		logger.Warnf("[StoreTokenTx] Failed to count active tokens: %v", err)
 	} else {
-		fmt.Printf("📊 DEBUG [StoreToken]: User has %d active tokens (after removing %d expired)\n", activeTokenCount, expiredCount)
+		logger.Debugf("[StoreTokenTx] User has %d active tokens (after removing %d expired)", activeTokenCount, expiredCount)
 
 		// STEP 3: Enforce maximum active token limit
 		// UPDATED: Changed from >= 3 to >= 2 to keep only 1 newest + new one = 2 total
@@ -713,7 +707,7 @@ func (s *AuthService) storeRefreshTokenTx(ctx context.Context, tx *gorm.DB, user
 		const maxActiveTokens = 2 // Keep only 1 old token + 1 new token
 		if activeTokenCount >= maxActiveTokens {
 			tokensToRevoke := activeTokenCount - (maxActiveTokens - 1) // Keep maxActiveTokens-1, revoke the rest
-			fmt.Printf("⚠️  WARNING: User has %d active tokens (limit: %d), revoking %d oldest tokens\n",
+			logger.Warnf("[StoreTokenTx] User has %d active tokens (limit: %d), revoking %d oldest tokens",
 				activeTokenCount, maxActiveTokens, tokensToRevoke)
 
 			// Get oldest tokens to revoke
@@ -722,7 +716,7 @@ func (s *AuthService) storeRefreshTokenTx(ctx context.Context, tx *gorm.DB, user
 				Order("created_at ASC").
 				Limit(int(tokensToRevoke)).
 				Find(&oldTokens).Error; err != nil {
-				fmt.Printf("⚠️  WARNING: Failed to fetch old tokens: %v\n", err)
+				logger.Warnf("[StoreTokenTx] Failed to fetch old tokens: %v", err)
 			} else {
 				// Revoke each old token
 				revokedCount := 0
@@ -734,14 +728,14 @@ func (s *AuthService) storeRefreshTokenTx(ctx context.Context, tx *gorm.DB, user
 							"revoked_at": time.Now(),
 							"updated_at": time.Now(),
 						}).Error; err != nil {
-						fmt.Printf("⚠️  WARNING: Failed to revoke old token %s: %v\n", oldToken.ID, err)
+						logger.Warnf("[StoreTokenTx] Failed to revoke old token %s: %v", oldToken.ID, err)
 					} else {
 						revokedCount++
-						fmt.Printf("🗑️  DEBUG: Revoked old token ID %s from %v (age: %v)\n",
+						logger.Debugf("[StoreTokenTx] Revoked old token ID %s from %v (age: %v)",
 							oldToken.ID[:8], oldToken.CreatedAt, time.Since(oldToken.CreatedAt))
 					}
 				}
-				fmt.Printf("✅ DEBUG [StoreToken]: Successfully revoked %d/%d old tokens\n", revokedCount, len(oldTokens))
+				logger.Debugf("[StoreTokenTx] Successfully revoked %d/%d old tokens", revokedCount, len(oldTokens))
 			}
 		}
 	}
@@ -764,7 +758,7 @@ func (s *AuthService) storeRefreshTokenTx(ctx context.Context, tx *gorm.DB, user
 		return errors.NewInternalError(fmt.Errorf("failed to store refresh token: %w", err))
 	}
 
-	fmt.Printf("✅ DEBUG [StoreToken]: New token stored (expires: %v)\n", expiresAt)
+	logger.Debugf("[StoreTokenTx] New token stored (expires: %v)", expiresAt)
 	return nil
 }
 
@@ -784,11 +778,11 @@ func (s *AuthService) storeRefreshToken(ctx context.Context, userID, token, devi
 			"revoked_at": time.Now(),
 			"updated_at": time.Now(),
 		}); result.Error != nil {
-		fmt.Printf("⚠️  WARNING: Failed to revoke expired tokens: %v\n", result.Error)
+		logger.Warnf("[StoreToken] Failed to revoke expired tokens: %v", result.Error)
 	} else {
 		expiredCount = result.RowsAffected
 		if expiredCount > 0 {
-			fmt.Printf("🗑️  DEBUG [StoreToken]: Revoked %d expired tokens\n", expiredCount)
+			logger.Debugf("[StoreToken] Revoked %d expired tokens", expiredCount)
 		}
 	}
 
@@ -797,15 +791,15 @@ func (s *AuthService) storeRefreshToken(ctx context.Context, userID, token, devi
 	if err := s.db.Model(&RefreshToken{}).
 		Where("user_id = ? AND is_revoked = ? AND expires_at > ?", userID, false, time.Now()).
 		Count(&activeTokenCount).Error; err != nil {
-		fmt.Printf("⚠️  WARNING: Failed to count active tokens: %v\n", err)
+		logger.Warnf("[StoreToken] Failed to count active tokens: %v", err)
 	} else {
-		fmt.Printf("📊 DEBUG [StoreToken]: User has %d active tokens (after removing %d expired)\n", activeTokenCount, expiredCount)
+		logger.Debugf("[StoreToken] User has %d active tokens (after removing %d expired)", activeTokenCount, expiredCount)
 
 		// STEP 3: Enforce maximum active token limit
 		const maxActiveTokens = 2 // Keep only 1 old token + 1 new token
 		if activeTokenCount >= maxActiveTokens {
 			tokensToRevoke := activeTokenCount - (maxActiveTokens - 1)
-			fmt.Printf("⚠️  WARNING: User has %d active tokens (limit: %d), revoking %d oldest tokens\n",
+			logger.Warnf("[StoreToken] User has %d active tokens (limit: %d), revoking %d oldest tokens",
 				activeTokenCount, maxActiveTokens, tokensToRevoke)
 
 			// Get oldest tokens to revoke
@@ -814,7 +808,7 @@ func (s *AuthService) storeRefreshToken(ctx context.Context, userID, token, devi
 				Order("created_at ASC").
 				Limit(int(tokensToRevoke)).
 				Find(&oldTokens).Error; err != nil {
-				fmt.Printf("⚠️  WARNING: Failed to fetch old tokens: %v\n", err)
+				logger.Warnf("[StoreToken] Failed to fetch old tokens: %v", err)
 			} else {
 				// Revoke each old token
 				revokedCount := 0
@@ -826,14 +820,14 @@ func (s *AuthService) storeRefreshToken(ctx context.Context, userID, token, devi
 							"revoked_at": time.Now(),
 							"updated_at": time.Now(),
 						}).Error; err != nil {
-						fmt.Printf("⚠️  WARNING: Failed to revoke old token %s: %v\n", oldToken.ID, err)
+						logger.Warnf("[StoreToken] Failed to revoke old token %s: %v", oldToken.ID, err)
 					} else {
 						revokedCount++
-						fmt.Printf("🗑️  DEBUG: Revoked old token ID %s from %v (age: %v)\n",
+						logger.Debugf("[StoreToken] Revoked old token ID %s from %v (age: %v)",
 							oldToken.ID[:8], oldToken.CreatedAt, time.Since(oldToken.CreatedAt))
 					}
 				}
-				fmt.Printf("✅ DEBUG [StoreToken]: Successfully revoked %d/%d old tokens\n", revokedCount, len(oldTokens))
+				logger.Debugf("[StoreToken] Successfully revoked %d/%d old tokens", revokedCount, len(oldTokens))
 			}
 		}
 	}
@@ -856,7 +850,7 @@ func (s *AuthService) storeRefreshToken(ctx context.Context, userID, token, devi
 		return errors.NewInternalError(fmt.Errorf("failed to store refresh token: %w", err))
 	}
 
-	fmt.Printf("✅ DEBUG [StoreToken]: New token stored (expires: %v)\n", expiresAt)
+	logger.Debugf("[StoreToken] New token stored (expires: %v)", expiresAt)
 	return nil
 }
 
@@ -967,7 +961,7 @@ func (s *AuthService) recordLoginAttempt(ctx context.Context, email, ipAddress, 
 	if err := s.db.Create(&attempt).Error; err != nil {
 		// Don't return error, just log it
 		// Recording attempts should not block authentication
-		fmt.Printf("⚠️  Failed to record login attempt: %v\n", err)
+		logger.Warnf("[RecordLoginAttempt] Failed to record login attempt: %v", err)
 		return nil
 	}
 
@@ -1052,7 +1046,7 @@ func (s *AuthService) SwitchTenant(userID string, newTenantID string) (string, *
 // SwitchCompany switches user's active company within current tenant (PHASE 3)
 // Returns new access token with updated activeCompanyID claim
 func (s *AuthService) SwitchCompany(userID, tenantID, newCompanyID string) (string, *models.Company, error) {
-	fmt.Printf("🔄 [SwitchCompany] START - UserID: %s, TenantID: %s, CompanyID: %s\n", userID, tenantID, newCompanyID)
+	logger.Infof("[SwitchCompany] START - UserID: %s, TenantID: %s, CompanyID: %s", userID, tenantID, newCompanyID)
 
 	// 1. Validate company exists and belongs to tenant
 	var company models.Company
@@ -1061,76 +1055,76 @@ func (s *AuthService) SwitchCompany(userID, tenantID, newCompanyID string) (stri
 	err := s.db.Set("bypass_tenant", true).Where("id = ? AND tenant_id = ? AND is_active = ?",
 		newCompanyID, tenantID, true).First(&company).Error
 	if err != nil {
-		fmt.Printf("❌ [SwitchCompany] Company not found: %v\n", err)
+		logger.Warnf("[SwitchCompany] Company not found: %v", err)
 		if err == gorm.ErrRecordNotFound {
 			return "", nil, errors.NewNotFoundError("Company")
 		}
 		return "", nil, errors.NewInternalError(err)
 	}
-	fmt.Printf("✅ [SwitchCompany] Company found: %s\n", company.Name)
+	logger.Debugf("[SwitchCompany] Company found: %s", company.Name)
 
 	// 2. Validate user has access to this company
 	// Check Tier 1 access (OWNER/TENANT_ADMIN)
 	var userTenant UserTenant
-	fmt.Printf("🔍 [SwitchCompany] Checking Tier 1 access...\n")
+	logger.Debugf("[SwitchCompany] Checking Tier 1 access...")
 	// Bypass tenant isolation - we're checking access during switch operation
 	err = s.db.Set("bypass_tenant", true).Where("user_id = ? AND tenant_id = ? AND is_active = ? AND role IN ?",
 		userID, tenantID, true, []string{"OWNER", "TENANT_ADMIN"}).First(&userTenant).Error
 
 	if err != nil {
-		fmt.Printf("⚠️ [SwitchCompany] Tier 1 check error: %v\n", err)
+		logger.Debugf("[SwitchCompany] Tier 1 check error: %v", err)
 	} else {
-		fmt.Printf("✅ [SwitchCompany] Tier 1 access granted - Role: %s\n", userTenant.Role)
+		logger.Debugf("[SwitchCompany] Tier 1 access granted - Role: %s", userTenant.Role)
 	}
 
 	hasTier1Access := err == nil
 
 	// If no Tier 1 access, check Tier 2 access (UserCompanyRole)
 	if !hasTier1Access {
-		fmt.Printf("🔍 [SwitchCompany] Checking Tier 2 access...\n")
+		logger.Debugf("[SwitchCompany] Checking Tier 2 access...")
 		var userCompanyRole models.UserCompanyRole
 		// Bypass tenant isolation - we're checking access during switch operation
 		err = s.db.Set("bypass_tenant", true).Where("user_id = ? AND company_id = ? AND is_active = ?",
 			userID, newCompanyID, true).First(&userCompanyRole).Error
 		if err != nil {
-			fmt.Printf("❌ [SwitchCompany] Tier 2 check error: %v\n", err)
+			logger.Warnf("[SwitchCompany] Tier 2 check error: %v", err)
 			if err == gorm.ErrRecordNotFound {
 				return "", nil, errors.NewAuthorizationError("You don't have access to this company")
 			}
 			return "", nil, errors.NewInternalError(err)
 		}
-		fmt.Printf("✅ [SwitchCompany] Tier 2 access granted\n")
+		logger.Debugf("[SwitchCompany] Tier 2 access granted")
 	}
 
 	// 3. Get user details for token generation
-	fmt.Printf("🔍 [SwitchCompany] Getting user details...\n")
+	logger.Debugf("[SwitchCompany] Getting user details...")
 	var user User
 	// Bypass tenant isolation - users table doesn't have tenant_id but middleware might still block
 	err = s.db.Set("bypass_tenant", true).Where("id = ?", userID).First(&user).Error
 	if err != nil {
-		fmt.Printf("❌ [SwitchCompany] User not found: %v\n", err)
+		logger.Errorf("[SwitchCompany] User not found: %v", err)
 		return "", nil, errors.NewInternalError(err)
 	}
-	fmt.Printf("✅ [SwitchCompany] User found: %s\n", user.Email)
+	logger.Debugf("[SwitchCompany] User found: %s", user.Email)
 
 	// 4. Determine user's role based on access tier
 	var userRole string
 	if hasTier1Access {
 		// Tier 1: Use role from user_tenants
 		userRole = userTenant.Role
-		fmt.Printf("✅ [SwitchCompany] Using Tier 1 role: %s\n", userRole)
+		logger.Debugf("[SwitchCompany] Using Tier 1 role: %s", userRole)
 	} else {
 		// Tier 2: Get role from user_company_roles for the specific company
-		fmt.Printf("🔍 [SwitchCompany] Getting Tier 2 role for company...\n")
+		logger.Debugf("[SwitchCompany] Getting Tier 2 role for company...")
 		var userCompanyRole models.UserCompanyRole
 		err = s.db.Set("bypass_tenant", true).Where("user_id = ? AND company_id = ? AND is_active = ?",
 			userID, newCompanyID, true).First(&userCompanyRole).Error
 		if err != nil {
-			fmt.Printf("❌ [SwitchCompany] Failed to get company role: %v\n", err)
+			logger.Errorf("[SwitchCompany] Failed to get company role: %v", err)
 			return "", nil, errors.NewInternalError(err)
 		}
 		userRole = string(userCompanyRole.Role)
-		fmt.Printf("✅ [SwitchCompany] Using Tier 2 role: %s\n", userRole)
+		logger.Debugf("[SwitchCompany] Using Tier 2 role: %s", userRole)
 	}
 
 	// 5. Build company access list for JWT
