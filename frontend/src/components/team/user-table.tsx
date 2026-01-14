@@ -155,10 +155,10 @@ export function UserTable({
           }
         >
           <SelectTrigger className="w-full sm:w-[180px] bg-background">
-            <SelectValue placeholder="Semua Pengguna" />
+            <SelectValue placeholder="Semua Status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Semua Pengguna</SelectItem>
+            <SelectItem value="all">Semua Status</SelectItem>
             <SelectItem value="active">Aktif</SelectItem>
             <SelectItem value="inactive">Tidak Aktif</SelectItem>
           </SelectContent>

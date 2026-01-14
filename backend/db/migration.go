@@ -129,7 +129,7 @@ func AutoMigrateAuth(db *gorm.DB) error {
 }
 
 // AutoMigratePhase4 runs GORM auto-migration for Phase 4 models
-// Phase 4: Supporting modules (InventoryMovement, StockOpname, StockTransfer, CashTransaction, System)
+// Phase 4: Supporting modules (InventoryMovement, StockOpname, StockTransfer, InventoryAdjustment, CashTransaction, System)
 // CRITICAL: Order matters - parent tables before child tables
 func AutoMigratePhase4(db *gorm.DB) error {
 	return db.AutoMigrate(
@@ -143,6 +143,10 @@ func AutoMigratePhase4(db *gorm.DB) error {
 		// Inter-warehouse transfer
 		&models.StockTransfer{},
 		&models.StockTransferItem{},
+
+		// Inventory adjustment (manual stock adjustments)
+		&models.InventoryAdjustment{},
+		&models.InventoryAdjustmentItem{},
 
 		// Cash book (Buku Kas)
 		&models.CashTransaction{},

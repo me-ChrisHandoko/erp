@@ -238,3 +238,34 @@ const (
 	CashCategoryOtherIncome   CashCategory = "OTHER_INCOME"   // Pendapatan lain
 	CashCategoryOtherExpense  CashCategory = "OTHER_EXPENSE"  // Pengeluaran lain
 )
+
+// InventoryAdjustmentStatus - Stock adjustment workflow
+type InventoryAdjustmentStatus string
+
+const (
+	InventoryAdjustmentStatusDraft     InventoryAdjustmentStatus = "DRAFT"     // Created, not approved
+	InventoryAdjustmentStatusApproved  InventoryAdjustmentStatus = "APPROVED"  // Approved, stock updated
+	InventoryAdjustmentStatusCancelled InventoryAdjustmentStatus = "CANCELLED" // Cancelled
+)
+
+// InventoryAdjustmentType - Stock adjustment direction
+type InventoryAdjustmentType string
+
+const (
+	InventoryAdjustmentTypeIncrease InventoryAdjustmentType = "INCREASE" // Penambahan stok
+	InventoryAdjustmentTypeDecrease InventoryAdjustmentType = "DECREASE" // Pengurangan stok
+)
+
+// InventoryAdjustmentReason - Reason for stock adjustment
+type InventoryAdjustmentReason string
+
+const (
+	InventoryAdjustmentReasonShrinkage  InventoryAdjustmentReason = "SHRINKAGE"  // Susut/kehilangan
+	InventoryAdjustmentReasonDamage     InventoryAdjustmentReason = "DAMAGE"     // Barang rusak
+	InventoryAdjustmentReasonExpired    InventoryAdjustmentReason = "EXPIRED"    // Kadaluarsa
+	InventoryAdjustmentReasonTheft      InventoryAdjustmentReason = "THEFT"      // Pencurian
+	InventoryAdjustmentReasonOpname     InventoryAdjustmentReason = "OPNAME"     // Hasil stok opname
+	InventoryAdjustmentReasonCorrection InventoryAdjustmentReason = "CORRECTION" // Koreksi data
+	InventoryAdjustmentReasonReturn     InventoryAdjustmentReason = "RETURN"     // Retur supplier
+	InventoryAdjustmentReasonOther      InventoryAdjustmentReason = "OTHER"      // Lainnya
+)

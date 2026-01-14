@@ -13,6 +13,7 @@ import (
 	"backend/internal/service/auth"
 	"backend/internal/service/company"
 	"backend/internal/service/customer"
+	"backend/internal/service/inventoryadjustment"
 	"backend/internal/service/permission"
 	"backend/internal/service/product"
 	"backend/internal/service/stock_transfer"
@@ -447,6 +448,30 @@ func setupProtectedRoutes(
 
 			// Bulk import endpoint - OWNER/ADMIN only
 			stockOpnameGroup.POST("/:id/import-products", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockOpnameHandler.ImportWarehouseProducts)
+		}
+
+		// ============================================================================
+		// INVENTORY ADJUSTMENT MANAGEMENT ROUTES (PHASE 2 - Inventory Management)
+		// Reference: Manual stock adjustments (increase/decrease) for various reasons
+		// ============================================================================
+		inventoryAdjustmentService := inventoryadjustment.NewInventoryAdjustmentService(db)
+		inventoryAdjustmentHandler := handler.NewInventoryAdjustmentHandler(inventoryAdjustmentService)
+
+		inventoryAdjustmentGroup := businessProtected.Group("/inventory-adjustments")
+		inventoryAdjustmentGroup.Use(middleware.CompanyContextMiddleware(db))
+		{
+			// GET endpoints - all authenticated users can view
+			inventoryAdjustmentGroup.GET("", inventoryAdjustmentHandler.ListInventoryAdjustments)
+			inventoryAdjustmentGroup.GET("/:id", inventoryAdjustmentHandler.GetInventoryAdjustment)
+
+			// POST/PUT/DELETE endpoints - OWNER/ADMIN only
+			inventoryAdjustmentGroup.POST("", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), inventoryAdjustmentHandler.CreateInventoryAdjustment)
+			inventoryAdjustmentGroup.PUT("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), inventoryAdjustmentHandler.UpdateInventoryAdjustment)
+			inventoryAdjustmentGroup.DELETE("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), inventoryAdjustmentHandler.DeleteInventoryAdjustment)
+
+			// Status transition endpoints - OWNER/ADMIN only
+			inventoryAdjustmentGroup.POST("/:id/approve", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), inventoryAdjustmentHandler.ApproveInventoryAdjustment)
+			inventoryAdjustmentGroup.POST("/:id/cancel", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), inventoryAdjustmentHandler.CancelInventoryAdjustment)
 		}
 
 		// Example of role-based routes
