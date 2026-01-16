@@ -12,6 +12,7 @@
 
 import { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
+import { useRouter } from "next/navigation";
 import { Plus, Search, PackageOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,8 +30,6 @@ import { useListTransfersQuery } from "@/store/services/transferApi";
 import { useListWarehousesQuery } from "@/store/services/warehouseApi";
 import { usePermissions } from "@/hooks/use-permissions";
 import { TransfersTable } from "@/components/transfers/transfers-table";
-import { TransferDetailDialog } from "@/components/transfers/transfer-detail-dialog";
-import { CreateTransferDialog } from "@/components/transfers/create-transfer-dialog";
 import { ShipTransferDialog } from "@/components/transfers/ship-transfer-dialog";
 import { ReceiveTransferDialog } from "@/components/transfers/receive-transfer-dialog";
 import { CancelTransferDialog } from "@/components/transfers/cancel-transfer-dialog";
@@ -43,6 +42,8 @@ interface TransfersClientProps {
 }
 
 export function TransfersClient({ initialData }: TransfersClientProps) {
+  const router = useRouter();
+
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StockTransferStatus | undefined>(
@@ -54,10 +55,6 @@ export function TransfersClient({ initialData }: TransfersClientProps) {
   const [destWarehouseFilter, setDestWarehouseFilter] = useState<string | undefined>(
     undefined
   );
-  const [selectedTransfer, setSelectedTransfer] = useState<StockTransfer | null>(null);
-  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [transferToEdit, setTransferToEdit] = useState<StockTransfer | null>(null);
 
   // Action dialogs state
   const [transferToShip, setTransferToShip] = useState<StockTransfer | null>(null);
@@ -187,8 +184,7 @@ export function TransfersClient({ initialData }: TransfersClientProps) {
 
   // Action handlers
   const handleView = (transfer: StockTransfer) => {
-    setSelectedTransfer(transfer);
-    setIsDetailDialogOpen(true);
+    router.push(`/inventory/transfers/${transfer.id}`);
   };
 
   const handleShip = (transfer: StockTransfer) => {
@@ -207,8 +203,7 @@ export function TransfersClient({ initialData }: TransfersClientProps) {
   };
 
   const handleEdit = (transfer: StockTransfer) => {
-    setTransferToEdit(transfer);
-    setIsCreateDialogOpen(true); // Reuse create dialog for edit mode
+    router.push(`/inventory/transfers/${transfer.id}/edit`);
   };
 
   const handleDelete = (transfer: StockTransfer) => {
@@ -217,16 +212,7 @@ export function TransfersClient({ initialData }: TransfersClientProps) {
   };
 
   const handleCreateClick = () => {
-    // Clear edit state before opening dialog to ensure it opens in create mode
-    setTransferToEdit(null);
-    setIsCreateDialogOpen(true);
-  };
-
-  const handleCreateSuccess = () => {
-    // Close dialog (this will trigger onOpenChange which handles clearing edit state)
-    setIsCreateDialogOpen(false);
-    // Refetch transfers list after successful creation/update
-    refetch();
+    router.push("/inventory/transfers/create");
   };
 
   const handleActionSuccess = () => {
@@ -375,7 +361,7 @@ export function TransfersClient({ initialData }: TransfersClientProps) {
                     Mulai dengan membuat transfer gudang pertama Anda
                   </p>
                   {canCreateTransfers && (
-                    <Button onClick={() => setIsCreateDialogOpen(true)}>
+                    <Button onClick={handleCreateClick}>
                       <Plus className="mr-2 h-4 w-4" />
                       Buat Transfer
                     </Button>
@@ -509,29 +495,6 @@ export function TransfersClient({ initialData }: TransfersClientProps) {
           )}
         </CardContent>
       </Card>
-
-      {/* Transfer Detail Dialog */}
-      <TransferDetailDialog
-        transfer={selectedTransfer}
-        open={isDetailDialogOpen}
-        onOpenChange={setIsDetailDialogOpen}
-      />
-
-      {/* Create/Edit Transfer Dialog */}
-      <CreateTransferDialog
-        open={isCreateDialogOpen}
-        onOpenChange={(open) => {
-          setIsCreateDialogOpen(open);
-          if (!open) {
-            // Clear edit state after animation completes (200ms matches dialog duration-200)
-            setTimeout(() => {
-              setTransferToEdit(null);
-            }, 200);
-          }
-        }}
-        onSuccess={handleCreateSuccess}
-        transferToEdit={transferToEdit}
-      />
 
       {/* Ship Transfer Dialog */}
       <ShipTransferDialog

@@ -12,6 +12,7 @@
 
 import { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
+import { useRouter } from "next/navigation";
 import { Plus, Search, Warehouse } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +30,6 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { useListWarehousesQuery } from "@/store/services/warehouseApi";
 import { usePermissions } from "@/hooks/use-permissions";
 import { WarehousesTable } from "@/components/warehouses/warehouses-table";
-import { CreateWarehouseDialog } from "@/components/warehouses/create-warehouse-dialog";
 import type {
   WarehouseFilters,
   WarehouseType,
@@ -43,6 +43,7 @@ interface WarehousesClientProps {
 }
 
 export function WarehousesClient({ initialData }: WarehousesClientProps) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<WarehouseType | undefined>(
@@ -51,7 +52,6 @@ export function WarehousesClient({ initialData }: WarehousesClientProps) {
   const [statusFilter, setStatusFilter] = useState<boolean | undefined>(
     undefined
   );
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [filters, setFilters] = useState<WarehouseFilters>({
     page: 1,
     pageSize: 20,
@@ -184,7 +184,7 @@ export function WarehousesClient({ initialData }: WarehousesClientProps) {
             {canCreateWarehouses && (
               <Button
                 className="shrink-0"
-                onClick={() => setIsCreateDialogOpen(true)}
+                onClick={() => router.push("/master/warehouses/create")}
               >
                 <Plus className="mr-2 h-4 w-4" />
                 Tambah Gudang
@@ -305,7 +305,7 @@ export function WarehousesClient({ initialData }: WarehousesClientProps) {
                         canCreateWarehouses
                           ? {
                               label: "Tambah Gudang",
-                              onClick: () => setIsCreateDialogOpen(true),
+                              onClick: () => router.push("/master/warehouses/create"),
                             }
                           : undefined
                       }
@@ -434,12 +434,6 @@ export function WarehousesClient({ initialData }: WarehousesClientProps) {
               )}
             </CardContent>
           </Card>
-
-      {/* Create Warehouse Dialog */}
-      <CreateWarehouseDialog
-        open={isCreateDialogOpen}
-        onOpenChange={setIsCreateDialogOpen}
-      />
     </div>
   );
 }

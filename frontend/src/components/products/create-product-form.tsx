@@ -38,13 +38,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
-import { useCreateProductMutation } from "@/store/services/productApi";
+import {
+  useCreateProductMutation,
+  useLinkSupplierMutation,
+} from "@/store/services/productApi";
 import { toast } from "sonner";
 import {
   PRODUCT_CATEGORIES,
   COMMON_UNITS,
   type CreateProductRequest,
 } from "@/types/product.types";
+import {
+  ProductSuppliersSection,
+  type SupplierFormData,
+} from "./product-suppliers-section";
 
 interface CreateProductFormProps {
   onSuccess?: (productId: string) => void;
@@ -55,7 +62,10 @@ export function CreateProductForm({
   onSuccess,
   onCancel,
 }: CreateProductFormProps) {
-  const [createProduct, { isLoading }] = useCreateProductMutation();
+  const [createProduct, { isLoading: isCreatingProduct }] = useCreateProductMutation();
+  const [linkSupplier, { isLoading: isLinkingSupplier }] = useLinkSupplierMutation();
+
+  const isLoading = isCreatingProduct || isLinkingSupplier;
 
   // Form state
   const [formData, setFormData] = useState<CreateProductRequest>({
@@ -74,6 +84,9 @@ export function CreateProductForm({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+
+  // Suppliers state
+  const [suppliers, setSuppliers] = useState<SupplierFormData[]>([]);
 
   const handleChange = (field: keyof CreateProductRequest, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -190,11 +203,42 @@ export function CreateProductForm({
         ...(formData.minimumStock && formData.minimumStock !== "0" && { minimumStock: formData.minimumStock }),
       };
 
+      // Create the product first
       const result = await createProduct(cleanedData).unwrap();
 
-      toast.success("✓ Produk Berhasil Dibuat", {
-        description: `${result.name} telah ditambahkan ke katalog`,
-      });
+      // Link suppliers to the newly created product
+      const supplierErrors: string[] = [];
+      for (const supplier of suppliers) {
+        try {
+          await linkSupplier({
+            productId: result.id,
+            data: {
+              supplierId: supplier.supplierId,
+              supplierPrice: supplier.supplierPrice,
+              leadTimeDays: supplier.leadTimeDays ? parseInt(supplier.leadTimeDays) : undefined,
+              minimumOrderQty: supplier.minimumOrderQty || undefined,
+              supplierProductCode: supplier.supplierProductCode || undefined,
+              supplierProductName: supplier.supplierProductName || undefined,
+              isPrimarySupplier: supplier.isPrimarySupplier,
+            },
+          }).unwrap();
+        } catch (error: any) {
+          supplierErrors.push(`Gagal menambahkan supplier ${supplier.supplierName}`);
+        }
+      }
+
+      // Show success message
+      if (supplierErrors.length > 0) {
+        toast.warning("Produk Dibuat dengan Peringatan", {
+          description: `${result.name} telah ditambahkan, tetapi: ${supplierErrors.join(", ")}`,
+        });
+      } else {
+        toast.success("Produk Berhasil Dibuat", {
+          description: suppliers.length > 0
+            ? `${result.name} telah ditambahkan dengan ${suppliers.length} supplier`
+            : `${result.name} telah ditambahkan ke katalog`,
+        });
+      }
 
       if (onSuccess) {
         onSuccess(result.id);
@@ -602,6 +646,13 @@ export function CreateProductForm({
           </div>
         </CardContent>
       </Card>
+
+      {/* Suppliers Section */}
+      <ProductSuppliersSection
+        suppliers={suppliers}
+        onSuppliersChange={setSuppliers}
+        disabled={isLoading}
+      />
 
       {/* Form Actions */}
       <div className="flex justify-end gap-3 pt-2">

@@ -315,6 +315,7 @@ export interface PaginationInfo {
 export interface ProductFilters {
   search?: string; // search in code or name
   category?: string;
+  supplierId?: string; // filter products by supplier
   isActive?: boolean;
   isBatchTracked?: boolean;
   isPerishable?: boolean;

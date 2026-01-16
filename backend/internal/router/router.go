@@ -13,12 +13,17 @@ import (
 	"backend/internal/service/auth"
 	"backend/internal/service/company"
 	"backend/internal/service/customer"
+	"backend/internal/service/document"
+	"backend/internal/service/goodsreceipt"
 	"backend/internal/service/inventoryadjustment"
 	"backend/internal/service/permission"
 	"backend/internal/service/product"
+	"backend/internal/service/purchase"
+	"backend/internal/service/purchaseinvoice"
 	"backend/internal/service/stock_transfer"
 	"backend/internal/service/stockopname"
 	"backend/internal/service/supplier"
+	"backend/internal/service/supplierpayment"
 	"backend/internal/service/tenant"
 	"backend/internal/service/warehouse"
 	"backend/pkg/email"
@@ -472,6 +477,111 @@ func setupProtectedRoutes(
 			// Status transition endpoints - OWNER/ADMIN only
 			inventoryAdjustmentGroup.POST("/:id/approve", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), inventoryAdjustmentHandler.ApproveInventoryAdjustment)
 			inventoryAdjustmentGroup.POST("/:id/cancel", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), inventoryAdjustmentHandler.CancelInventoryAdjustment)
+		}
+
+		// ============================================================================
+		// DOCUMENT NUMBER GENERATOR (Shared service for all document types)
+		// Reference: Auto-generate document numbers based on company format settings
+		// ============================================================================
+		docNumberGen := document.NewDocumentNumberGenerator(db)
+
+		// ============================================================================
+		// PURCHASE ORDER MANAGEMENT ROUTES (PHASE 3 - Procurement)
+		// Reference: Purchase order management for procurement workflow
+		// ============================================================================
+		purchaseOrderService := purchase.NewPurchaseOrderService(db, docNumberGen)
+		purchaseOrderHandler := handler.NewPurchaseOrderHandler(purchaseOrderService)
+
+		purchaseOrderGroup := businessProtected.Group("/purchase-orders")
+		purchaseOrderGroup.Use(middleware.CompanyContextMiddleware(db))
+		{
+			// GET endpoints - all authenticated users can view
+			purchaseOrderGroup.GET("", purchaseOrderHandler.ListPurchaseOrders)
+			purchaseOrderGroup.GET("/:id", purchaseOrderHandler.GetPurchaseOrder)
+
+			// POST/PUT/DELETE endpoints - OWNER/ADMIN only
+			purchaseOrderGroup.POST("", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseOrderHandler.CreatePurchaseOrder)
+			purchaseOrderGroup.PUT("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseOrderHandler.UpdatePurchaseOrder)
+			purchaseOrderGroup.DELETE("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseOrderHandler.DeletePurchaseOrder)
+
+			// Status transition endpoints - OWNER/ADMIN only
+			purchaseOrderGroup.POST("/:id/confirm", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseOrderHandler.ConfirmPurchaseOrder)
+			purchaseOrderGroup.POST("/:id/complete", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseOrderHandler.CompletePurchaseOrder)
+			purchaseOrderGroup.POST("/:id/cancel", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseOrderHandler.CancelPurchaseOrder)
+		}
+
+		// ============================================================================
+		// GOODS RECEIPT MANAGEMENT ROUTES (PHASE 3 - Procurement)
+		// Reference: Goods receipt (penerimaan barang) management for procurement workflow
+		// ============================================================================
+		goodsReceiptService := goodsreceipt.NewGoodsReceiptService(db)
+		goodsReceiptHandler := handler.NewGoodsReceiptHandler(goodsReceiptService)
+
+		goodsReceiptGroup := businessProtected.Group("/goods-receipts")
+		goodsReceiptGroup.Use(middleware.CompanyContextMiddleware(db))
+		{
+			// GET endpoints - all authenticated users can view
+			goodsReceiptGroup.GET("", goodsReceiptHandler.ListGoodsReceipts)
+			goodsReceiptGroup.GET("/:id", goodsReceiptHandler.GetGoodsReceipt)
+
+			// POST/PUT/DELETE endpoints - OWNER/ADMIN only
+			goodsReceiptGroup.POST("", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), goodsReceiptHandler.CreateGoodsReceipt)
+			goodsReceiptGroup.PUT("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), goodsReceiptHandler.UpdateGoodsReceipt)
+			goodsReceiptGroup.DELETE("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), goodsReceiptHandler.DeleteGoodsReceipt)
+
+			// Status transition endpoints - OWNER/ADMIN only
+			goodsReceiptGroup.POST("/:id/receive", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), goodsReceiptHandler.ReceiveGoods)
+			goodsReceiptGroup.POST("/:id/inspect", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), goodsReceiptHandler.InspectGoods)
+			goodsReceiptGroup.POST("/:id/accept", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), goodsReceiptHandler.AcceptGoods)
+			goodsReceiptGroup.POST("/:id/reject", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), goodsReceiptHandler.RejectGoods)
+		}
+
+		// ============================================================================
+		// PURCHASE INVOICE MANAGEMENT ROUTES (PHASE 3 - Procurement)
+		// Reference: Purchase invoice (faktur pembelian) management for supplier invoices
+		// ============================================================================
+		purchaseInvoiceService := purchaseinvoice.NewPurchaseInvoiceService(db, docNumberGen)
+		purchaseInvoiceHandler := handler.NewPurchaseInvoiceHandler(purchaseInvoiceService)
+
+		purchaseInvoiceGroup := businessProtected.Group("/purchase-invoices")
+		purchaseInvoiceGroup.Use(middleware.CompanyContextMiddleware(db))
+		{
+			// GET endpoints - all authenticated users can view
+			purchaseInvoiceGroup.GET("", purchaseInvoiceHandler.ListPurchaseInvoices)
+			purchaseInvoiceGroup.GET("/:id", purchaseInvoiceHandler.GetPurchaseInvoice)
+
+			// POST/PUT/DELETE endpoints - OWNER/ADMIN only
+			purchaseInvoiceGroup.POST("", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseInvoiceHandler.CreatePurchaseInvoice)
+			purchaseInvoiceGroup.PUT("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseInvoiceHandler.UpdatePurchaseInvoice)
+			purchaseInvoiceGroup.DELETE("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseInvoiceHandler.DeletePurchaseInvoice)
+
+			// Workflow transition endpoints - OWNER/ADMIN only
+			purchaseInvoiceGroup.POST("/:id/approve", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseInvoiceHandler.ApprovePurchaseInvoice)
+			purchaseInvoiceGroup.POST("/:id/reject", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseInvoiceHandler.RejectPurchaseInvoice)
+			purchaseInvoiceGroup.POST("/:id/payment", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseInvoiceHandler.RecordPayment)
+		}
+
+		// ============================================================================
+		// SUPPLIER PAYMENT MANAGEMENT ROUTES (PHASE 3 - Procurement)
+		// Reference: Supplier payment (pembayaran supplier) management for supplier payments
+		// ============================================================================
+		supplierPaymentService := supplierpayment.NewSupplierPaymentService(db, docNumberGen)
+		supplierPaymentHandler := handler.NewSupplierPaymentHandler(supplierPaymentService)
+
+		supplierPaymentGroup := businessProtected.Group("/supplier-payments")
+		supplierPaymentGroup.Use(middleware.CompanyContextMiddleware(db))
+		{
+			// GET endpoints - all authenticated users can view
+			supplierPaymentGroup.GET("", supplierPaymentHandler.ListSupplierPayments)
+			supplierPaymentGroup.GET("/:id", supplierPaymentHandler.GetSupplierPayment)
+
+			// POST/PUT/DELETE endpoints - OWNER/ADMIN only
+			supplierPaymentGroup.POST("", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), supplierPaymentHandler.CreateSupplierPayment)
+			supplierPaymentGroup.PUT("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), supplierPaymentHandler.UpdateSupplierPayment)
+			supplierPaymentGroup.DELETE("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), supplierPaymentHandler.DeleteSupplierPayment)
+
+			// Approval endpoint - OWNER/ADMIN only
+			supplierPaymentGroup.POST("/:id/approve", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), supplierPaymentHandler.ApproveSupplierPayment)
 		}
 
 		// Example of role-based routes

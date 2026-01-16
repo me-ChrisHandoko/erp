@@ -393,15 +393,15 @@ export function ProductDetail({ product }: ProductDetailProps) {
       )}
 
       {/* Suppliers Table */}
-      {product.suppliers && product.suppliers.length > 0 && (
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Building2 className="h-5 w-5" />
-              Supplier Produk
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+      <Card className="md:col-span-2">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Building2 className="h-5 w-5" />
+            Supplier Produk
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {product.suppliers && product.suppliers.length > 0 ? (
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
@@ -409,6 +409,7 @@ export function ProductDetail({ product }: ProductDetailProps) {
                     <TableHead>Nama Supplier</TableHead>
                     <TableHead className="text-right">Harga Supplier</TableHead>
                     <TableHead className="text-right">Lead Time</TableHead>
+                    <TableHead className="text-right">MOQ</TableHead>
                     <TableHead className="text-center">Status</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -416,22 +417,32 @@ export function ProductDetail({ product }: ProductDetailProps) {
                   {product.suppliers.map((supplier) => (
                     <TableRow key={supplier.id}>
                       <TableCell className="font-medium">
-                        {supplier.supplierName}
-                        {supplier.isPrimarySupplier && (
-                          <Badge
-                            variant="default"
-                            className="ml-2 bg-blue-500 text-xs"
-                          >
-                            Primary
-                          </Badge>
+                        <div>
+                          <span>{supplier.supplierCode} - {supplier.supplierName}</span>
+                          {supplier.isPrimarySupplier && (
+                            <Badge
+                              variant="default"
+                              className="ml-2 bg-blue-500 text-xs"
+                            >
+                              Utama
+                            </Badge>
+                          )}
+                        </div>
+                        {supplier.supplierProductCode && (
+                          <p className="text-xs text-muted-foreground">
+                            Kode: {supplier.supplierProductCode}
+                          </p>
                         )}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right font-mono">
                         Rp{" "}
                         {Number(supplier.supplierPrice).toLocaleString("id-ID")}
                       </TableCell>
                       <TableCell className="text-right">
-                        {supplier.leadTimeDays} hari
+                        {supplier.leadTimeDays || "-"} hari
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {supplier.minimumOrderQty || "-"}
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge variant="outline" className="text-xs">
@@ -444,9 +455,15 @@ export function ProductDetail({ product }: ProductDetailProps) {
                 </TableBody>
               </Table>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Building2 className="mx-auto h-12 w-12 mb-4 opacity-50" />
+              <p>Belum ada supplier terhubung</p>
+              <p className="text-sm">Gunakan tombol "Edit Produk" untuk mengelola supplier</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Stock Information */}
       {product.currentStock && (

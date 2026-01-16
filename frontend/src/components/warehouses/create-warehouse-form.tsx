@@ -279,7 +279,7 @@ export function CreateWarehouseForm({
         </CardContent>
       </Card>
 
-      {/* Location Information */}
+      {/* Location & Contact Information */}
       <Card className="border-2">
         <CardContent>
           <div className="space-y-4">
@@ -333,32 +333,8 @@ export function CreateWarehouseForm({
               </div>
             </div>
 
-            {/* Postal Code */}
-            <div className="space-y-2">
-              <Label htmlFor="postalCode" className="text-sm font-medium">
-                Kode Pos
-              </Label>
-              <Input
-                id="postalCode"
-                value={formData.postalCode || ""}
-                onChange={(e) => handleChange("postalCode", e.target.value)}
-                placeholder="12345"
-              />
-              <p className="text-xs text-muted-foreground">
-                Kode pos area gudang
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Contact & Management */}
-      <div className="grid gap-6 sm:grid-cols-2">
-        {/* Contact Information */}
-        <Card className="border-2">
-          <CardContent>
-            <div className="space-y-4">
-              {/* Phone */}
+            {/* Phone and Postal Code */}
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="phone" className="text-sm font-medium">
                   Telepon
@@ -374,7 +350,24 @@ export function CreateWarehouseForm({
                 </p>
               </div>
 
-              {/* Email */}
+              <div className="space-y-2">
+                <Label htmlFor="postalCode" className="text-sm font-medium">
+                  Kode Pos
+                </Label>
+                <Input
+                  id="postalCode"
+                  value={formData.postalCode || ""}
+                  onChange={(e) => handleChange("postalCode", e.target.value)}
+                  placeholder="12345"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Kode pos area gudang
+                </p>
+              </div>
+            </div>
+
+            {/* Email and Capacity */}
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-sm font-medium">
                   Email
@@ -400,15 +393,7 @@ export function CreateWarehouseForm({
                   Email kontak gudang
                 </p>
               </div>
-            </div>
-          </CardContent>
-        </Card>
 
-        {/* Management Information */}
-        <Card className="border-2">
-          <CardContent>
-            <div className="space-y-4">
-              {/* Capacity */}
               <div className="space-y-2">
                 <Label htmlFor="capacity" className="text-sm font-medium">
                   Kapasitas (m²)
@@ -439,9 +424,9 @@ export function CreateWarehouseForm({
                 </p>
               </div>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Form Actions */}
       <div className="flex justify-end gap-3 pt-2">

@@ -52,6 +52,7 @@ export const productApi = createApi({
         // Only add optional params if they have values
         if (f.search) params.search = f.search;
         if (f.category) params.category = f.category;
+        if (f.supplierId) params.supplier_id = f.supplierId;
 
         // Explicitly handle boolean filters (include false values!)
         if (f.isActive !== undefined) params.is_active = f.isActive;

@@ -12,7 +12,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Table,
   TableBody,
@@ -41,7 +41,6 @@ import {
   Settings,
 } from "lucide-react";
 import { EmptyState } from "@/components/shared/empty-state";
-import { EditStockSettingsDialog } from "./edit-stock-settings-dialog";
 import {
   getStockStatus,
   getStockStatusColor,
@@ -65,13 +64,12 @@ export function StockTable({
   onSortChange,
   canEdit = true,
 }: StockTableProps) {
-  // Edit dialog state
-  const [editStock, setEditStock] = useState<WarehouseStockResponse | null>(null);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const router = useRouter();
 
   const handleEditClick = (stock: WarehouseStockResponse) => {
-    setEditStock(stock);
-    setIsEditDialogOpen(true);
+    // Store stock data in sessionStorage for edit page
+    sessionStorage.setItem(`stock_${stock.id}`, JSON.stringify(stock));
+    router.push(`/inventory/stock/${stock.id}/edit`);
   };
 
   // Sort icon component
@@ -257,13 +255,6 @@ export function StockTable({
           </TableBody>
         </Table>
       </div>
-
-      {/* Edit Stock Settings Dialog */}
-      <EditStockSettingsDialog
-        stock={editStock}
-        open={isEditDialogOpen}
-        onOpenChange={setIsEditDialogOpen}
-      />
     </>
   );
 }

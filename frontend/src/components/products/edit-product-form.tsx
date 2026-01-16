@@ -39,7 +39,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
-import { useUpdateProductMutation } from "@/store/services/productApi";
+import {
+  useUpdateProductMutation,
+  useLinkSupplierMutation,
+  useUpdateProductSupplierMutation,
+  useRemoveProductSupplierMutation,
+} from "@/store/services/productApi";
 import { toast } from "sonner";
 import {
   PRODUCT_CATEGORIES,
@@ -47,6 +52,10 @@ import {
   type UpdateProductRequest,
   type ProductResponse,
 } from "@/types/product.types";
+import {
+  ProductSuppliersSection,
+  type SupplierFormData,
+} from "./product-suppliers-section";
 
 interface EditProductFormProps {
   product: ProductResponse;
@@ -59,7 +68,12 @@ export function EditProductForm({
   onSuccess,
   onCancel,
 }: EditProductFormProps) {
-  const [updateProduct, { isLoading }] = useUpdateProductMutation();
+  const [updateProduct, { isLoading: isUpdatingProduct }] = useUpdateProductMutation();
+  const [linkSupplier, { isLoading: isLinkingSupplier }] = useLinkSupplierMutation();
+  const [updateProductSupplier, { isLoading: isUpdatingSupplier }] = useUpdateProductSupplierMutation();
+  const [removeProductSupplier, { isLoading: isRemovingSupplier }] = useRemoveProductSupplierMutation();
+
+  const isLoading = isUpdatingProduct || isLinkingSupplier || isUpdatingSupplier || isRemovingSupplier;
 
   // Form state - initialize with product data
   const [formData, setFormData] = useState<UpdateProductRequest>({
@@ -79,6 +93,22 @@ export function EditProductForm({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+
+  // Suppliers state - initialize from product data
+  const [suppliers, setSuppliers] = useState<SupplierFormData[]>(() => {
+    return (product.suppliers || []).map((s) => ({
+      id: s.id,
+      supplierId: s.supplierId,
+      supplierCode: s.supplierCode,
+      supplierName: s.supplierName,
+      supplierPrice: s.supplierPrice || "0",
+      leadTimeDays: s.leadTimeDays?.toString() || "",
+      minimumOrderQty: s.minimumOrderQty || "",
+      supplierProductCode: s.supplierProductCode || "",
+      supplierProductName: s.supplierProductName || "",
+      isPrimarySupplier: s.isPrimarySupplier,
+    }));
+  });
 
   const handleChange = (field: keyof UpdateProductRequest, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -203,14 +233,77 @@ export function EditProductForm({
           }),
       };
 
+      // Update product basic info
       const result = await updateProduct({
         id: product.id,
         data: cleanedData,
       }).unwrap();
 
-      toast.success("Produk Berhasil Diperbarui", {
-        description: `${result.name} telah diperbarui`,
-      });
+      // Handle supplier changes
+      const supplierErrors: string[] = [];
+
+      // Process deleted suppliers
+      for (const supplier of suppliers.filter((s) => s.isDeleted && s.id)) {
+        try {
+          await removeProductSupplier({
+            productId: product.id,
+            supplierId: supplier.supplierId,
+          }).unwrap();
+        } catch (error: any) {
+          supplierErrors.push(`Gagal menghapus supplier ${supplier.supplierName}`);
+        }
+      }
+
+      // Process new suppliers
+      for (const supplier of suppliers.filter((s) => s.isNew && !s.isDeleted)) {
+        try {
+          await linkSupplier({
+            productId: product.id,
+            data: {
+              supplierId: supplier.supplierId,
+              supplierPrice: supplier.supplierPrice,
+              leadTimeDays: supplier.leadTimeDays ? parseInt(supplier.leadTimeDays) : undefined,
+              minimumOrderQty: supplier.minimumOrderQty || undefined,
+              supplierProductCode: supplier.supplierProductCode || undefined,
+              supplierProductName: supplier.supplierProductName || undefined,
+              isPrimarySupplier: supplier.isPrimarySupplier,
+            },
+          }).unwrap();
+        } catch (error: any) {
+          supplierErrors.push(`Gagal menambahkan supplier ${supplier.supplierName}`);
+        }
+      }
+
+      // Process edited suppliers (existing ones that were modified)
+      for (const supplier of suppliers.filter((s) => s.isEdited && s.id && !s.isDeleted && !s.isNew)) {
+        try {
+          await updateProductSupplier({
+            productId: product.id,
+            supplierId: supplier.supplierId,
+            data: {
+              supplierPrice: supplier.supplierPrice,
+              leadTimeDays: supplier.leadTimeDays ? parseInt(supplier.leadTimeDays) : undefined,
+              minimumOrderQty: supplier.minimumOrderQty || undefined,
+              supplierProductCode: supplier.supplierProductCode || undefined,
+              supplierProductName: supplier.supplierProductName || undefined,
+              isPrimarySupplier: supplier.isPrimarySupplier,
+            },
+          }).unwrap();
+        } catch (error: any) {
+          supplierErrors.push(`Gagal memperbarui supplier ${supplier.supplierName}`);
+        }
+      }
+
+      // Show success message
+      if (supplierErrors.length > 0) {
+        toast.warning("Produk Diperbarui dengan Peringatan", {
+          description: `${result.name} telah diperbarui, tetapi: ${supplierErrors.join(", ")}`,
+        });
+      } else {
+        toast.success("Produk Berhasil Diperbarui", {
+          description: `${result.name} telah diperbarui`,
+        });
+      }
 
       if (onSuccess) {
         onSuccess();
@@ -682,6 +775,13 @@ export function EditProductForm({
           </div>
         </CardContent>
       </Card>
+
+      {/* Suppliers Section */}
+      <ProductSuppliersSection
+        suppliers={suppliers}
+        onSuppliersChange={setSuppliers}
+        disabled={isLoading}
+      />
 
       {/* Form Actions */}
       <div className="flex justify-end gap-3 pt-2">

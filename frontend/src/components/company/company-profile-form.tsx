@@ -72,6 +72,11 @@ export function CompanyProfileForm({
       isPkp: company.isPkp || false,
       ppnRate: company.ppnRate || 11,
       invoicePrefix: company.invoicePrefix || "INV",
+      invoiceNumberFormat: company.invoiceNumberFormat || "{PREFIX}-{YEAR}-{NUMBER}",
+      poPrefix: company.poPrefix || "PO",
+      poNumberFormat: company.poNumberFormat || "{PREFIX}-{YEAR}-{NUMBER}",
+      soPrefix: company.soPrefix || "SO",
+      soNumberFormat: company.soNumberFormat || "{PREFIX}-{YEAR}-{NUMBER}",
     },
   });
 
@@ -108,7 +113,32 @@ export function CompanyProfileForm({
             <Building2 className="h-5 w-5 text-primary" />
             <h3 className="text-xl font-semibold">Informasi Dasar</h3>
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-3">
+            <FormField
+              control={form.control}
+              name="entityType"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Jenis Badan Usaha</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger className="w-full bg-background">
+                        <SelectValue placeholder="Pilih jenis badan usaha" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {ENTITY_TYPES.map((type) => (
+                        <SelectItem key={type} value={type}>
+                          {type}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             <FormField
               control={form.control}
               name="name"
@@ -132,31 +162,6 @@ export function CompanyProfileForm({
                   <FormControl>
                     <Input placeholder="PT Maju Jaya Sejahtera" {...field} className="bg-background" />
                   </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="entityType"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Jenis Badan Usaha</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger className="bg-background">
-                        <SelectValue placeholder="Pilih jenis badan usaha" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {ENTITY_TYPES.map((type) => (
-                        <SelectItem key={type} value={type}>
-                          {type}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                   <FormMessage />
                 </FormItem>
               )}
@@ -194,6 +199,34 @@ export function CompanyProfileForm({
 
             <FormField
               control={form.control}
+              name="province"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Provinsi</FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="w-full bg-background">
+                        <SelectValue placeholder="Pilih provinsi" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {INDONESIAN_PROVINCES.map((province) => (
+                        <SelectItem key={province} value={province}>
+                          {province}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
               name="city"
               render={({ field }) => (
                 <FormItem>
@@ -213,34 +246,6 @@ export function CompanyProfileForm({
 
             <FormField
               control={form.control}
-              name="province"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Provinsi</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
-                  >
-                    <FormControl>
-                      <SelectTrigger className="bg-background">
-                        <SelectValue placeholder="Pilih provinsi" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {INDONESIAN_PROVINCES.map((province) => (
-                        <SelectItem key={province} value={province}>
-                          {province}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
               name="postalCode"
               render={({ field }) => (
                 <FormItem>
@@ -253,6 +258,7 @@ export function CompanyProfileForm({
                       className="bg-background"
                     />
                   </FormControl>
+                  <FormDescription className="opacity-0">-</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -282,6 +288,26 @@ export function CompanyProfileForm({
 
             <FormField
               control={form.control}
+              name="website"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Website</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="https://www.perusahaan.com"
+                      {...field}
+                      value={field.value || ""}
+                      className="bg-background"
+                    />
+                  </FormControl>
+                  <FormDescription className="opacity-0">-</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
               name="email"
               render={({ field }) => (
                 <FormItem>
@@ -295,25 +321,7 @@ export function CompanyProfileForm({
                       className="bg-background"
                     />
                   </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="website"
-              render={({ field }) => (
-                <FormItem className="md:col-span-2">
-                  <FormLabel>Website</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="https://www.perusahaan.com"
-                      {...field}
-                      value={field.value || ""}
-                      className="bg-background"
-                    />
-                  </FormControl>
+                  <FormDescription className="opacity-0">-</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -329,7 +337,7 @@ export function CompanyProfileForm({
             <FileText className="h-5 w-5 text-primary" />
             <h3 className="text-xl font-semibold">Informasi Pajak</h3>
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-3">
             <FormField
               control={form.control}
               name="npwp"
@@ -376,24 +384,32 @@ export function CompanyProfileForm({
               control={form.control}
               name="isPkp"
               render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
-                  <FormControl>
-                    <Checkbox
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                  <div className="space-y-1 leading-none">
-                    <FormLabel>Pengusaha Kena Pajak (PKP)</FormLabel>
-                    <FormDescription>
-                      Perusahaan terdaftar sebagai PKP
-                    </FormDescription>
-                  </div>
+                <FormItem>
+                  <FormLabel>Status PKP</FormLabel>
+                  <Select
+                    onValueChange={(value) => field.onChange(value === "true")}
+                    value={String(field.value)}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="w-full bg-background">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="true">PKP</SelectItem>
+                      <SelectItem value="false">Non-PKP</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    Pengusaha Kena Pajak
+                  </FormDescription>
+                  <FormMessage />
                 </FormItem>
               )}
             />
-
-            {isPkp && (
+          </div>
+          {isPkp && (
+            <div className="grid gap-4 md:grid-cols-2">
               <FormField
                 control={form.control}
                 name="ppnRate"
@@ -417,40 +433,187 @@ export function CompanyProfileForm({
                   </FormItem>
                 )}
               />
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         <Separator />
 
-        {/* Invoice Settings */}
+        {/* Document Numbering Settings */}
         <div className="space-y-5">
           <div className="flex items-center gap-2 pb-2 border-b border-border/50">
             <Banknote className="h-5 w-5 text-primary" />
-            <h3 className="text-xl font-semibold">Pengaturan Dokumen</h3>
+            <h3 className="text-xl font-semibold">Pengaturan Penomoran Dokumen</h3>
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <FormField
-              control={form.control}
-              name="invoicePrefix"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Prefix Invoice</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="INV"
-                      {...field}
-                      value={field.value || ""}
-                      className="bg-background"
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Contoh: INV-2024-0001
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+
+          {/* Invoice Numbering */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-semibold text-muted-foreground">Purchase Invoice</h4>
+            <div className="grid gap-4 md:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="invoicePrefix"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Prefix Invoice</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="INV"
+                        {...field}
+                        value={field.value || ""}
+                        className="bg-background font-mono"
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Awalan nomor invoice
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="invoiceNumberFormat"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Format Nomor Invoice</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="{PREFIX}-{YEAR}-{NUMBER}"
+                        {...field}
+                        value={field.value || ""}
+                        className="bg-background font-mono"
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Placeholder: {"{PREFIX}"}, {"{YEAR}"}, {"{MONTH}"}, {"{NUMBER}"}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          </div>
+
+          <Separator className="my-4" />
+
+          {/* Purchase Order Numbering */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-semibold text-muted-foreground">Purchase Order</h4>
+            <div className="grid gap-4 md:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="poPrefix"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Prefix PO</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="PO"
+                        {...field}
+                        value={field.value || ""}
+                        className="bg-background font-mono"
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Awalan nomor purchase order
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="poNumberFormat"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Format Nomor PO</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="{PREFIX}-{YEAR}-{NUMBER}"
+                        {...field}
+                        value={field.value || ""}
+                        className="bg-background font-mono"
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Placeholder: {"{PREFIX}"}, {"{YEAR}"}, {"{MONTH}"}, {"{NUMBER}"}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          </div>
+
+          <Separator className="my-4" />
+
+          {/* Sales Order Numbering */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-semibold text-muted-foreground">Sales Order (Future)</h4>
+            <div className="grid gap-4 md:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="soPrefix"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Prefix SO</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="SO"
+                        {...field}
+                        value={field.value || ""}
+                        className="bg-background font-mono"
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Awalan nomor sales order
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="soNumberFormat"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Format Nomor SO</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="{PREFIX}-{YEAR}-{NUMBER}"
+                        {...field}
+                        value={field.value || ""}
+                        className="bg-background font-mono"
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Placeholder: {"{PREFIX}"}, {"{YEAR}"}, {"{MONTH}"}, {"{NUMBER}"}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          </div>
+
+          {/* Numbering Format Help */}
+          <div className="rounded-lg bg-muted/50 p-4 space-y-2">
+            <p className="text-sm font-medium">Format Penomoran:</p>
+            <ul className="text-xs text-muted-foreground space-y-1 ml-4">
+              <li>• <code className="bg-background px-1.5 py-0.5 rounded">{"{PREFIX}"}</code> - Prefix yang dikonfigurasi (INV, PO, SO)</li>
+              <li>• <code className="bg-background px-1.5 py-0.5 rounded">{"{YEAR}"}</code> - Tahun 4 digit (2024)</li>
+              <li>• <code className="bg-background px-1.5 py-0.5 rounded">{"{MONTH}"}</code> - Bulan 2 digit (01-12)</li>
+              <li>• <code className="bg-background px-1.5 py-0.5 rounded">{"{NUMBER}"}</code> - Nomor urut 4 digit (0001, 0002, ...)</li>
+            </ul>
+            <div className="pt-2 space-y-1">
+              <p className="text-xs font-medium">Contoh hasil:</p>
+              <ul className="text-xs text-muted-foreground space-y-0.5 ml-4">
+                <li>• <code className="bg-background px-1.5 py-0.5 rounded font-mono">INV-2024-0001</code></li>
+                <li>• <code className="bg-background px-1.5 py-0.5 rounded font-mono">PO-2024-01-0001</code> (dengan bulan)</li>
+                <li>• <code className="bg-background px-1.5 py-0.5 rounded font-mono">SO-0001</code> (nomor saja)</li>
+              </ul>
+            </div>
           </div>
         </div>
 

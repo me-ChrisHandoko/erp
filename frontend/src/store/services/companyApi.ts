@@ -9,6 +9,7 @@ import { createApi } from "@reduxjs/toolkit/query/react";
 import { baseQueryWithReauth } from "./authApi";
 import type {
   CompanyResponse,
+  CreateCompanyRequest,
   UpdateCompanyRequest,
   BankAccountResponse,
   BankAccountFilters,
@@ -34,6 +35,21 @@ export const companyApi = createApi({
       transformResponse: (response: ApiSuccessResponse<CompanyResponse>) =>
         response.data,
       providesTags: ["Company"],
+    }),
+
+    /**
+     * Create Company
+     * POST /api/v1/company
+     */
+    createCompany: builder.mutation<CompanyResponse, CreateCompanyRequest>({
+      query: (data) => ({
+        url: "/company",
+        method: "POST",
+        body: data,
+      }),
+      transformResponse: (response: ApiSuccessResponse<CompanyResponse>) =>
+        response.data,
+      invalidatesTags: ["Company"],
     }),
 
     /**
@@ -154,6 +170,7 @@ export const companyApi = createApi({
 
 export const {
   useGetCompanyQuery,
+  useCreateCompanyMutation,
   useUpdateCompanyMutation,
   useUploadLogoMutation,
   useGetBankAccountsQuery,

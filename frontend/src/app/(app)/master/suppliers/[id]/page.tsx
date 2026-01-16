@@ -10,7 +10,6 @@
 
 "use client";
 
-import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSelector } from "react-redux";
 import { Building2, Edit, AlertCircle, ArrowLeft } from "lucide-react";
@@ -18,7 +17,6 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { SupplierDetail } from "@/components/suppliers/supplier-detail";
-import { EditSupplierDialog } from "@/components/suppliers/edit-supplier-dialog";
 import { useGetSupplierQuery } from "@/store/services/supplierApi";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -28,7 +26,6 @@ export default function SupplierDetailPage() {
   const params = useParams();
   const router = useRouter();
   const supplierId = params.id as string;
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
   // Get activeCompany to ensure company context is ready
   const activeCompanyId = useSelector(
@@ -128,7 +125,7 @@ export default function SupplierDetailPage() {
             </Button>
             <Button
               className="shrink-0"
-              onClick={() => setIsEditDialogOpen(true)}
+              onClick={() => router.push(`/master/suppliers/${supplierId}/edit`)}
             >
               <Edit className="mr-2 h-4 w-4" />
               Edit Supplier
@@ -139,13 +136,6 @@ export default function SupplierDetailPage() {
         {/* Supplier Detail Component */}
         <SupplierDetail supplier={supplier} />
       </div>
-
-      {/* Edit Supplier Dialog */}
-      <EditSupplierDialog
-        supplier={supplier}
-        open={isEditDialogOpen}
-        onOpenChange={setIsEditDialogOpen}
-      />
     </div>
   );
 }

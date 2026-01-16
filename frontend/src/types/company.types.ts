@@ -113,6 +113,11 @@ export interface CompanyResponse {
   isPkp: boolean;
   ppnRate: number;
   invoicePrefix?: string;
+  invoiceNumberFormat?: string;
+  poPrefix?: string;
+  poNumberFormat?: string;
+  soPrefix?: string;
+  soNumberFormat?: string;
   isActive: boolean;
   banks?: CompanyBankInfo[];
 }
@@ -130,6 +135,35 @@ export interface CompanyBankInfo {
   isPrimary: boolean;
   checkPrefix?: string;
   isActive: boolean;
+}
+
+/**
+ * Create Company Request
+ * Payload for creating new company
+ */
+export interface CreateCompanyRequest {
+  name: string;
+  legalName: string;
+  entityType: "CV" | "PT" | "UD" | "Firma";
+  address: string;
+  city: string;
+  province: string;
+  postalCode?: string;
+  phone: string;
+  email: string;
+  website?: string;
+  npwp?: string;
+  nib?: string;
+  isPkp: boolean;
+  ppnRate: number;
+  invoicePrefix?: string;
+  invoiceNumberFormat?: string;
+  poPrefix?: string;
+  poNumberFormat?: string;
+  soPrefix?: string;
+  soNumberFormat?: string;
+  fakturPajakSeries?: string;
+  sppkpNumber?: string;
 }
 
 /**
@@ -153,6 +187,10 @@ export interface UpdateCompanyRequest {
   ppnRate?: number;
   invoicePrefix?: string;
   invoiceNumberFormat?: string;
+  poPrefix?: string;
+  poNumberFormat?: string;
+  soPrefix?: string;
+  soNumberFormat?: string;
   fakturPajakSeries?: string;
   sppkpNumber?: string;
 }

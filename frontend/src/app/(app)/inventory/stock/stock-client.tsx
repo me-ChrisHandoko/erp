@@ -191,95 +191,89 @@ export function StockClient({ initialData }: StockClientProps) {
         {displayData && displayData.data.length > 0 && (
           <div className="grid gap-4 md:grid-cols-3">
             {/* Total Item Card */}
-            <Card className="overflow-hidden border-none shadow-md hover:shadow-lg transition-shadow duration-300 rounded-xl">
-              <CardContent className="p-0">
-                <div className="relative bg-linear-to-br from-blue-500 to-blue-600 p-6 rounded-xl">
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium text-blue-100">
-                        Total Item
-                      </p>
-                      <p className="text-3xl font-bold text-white">
-                        {displayData.pagination.totalItems.toLocaleString(
-                          "id-ID"
-                        )}
-                      </p>
-                      <div className="flex items-center gap-1 text-xs text-blue-100">
-                        <TrendingUp className="h-3 w-3" />
-                        <span>Total produk di stok</span>
-                      </div>
-                    </div>
-                    <div className="rounded-full bg-white/20 p-3 backdrop-blur-sm">
-                      <Package className="h-6 w-6 text-white" />
+            <div className="overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-300 rounded-xl">
+              <div className="relative bg-linear-to-br from-blue-500 to-blue-600 p-6">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-blue-100">
+                      Total Item
+                    </p>
+                    <p className="text-3xl font-bold text-white">
+                      {displayData.pagination.totalItems.toLocaleString(
+                        "id-ID"
+                      )}
+                    </p>
+                    <div className="flex items-center gap-1 text-xs text-blue-100">
+                      <TrendingUp className="h-3 w-3" />
+                      <span>Total produk di stok</span>
                     </div>
                   </div>
+                  <div className="rounded-full bg-white/20 p-3 backdrop-blur-sm">
+                    <Package className="h-6 w-6 text-white" />
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
 
             {/* Stok Rendah Card */}
-            <Card className="overflow-hidden border-none shadow-md hover:shadow-lg transition-shadow duration-300 rounded-xl">
-              <CardContent className="p-0">
-                <div className="relative bg-linear-to-br from-amber-500 to-orange-600 p-6 rounded-xl">
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium text-amber-100">
-                        Stok Rendah
-                      </p>
-                      <p className="text-3xl font-bold text-white">
-                        {stockStats.low.toLocaleString("id-ID")}
-                      </p>
-                      <div className="flex items-center gap-1 text-xs text-amber-100">
-                        <span>
-                          {displayData.pagination.totalItems > 0
-                            ? `${(
-                                (stockStats.low /
-                                  displayData.pagination.totalItems) *
-                                100
-                              ).toFixed(1)}% dari total`
-                            : "Tidak ada data"}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="rounded-full bg-white/20 p-3 backdrop-blur-sm">
-                      <AlertTriangle className="h-6 w-6 text-white" />
+            <div className="overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-300 rounded-xl">
+              <div className="relative bg-linear-to-br from-amber-500 to-orange-600 p-6">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-amber-100">
+                      Stok Rendah
+                    </p>
+                    <p className="text-3xl font-bold text-white">
+                      {stockStats.low.toLocaleString("id-ID")}
+                    </p>
+                    <div className="flex items-center gap-1 text-xs text-amber-100">
+                      <span>
+                        {displayData.pagination.totalItems > 0
+                          ? `${(
+                              (stockStats.low /
+                                displayData.pagination.totalItems) *
+                              100
+                            ).toFixed(1)}% dari total`
+                          : "Tidak ada data"}
+                      </span>
                     </div>
                   </div>
+                  <div className="rounded-full bg-white/20 p-3 backdrop-blur-sm">
+                    <AlertTriangle className="h-6 w-6 text-white" />
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
 
             {/* Stok Habis Card */}
-            <Card className="overflow-hidden border-none shadow-md hover:shadow-lg transition-shadow duration-300 rounded-xl">
-              <CardContent className="p-0">
-                <div className="relative bg-linear-to-br from-red-500 to-red-600 p-6 rounded-xl">
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium text-red-100">
-                        Stok Habis
-                      </p>
-                      <p className="text-3xl font-bold text-white">
-                        {stockStats.zero.toLocaleString("id-ID")}
-                      </p>
-                      <div className="flex items-center gap-1 text-xs text-red-100">
-                        <span>
-                          {displayData.pagination.totalItems > 0
-                            ? `${(
-                                (stockStats.zero /
-                                  displayData.pagination.totalItems) *
-                                100
-                              ).toFixed(1)}% dari total`
-                            : "Tidak ada data"}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="rounded-full bg-white/20 p-3 backdrop-blur-sm">
-                      <XCircle className="h-6 w-6 text-white" />
+            <div className="overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-300 rounded-xl">
+              <div className="relative bg-linear-to-br from-red-500 to-red-600 p-6">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-red-100">
+                      Stok Habis
+                    </p>
+                    <p className="text-3xl font-bold text-white">
+                      {stockStats.zero.toLocaleString("id-ID")}
+                    </p>
+                    <div className="flex items-center gap-1 text-xs text-red-100">
+                      <span>
+                        {displayData.pagination.totalItems > 0
+                          ? `${(
+                              (stockStats.zero /
+                                displayData.pagination.totalItems) *
+                              100
+                            ).toFixed(1)}% dari total`
+                          : "Tidak ada data"}
+                      </span>
                     </div>
                   </div>
+                  <div className="rounded-full bg-white/20 p-3 backdrop-blur-sm">
+                    <XCircle className="h-6 w-6 text-white" />
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           </div>
         )}
       </div>

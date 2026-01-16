@@ -11,9 +11,7 @@
 
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
-import { EditProductDialog } from "./edit-product-dialog";
 import {
   Table,
   TableBody,
@@ -59,15 +57,6 @@ export function ProductsTable({
   onSortChange,
   canEdit,
 }: ProductsTableProps) {
-  // Edit dialog state
-  const [editProduct, setEditProduct] = useState<ProductResponse | null>(null);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-
-  const handleEditClick = (product: ProductResponse) => {
-    setEditProduct(product);
-    setIsEditDialogOpen(true);
-  };
-
   // Sort icon component
   const SortIcon = ({ column }: { column: string }) => {
     if (sortBy !== column) {
@@ -237,12 +226,14 @@ export function ProductsTable({
                           </Link>
                         </DropdownMenuItem>
                         {canEdit && (
-                          <DropdownMenuItem
-                            onClick={() => handleEditClick(product)}
-                            className="cursor-pointer"
-                          >
-                            <Pencil className="mr-2 h-4 w-4" />
-                            Edit Produk
+                          <DropdownMenuItem asChild>
+                            <Link
+                              href={`/master/products/${product.id}/edit`}
+                              className="cursor-pointer"
+                            >
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Edit Produk
+                            </Link>
                           </DropdownMenuItem>
                         )}
                       </DropdownMenuContent>
@@ -254,13 +245,6 @@ export function ProductsTable({
           </TableBody>
         </Table>
       </div>
-
-      {/* Edit Product Dialog */}
-      <EditProductDialog
-        product={editProduct}
-        open={isEditDialogOpen}
-        onOpenChange={setIsEditDialogOpen}
-      />
     </>
   );
 }

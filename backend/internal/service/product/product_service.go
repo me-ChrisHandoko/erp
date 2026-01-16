@@ -299,6 +299,11 @@ func (s *ProductService) ListProducts(ctx context.Context, tenantID, companyID s
 		query = query.Where("is_perishable = ?", *filters.IsPerishable)
 	}
 
+	// Filter by supplier - only show products linked to this supplier
+	if filters.SupplierID != "" {
+		query = query.Where("id IN (SELECT product_id FROM product_suppliers WHERE supplier_id = ? AND is_active = true)", filters.SupplierID)
+	}
+
 	// Count total
 	var total int64
 	if err := query.Count(&total).Error; err != nil {

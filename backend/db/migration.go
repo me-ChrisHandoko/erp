@@ -80,6 +80,11 @@ func AutoMigratePhase3(db *gorm.DB) error {
 		&models.GoodsReceipt{},
 		&models.GoodsReceiptItem{},
 
+		// Purchase invoice workflow (Faktur Pembelian)
+		&models.PurchaseInvoice{},
+		&models.PurchaseInvoiceItem{},
+		&models.PurchaseInvoicePayment{},
+
 		// Supplier payment
 		&models.SupplierPayment{},
 	)

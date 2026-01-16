@@ -31,7 +31,9 @@ import { CompanyProfileForm } from "@/components/company/company-profile-form";
 
 export default function CompanyProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
-  const { data: company, isLoading, error, refetch } = useGetCompanyQuery();
+  const { data: company, isLoading, error, refetch } = useGetCompanyQuery(undefined, {
+    refetchOnMountOrArgChange: true,
+  });
 
   return (
     <ErrorBoundary>

@@ -12,6 +12,7 @@
 
 import { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
+import { useRouter } from "next/navigation";
 import { Plus, Search, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +29,6 @@ import { ErrorDisplay } from "@/components/shared/error-display";
 import { useListProductsQuery } from "@/store/services/productApi";
 import { usePermissions } from "@/hooks/use-permissions";
 import { ProductsTable } from "@/components/products/products-table";
-import { CreateProductDialog } from "@/components/products/create-product-dialog";
 import type { ProductFilters, ProductListResponse } from "@/types/product.types";
 import type { RootState } from "@/store";
 
@@ -37,6 +37,7 @@ interface ProductsClientProps {
 }
 
 export function ProductsClient({ initialData }: ProductsClientProps) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string | undefined>(
@@ -45,7 +46,6 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
   const [statusFilter, setStatusFilter] = useState<boolean | undefined>(
     undefined
   );
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [filters, setFilters] = useState<ProductFilters>({
     page: 1,
     pageSize: 20,
@@ -164,7 +164,7 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
         {canCreateProducts && (
           <Button
             className="shrink-0"
-            onClick={() => setIsCreateDialogOpen(true)}
+            onClick={() => router.push("/master/products/create")}
           >
             <Plus className="mr-2 h-4 w-4" />
             Tambah Produk
@@ -293,7 +293,7 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
                     Mulai dengan menambahkan produk pertama Anda
                   </p>
                   {canCreateProducts && (
-                    <Button onClick={() => setIsCreateDialogOpen(true)}>
+                    <Button onClick={() => router.push("/master/products/create")}>
                       <Plus className="mr-2 h-4 w-4" />
                       Tambah Produk
                     </Button>
@@ -423,11 +423,6 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
         </CardContent>
       </Card>
 
-      {/* Create Product Dialog */}
-      <CreateProductDialog
-        open={isCreateDialogOpen}
-        onOpenChange={setIsCreateDialogOpen}
-      />
     </div>
   );
 }

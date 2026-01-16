@@ -12,6 +12,7 @@
 
 import { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
+import { useRouter } from "next/navigation";
 import { Plus, Search, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +30,6 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { useListSuppliersQuery } from "@/store/services/supplierApi";
 import { usePermissions } from "@/hooks/use-permissions";
 import { SuppliersTable } from "@/components/suppliers/suppliers-table";
-import { CreateSupplierDialog } from "@/components/suppliers/create-supplier-dialog";
 import type { SupplierFilters, SupplierListResponse } from "@/types/supplier.types";
 import type { RootState } from "@/store";
 
@@ -38,13 +38,13 @@ interface SuppliersClientProps {
 }
 
 export function SuppliersClient({ initialData }: SuppliersClientProps) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string | undefined>(undefined);
   const [statusFilter, setStatusFilter] = useState<boolean | undefined>(
     undefined
   );
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [filters, setFilters] = useState<SupplierFilters>({
     page: 1,
     pageSize: 20,
@@ -177,7 +177,7 @@ export function SuppliersClient({ initialData }: SuppliersClientProps) {
             {canCreateSuppliers && (
               <Button
                 className="shrink-0"
-                onClick={() => setIsCreateDialogOpen(true)}
+                onClick={() => router.push("/master/suppliers/create")}
               >
                 <Plus className="mr-2 h-4 w-4" />
                 Tambah Supplier
@@ -303,7 +303,7 @@ export function SuppliersClient({ initialData }: SuppliersClientProps) {
                         canCreateSuppliers
                           ? {
                               label: "Tambah Supplier",
-                              onClick: () => setIsCreateDialogOpen(true),
+                              onClick: () => router.push("/master/suppliers/create"),
                             }
                           : undefined
                       }
@@ -432,12 +432,6 @@ export function SuppliersClient({ initialData }: SuppliersClientProps) {
               )}
             </CardContent>
           </Card>
-
-      {/* Create Supplier Dialog */}
-      <CreateSupplierDialog
-        open={isCreateDialogOpen}
-        onOpenChange={setIsCreateDialogOpen}
-      />
     </div>
   );
 }

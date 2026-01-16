@@ -16,6 +16,24 @@ interface CompanyProfileViewProps {
   company: CompanyResponse;
 }
 
+/**
+ * Generate example document number based on format
+ */
+function generateExampleNumber(prefix: string, format: string): string {
+  const now = new Date();
+  const year = now.getFullYear().toString();
+  const month = (now.getMonth() + 1).toString().padStart(2, '0');
+  const number = '0001';
+
+  let example = format;
+  example = example.replace(/{PREFIX}/g, prefix);
+  example = example.replace(/{YEAR}/g, year);
+  example = example.replace(/{MONTH}/g, month);
+  example = example.replace(/{NUMBER}/g, number);
+
+  return example;
+}
+
 export function CompanyProfileView({ company }: CompanyProfileViewProps) {
   return (
     <div className="space-y-8">
@@ -39,13 +57,15 @@ export function CompanyProfileView({ company }: CompanyProfileViewProps) {
           <Building2 className="h-5 w-5 text-primary" />
           <h3 className="text-xl font-semibold">Informasi Dasar</h3>
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <DataField label="Nama Perusahaan" value={company.name} />
-          <DataField label="Nama Legal" value={company.legalName} />
+        <div className="grid gap-4 md:grid-cols-3">
           <DataField
             label="Jenis Badan Usaha"
             value={company.entityType || "CV"}
           />
+          <DataField label="Nama Perusahaan" value={company.name} />
+          <DataField label="Nama Legal" value={company.legalName} />
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
           <DataField
             label="Status"
             value={
@@ -66,23 +86,20 @@ export function CompanyProfileView({ company }: CompanyProfileViewProps) {
           <h3 className="text-xl font-semibold">Informasi Kontak</h3>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
-          <DataField
-            label="Alamat"
-            value={company.address}
-            icon={<Building2 className="h-4 w-4" />}
-          />
-          <DataField label="Kota" value={company.city} />
+          <div className="md:col-span-2">
+            <DataField
+              label="Alamat"
+              value={company.address}
+              icon={<Building2 className="h-4 w-4" />}
+            />
+          </div>
           <DataField label="Provinsi" value={company.province} />
+          <DataField label="Kota" value={company.city} />
           <DataField label="Kode Pos" value={company.postalCode} />
           <DataField
             label="Telepon"
             value={company.phone}
             icon={<Phone className="h-4 w-4" />}
-          />
-          <DataField
-            label="Email"
-            value={company.email}
-            icon={<Mail className="h-4 w-4" />}
           />
           <DataField
             label="Website"
@@ -102,6 +119,11 @@ export function CompanyProfileView({ company }: CompanyProfileViewProps) {
             }
             icon={<Globe className="h-4 w-4" />}
           />
+          <DataField
+            label="Email"
+            value={company.email}
+            icon={<Mail className="h-4 w-4" />}
+          />
         </div>
       </div>
 
@@ -113,7 +135,7 @@ export function CompanyProfileView({ company }: CompanyProfileViewProps) {
           <FileText className="h-5 w-5 text-primary" />
           <h3 className="text-xl font-semibold">Informasi Pajak</h3>
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-3">
           <DataField label="NPWP" value={company.npwp || "-"} />
           <DataField label="NIB" value={company.nib || "-"} />
           <DataField
@@ -124,24 +146,88 @@ export function CompanyProfileView({ company }: CompanyProfileViewProps) {
               </Badge>
             }
           />
-          {company.isPkp && (
-            <>
-              <DataField label="PPN Rate" value={`${company.ppnRate}%`} />
-            </>
-          )}
         </div>
+        {company.isPkp && (
+          <div className="grid gap-4 md:grid-cols-2">
+            <DataField label="PPN Rate" value={`${company.ppnRate}%`} />
+          </div>
+        )}
       </div>
 
       <Separator />
 
-      {/* Invoice Settings */}
+      {/* Document Numbering Settings */}
       <div className="space-y-5">
         <div className="flex items-center gap-2 pb-2 border-b border-border/50">
           <Banknote className="h-5 w-5 text-primary" />
-          <h3 className="text-xl font-semibold">Pengaturan Dokumen</h3>
+          <h3 className="text-xl font-semibold">Pengaturan Penomoran Dokumen</h3>
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <DataField label="Prefix Invoice" value={company.invoicePrefix || "INV"} />
+
+        {/* Purchase Invoice */}
+        <div className="space-y-3">
+          <h4 className="text-sm font-semibold text-muted-foreground">Purchase Invoice</h4>
+          <div className="grid gap-4 md:grid-cols-2">
+            <DataField
+              label="Prefix Invoice"
+              value={<code className="text-sm bg-muted px-2 py-1 rounded font-mono">{company.invoicePrefix || "INV"}</code>}
+            />
+            <DataField
+              label="Format Nomor"
+              value={<code className="text-sm bg-muted px-2 py-1 rounded font-mono">{company.invoiceNumberFormat || "{PREFIX}-{YEAR}-{NUMBER}"}</code>}
+            />
+          </div>
+          <div className="rounded-md bg-muted/30 p-3">
+            <p className="text-xs text-muted-foreground mb-1">Contoh:</p>
+            <code className="text-sm font-mono">
+              {generateExampleNumber(company.invoicePrefix || "INV", company.invoiceNumberFormat || "{PREFIX}-{YEAR}-{NUMBER}")}
+            </code>
+          </div>
+        </div>
+
+        <Separator className="my-4" />
+
+        {/* Purchase Order */}
+        <div className="space-y-3">
+          <h4 className="text-sm font-semibold text-muted-foreground">Purchase Order</h4>
+          <div className="grid gap-4 md:grid-cols-2">
+            <DataField
+              label="Prefix PO"
+              value={<code className="text-sm bg-muted px-2 py-1 rounded font-mono">{company.poPrefix || "PO"}</code>}
+            />
+            <DataField
+              label="Format Nomor"
+              value={<code className="text-sm bg-muted px-2 py-1 rounded font-mono">{company.poNumberFormat || "{PREFIX}-{YEAR}-{NUMBER}"}</code>}
+            />
+          </div>
+          <div className="rounded-md bg-muted/30 p-3">
+            <p className="text-xs text-muted-foreground mb-1">Contoh:</p>
+            <code className="text-sm font-mono">
+              {generateExampleNumber(company.poPrefix || "PO", company.poNumberFormat || "{PREFIX}-{YEAR}-{NUMBER}")}
+            </code>
+          </div>
+        </div>
+
+        <Separator className="my-4" />
+
+        {/* Sales Order */}
+        <div className="space-y-3">
+          <h4 className="text-sm font-semibold text-muted-foreground">Sales Order (Future)</h4>
+          <div className="grid gap-4 md:grid-cols-2">
+            <DataField
+              label="Prefix SO"
+              value={<code className="text-sm bg-muted px-2 py-1 rounded font-mono">{company.soPrefix || "SO"}</code>}
+            />
+            <DataField
+              label="Format Nomor"
+              value={<code className="text-sm bg-muted px-2 py-1 rounded font-mono">{company.soNumberFormat || "{PREFIX}-{YEAR}-{NUMBER}"}</code>}
+            />
+          </div>
+          <div className="rounded-md bg-muted/30 p-3">
+            <p className="text-xs text-muted-foreground mb-1">Contoh:</p>
+            <code className="text-sm font-mono">
+              {generateExampleNumber(company.soPrefix || "SO", company.soNumberFormat || "{PREFIX}-{YEAR}-{NUMBER}")}
+            </code>
+          </div>
         </div>
       </div>
 

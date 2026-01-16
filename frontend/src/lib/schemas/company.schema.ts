@@ -138,6 +138,26 @@ export const updateCompanySchema = z.object({
     .max(50, "Format nomor invoice maksimal 50 karakter")
     .optional(),
 
+  poPrefix: z
+    .string()
+    .max(10, "Prefix PO maksimal 10 karakter")
+    .optional(),
+
+  poNumberFormat: z
+    .string()
+    .max(50, "Format nomor PO maksimal 50 karakter")
+    .optional(),
+
+  soPrefix: z
+    .string()
+    .max(10, "Prefix SO maksimal 10 karakter")
+    .optional(),
+
+  soNumberFormat: z
+    .string()
+    .max(50, "Format nomor SO maksimal 50 karakter")
+    .optional(),
+
   fakturPajakSeries: z
     .string()
     .max(20, "Seri faktur pajak maksimal 20 karakter")

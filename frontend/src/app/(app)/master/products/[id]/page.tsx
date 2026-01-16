@@ -6,7 +6,7 @@
  * - Pricing details (cost, price, margin)
  * - Units and conversions
  * - Stock information
- * - Suppliers
+ * - Suppliers (with add/remove functionality)
  * - Product attributes
  */
 
@@ -16,7 +16,6 @@ import { useParams, useRouter } from "next/navigation";
 import { Package, Edit, AlertCircle, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
-import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { ProductDetail } from "@/components/products/product-detail";
 import { useGetProductQuery } from "@/store/services/productApi";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -115,7 +114,7 @@ export default function ProductDetailPage() {
             </Button>
             <Button
               className="shrink-0"
-              onClick={() => router.push(`/master/products/edit/${productId}`)}
+              onClick={() => router.push(`/master/products/${productId}/edit`)}
             >
               <Edit className="mr-2 h-4 w-4" />
               Edit Produk

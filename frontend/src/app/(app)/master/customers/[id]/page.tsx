@@ -11,14 +11,12 @@
 
 "use client";
 
-import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Users, Edit, AlertCircle, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { CustomerDetail } from "@/components/customers/customer-detail";
-import { EditCustomerDialog } from "@/components/customers/edit-customer-dialog";
 import { useGetCustomerQuery } from "@/store/services/customerApi";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -29,9 +27,6 @@ export default function CustomerDetailPage() {
   const customerId = params.id as string;
 
   const { data, isLoading, error } = useGetCustomerQuery(customerId);
-
-  // Edit dialog state
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
   // Loading state
   if (isLoading) {
@@ -122,7 +117,7 @@ export default function CustomerDetailPage() {
             </Button>
             <Button
               className="shrink-0"
-              onClick={() => setIsEditDialogOpen(true)}
+              onClick={() => router.push(`/master/customers/${customerId}/edit`)}
             >
               <Edit className="mr-2 h-4 w-4" />
               Edit Pelanggan
@@ -133,15 +128,6 @@ export default function CustomerDetailPage() {
         {/* Customer Detail Component */}
         <CustomerDetail customer={customer} />
       </div>
-
-      {/* Edit Customer Dialog */}
-      {data && (
-        <EditCustomerDialog
-          customer={data}
-          open={isEditDialogOpen}
-          onOpenChange={setIsEditDialogOpen}
-        />
-      )}
     </div>
   );
 }

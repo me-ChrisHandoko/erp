@@ -11,9 +11,7 @@
 
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
-import { EditSupplierDialog } from "./edit-supplier-dialog";
 import {
   Table,
   TableBody,
@@ -61,17 +59,6 @@ export function SuppliersTable({
   onSortChange,
   canEdit,
 }: SuppliersTableProps) {
-  // Edit dialog state
-  const [editSupplier, setEditSupplier] = useState<SupplierResponse | null>(
-    null
-  );
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-
-  const handleEditClick = (supplier: SupplierResponse) => {
-    setEditSupplier(supplier);
-    setIsEditDialogOpen(true);
-  };
-
   // Sort icon component
   const SortIcon = ({ column }: { column: string }) => {
     if (sortBy !== column) {
@@ -263,12 +250,14 @@ export function SuppliersTable({
                           </Link>
                         </DropdownMenuItem>
                         {canEdit && (
-                          <DropdownMenuItem
-                            onClick={() => handleEditClick(supplier)}
-                            className="cursor-pointer"
-                          >
-                            <Pencil className="mr-2 h-4 w-4" />
-                            Edit Supplier
+                          <DropdownMenuItem asChild>
+                            <Link
+                              href={`/master/suppliers/${supplier.id}/edit`}
+                              className="cursor-pointer"
+                            >
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Edit Supplier
+                            </Link>
                           </DropdownMenuItem>
                         )}
                       </DropdownMenuContent>
@@ -280,13 +269,6 @@ export function SuppliersTable({
           </TableBody>
         </Table>
       </div>
-
-      {/* Edit Supplier Dialog */}
-      <EditSupplierDialog
-        supplier={editSupplier}
-        open={isEditDialogOpen}
-        onOpenChange={setIsEditDialogOpen}
-      />
     </>
   );
 }

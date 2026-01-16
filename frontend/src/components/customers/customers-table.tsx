@@ -11,9 +11,7 @@
 
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
-import { EditCustomerDialog } from "./edit-customer-dialog";
 import {
   Table,
   TableBody,
@@ -59,17 +57,6 @@ export function CustomersTable({
   onSortChange,
   canEdit,
 }: CustomersTableProps) {
-  // Edit dialog state
-  const [editCustomer, setEditCustomer] = useState<CustomerResponse | null>(
-    null
-  );
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-
-  const handleEditClick = (customer: CustomerResponse) => {
-    setEditCustomer(customer);
-    setIsEditDialogOpen(true);
-  };
-
   // Format currency helper
   const formatCurrency = (value: string | null | undefined): string => {
     if (!value) return "Rp 0";
@@ -238,12 +225,14 @@ export function CustomersTable({
                           </Link>
                         </DropdownMenuItem>
                         {canEdit && (
-                          <DropdownMenuItem
-                            onClick={() => handleEditClick(customer)}
-                            className="cursor-pointer"
-                          >
-                            <Pencil className="mr-2 h-4 w-4" />
-                            Edit Pelanggan
+                          <DropdownMenuItem asChild>
+                            <Link
+                              href={`/master/customers/${customer.id}/edit`}
+                              className="cursor-pointer"
+                            >
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Edit Pelanggan
+                            </Link>
                           </DropdownMenuItem>
                         )}
                       </DropdownMenuContent>
@@ -255,13 +244,6 @@ export function CustomersTable({
           </TableBody>
         </Table>
       </div>
-
-      {/* Edit Customer Dialog */}
-      <EditCustomerDialog
-        customer={editCustomer}
-        open={isEditDialogOpen}
-        onOpenChange={setIsEditDialogOpen}
-      />
     </>
   );
 }

@@ -12,6 +12,7 @@
 
 import { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
+import { useRouter } from "next/navigation";
 import { Plus, Search, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +30,6 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { useListCustomersQuery } from "@/store/services/customerApi";
 import { usePermissions } from "@/hooks/use-permissions";
 import { CustomersTable } from "@/components/customers/customers-table";
-import { CreateCustomerDialog } from "@/components/customers/create-customer-dialog";
 import type { CustomerFilters, CustomerType, CustomerListResponse } from "@/types/customer.types";
 import type { RootState } from "@/store";
 
@@ -38,6 +38,7 @@ interface CustomersClientProps {
 }
 
 export function CustomersClient({ initialData }: CustomersClientProps) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<CustomerType | undefined>(
@@ -46,7 +47,6 @@ export function CustomersClient({ initialData }: CustomersClientProps) {
   const [statusFilter, setStatusFilter] = useState<boolean | undefined>(
     undefined
   );
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [filters, setFilters] = useState<CustomerFilters>({
     page: 1,
     pageSize: 20,
@@ -179,7 +179,7 @@ export function CustomersClient({ initialData }: CustomersClientProps) {
         {canCreateCustomers && (
           <Button
             className="shrink-0"
-            onClick={() => setIsCreateDialogOpen(true)}
+            onClick={() => router.push("/master/customers/create")}
           >
             <Plus className="mr-2 h-4 w-4" />
             Tambah Pelanggan
@@ -311,7 +311,7 @@ export function CustomersClient({ initialData }: CustomersClientProps) {
                     canCreateCustomers
                       ? {
                           label: "Tambah Pelanggan",
-                          onClick: () => setIsCreateDialogOpen(true),
+                          onClick: () => router.push("/master/customers/create"),
                         }
                       : undefined
                   }
@@ -440,12 +440,6 @@ export function CustomersClient({ initialData }: CustomersClientProps) {
           )}
         </CardContent>
       </Card>
-
-      {/* Create Customer Dialog */}
-      <CreateCustomerDialog
-        open={isCreateDialogOpen}
-        onOpenChange={setIsCreateDialogOpen}
-      />
     </div>
   );
 }

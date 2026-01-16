@@ -16,6 +16,7 @@
  * - Empty state (no companies available)
  */
 
+import { useRouter } from "next/navigation";
 import { ChevronsUpDown, Plus, Building2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { useCompany } from "@/hooks/use-company";
@@ -63,6 +64,7 @@ function CompanyIcon() {
 }
 
 export function TeamSwitcher() {
+  const router = useRouter();
   const { isMobile } = useSidebar();
   const {
     activeCompany,
@@ -104,8 +106,10 @@ export function TeamSwitcher() {
    * Handle add company
    */
   const handleAddCompany = () => {
-    // Navigate to create company page
-    window.location.assign("/company/create");
+    // Small delay to allow dropdown menu to close smoothly before navigation
+    setTimeout(() => {
+      router.push("/company/create");
+    }, 150);
   };
 
   // Empty state: no companies available

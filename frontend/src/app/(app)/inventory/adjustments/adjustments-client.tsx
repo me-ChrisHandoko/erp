@@ -12,6 +12,7 @@
 
 import { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
+import { useRouter } from "next/navigation";
 import { Plus, Search, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,8 +30,6 @@ import { useListAdjustmentsQuery } from "@/store/services/adjustmentApi";
 import { useListWarehousesQuery } from "@/store/services/warehouseApi";
 import { usePermissions } from "@/hooks/use-permissions";
 import { AdjustmentsTable } from "@/components/adjustments/adjustments-table";
-import { AdjustmentDetailDialog } from "@/components/adjustments/adjustment-detail-dialog";
-import { CreateAdjustmentDialog } from "@/components/adjustments/create-adjustment-dialog";
 import { ApproveAdjustmentDialog } from "@/components/adjustments/approve-adjustment-dialog";
 import { CancelAdjustmentDialog } from "@/components/adjustments/cancel-adjustment-dialog";
 import { DeleteAdjustmentDialog } from "@/components/adjustments/delete-adjustment-dialog";
@@ -50,6 +49,8 @@ interface AdjustmentsClientProps {
 }
 
 export function AdjustmentsClient({ initialData }: AdjustmentsClientProps) {
+  const router = useRouter();
+
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<AdjustmentStatus | undefined>(
@@ -64,12 +65,7 @@ export function AdjustmentsClient({ initialData }: AdjustmentsClientProps) {
   const [warehouseFilter, setWarehouseFilter] = useState<string | undefined>(
     undefined
   );
-  const [selectedAdjustment, setSelectedAdjustment] = useState<InventoryAdjustment | null>(null);
-  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [adjustmentToEdit, setAdjustmentToEdit] = useState<InventoryAdjustment | null>(null);
-
-  // Action dialogs state
+  // Action dialogs state (only action dialogs: Approve, Cancel, Delete)
   const [adjustmentToApprove, setAdjustmentToApprove] = useState<InventoryAdjustment | null>(null);
   const [isApproveDialogOpen, setIsApproveDialogOpen] = useState(false);
   const [adjustmentToCancel, setAdjustmentToCancel] = useState<InventoryAdjustment | null>(null);
@@ -195,8 +191,7 @@ export function AdjustmentsClient({ initialData }: AdjustmentsClientProps) {
 
   // Action handlers
   const handleView = (adjustment: InventoryAdjustment) => {
-    setSelectedAdjustment(adjustment);
-    setIsDetailDialogOpen(true);
+    router.push(`/inventory/adjustments/${adjustment.id}`);
   };
 
   const handleApprove = (adjustment: InventoryAdjustment) => {
@@ -210,8 +205,7 @@ export function AdjustmentsClient({ initialData }: AdjustmentsClientProps) {
   };
 
   const handleEdit = (adjustment: InventoryAdjustment) => {
-    setAdjustmentToEdit(adjustment);
-    setIsCreateDialogOpen(true); // Reuse create dialog for edit mode
+    router.push(`/inventory/adjustments/${adjustment.id}/edit`);
   };
 
   const handleDelete = (adjustment: InventoryAdjustment) => {
@@ -220,16 +214,7 @@ export function AdjustmentsClient({ initialData }: AdjustmentsClientProps) {
   };
 
   const handleCreateClick = () => {
-    // Clear edit state before opening dialog to ensure it opens in create mode
-    setAdjustmentToEdit(null);
-    setIsCreateDialogOpen(true);
-  };
-
-  const handleCreateSuccess = () => {
-    // Close dialog (this will trigger onOpenChange which handles clearing edit state)
-    setIsCreateDialogOpen(false);
-    // Refetch adjustments list after successful creation/update
-    refetch();
+    router.push("/inventory/adjustments/create");
   };
 
   const handleActionSuccess = () => {
@@ -391,7 +376,7 @@ export function AdjustmentsClient({ initialData }: AdjustmentsClientProps) {
                     Mulai dengan membuat penyesuaian stok pertama Anda
                   </p>
                   {canCreateAdjustments && (
-                    <Button onClick={() => setIsCreateDialogOpen(true)}>
+                    <Button onClick={handleCreateClick}>
                       <Plus className="mr-2 h-4 w-4" />
                       Buat Penyesuaian
                     </Button>
@@ -524,29 +509,6 @@ export function AdjustmentsClient({ initialData }: AdjustmentsClientProps) {
           )}
         </CardContent>
       </Card>
-
-      {/* Adjustment Detail Dialog */}
-      <AdjustmentDetailDialog
-        adjustment={selectedAdjustment}
-        open={isDetailDialogOpen}
-        onOpenChange={setIsDetailDialogOpen}
-      />
-
-      {/* Create/Edit Adjustment Dialog */}
-      <CreateAdjustmentDialog
-        open={isCreateDialogOpen}
-        onOpenChange={(open) => {
-          setIsCreateDialogOpen(open);
-          if (!open) {
-            // Clear edit state after animation completes (200ms matches dialog duration-200)
-            setTimeout(() => {
-              setAdjustmentToEdit(null);
-            }, 200);
-          }
-        }}
-        onSuccess={handleCreateSuccess}
-        adjustmentToEdit={adjustmentToEdit}
-      />
 
       {/* Approve Adjustment Dialog */}
       <ApproveAdjustmentDialog

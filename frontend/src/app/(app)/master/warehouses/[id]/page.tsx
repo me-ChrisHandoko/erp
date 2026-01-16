@@ -116,7 +116,7 @@ export default function WarehouseDetailPage() {
             <Button
               className="shrink-0"
               onClick={() =>
-                router.push(`/master/warehouses/edit/${warehouseId}`)
+                router.push(`/master/warehouses/${warehouseId}/edit`)
               }
             >
               <Edit className="mr-2 h-4 w-4" />

@@ -12,9 +12,7 @@
 
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
-import { EditWarehouseDialog } from "./edit-warehouse-dialog";
 import {
   Table,
   TableBody,
@@ -66,16 +64,6 @@ export function WarehousesTable({
   onSortChange,
   canEdit,
 }: WarehousesTableProps) {
-  // Edit dialog state
-  const [editWarehouse, setEditWarehouse] =
-    useState<WarehouseResponse | null>(null);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-
-  const handleEditClick = (warehouse: WarehouseResponse) => {
-    setEditWarehouse(warehouse);
-    setIsEditDialogOpen(true);
-  };
-
   // Sort icon component
   const SortIcon = ({ column }: { column: string }) => {
     if (sortBy !== column) {
@@ -225,12 +213,14 @@ export function WarehousesTable({
                           </Link>
                         </DropdownMenuItem>
                         {canEdit && (
-                          <DropdownMenuItem
-                            onClick={() => handleEditClick(warehouse)}
-                            className="cursor-pointer"
-                          >
-                            <Pencil className="mr-2 h-4 w-4" />
-                            Edit Gudang
+                          <DropdownMenuItem asChild>
+                            <Link
+                              href={`/master/warehouses/${warehouse.id}/edit`}
+                              className="cursor-pointer"
+                            >
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Edit Gudang
+                            </Link>
                           </DropdownMenuItem>
                         )}
                       </DropdownMenuContent>
@@ -242,13 +232,6 @@ export function WarehousesTable({
           </TableBody>
         </Table>
       </div>
-
-      {/* Edit Warehouse Dialog */}
-      <EditWarehouseDialog
-        warehouse={editWarehouse}
-        open={isEditDialogOpen}
-        onOpenChange={setIsEditDialogOpen}
-      />
     </>
   );
 }

@@ -44,6 +44,7 @@ type UpdateProductRequest struct {
 type ProductFilters struct {
 	Search         string  `form:"search"`
 	Category       string  `form:"category"`
+	SupplierID     string  `form:"supplier_id"` // Filter products by supplier
 	IsActive       *bool   `form:"is_active"`
 	IsBatchTracked *bool   `form:"is_batch_tracked"`
 	IsPerishable   *bool   `form:"is_perishable"`
