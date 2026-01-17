@@ -114,3 +114,49 @@ type CustomerStatisticsResponse struct {
 	CustomersWithOverdue    int    `json:"customersWithOverdue"`
 	CustomersExceedingLimit int    `json:"customersExceedingLimit"`
 }
+
+// ============================================================================
+// CUSTOMER FREQUENT PRODUCTS DTOs
+// ============================================================================
+
+// FrequentProductItem - Single frequent product item with purchase statistics
+type FrequentProductItem struct {
+	ProductID      string `json:"productId"`
+	ProductCode    string `json:"productCode"`
+	ProductName    string `json:"productName"`
+	Frequency      int    `json:"frequency"`      // Berapa kali dibeli
+	TotalQty       string `json:"totalQty"`       // Total quantity yang dibeli (decimal)
+	LastOrderDate  string `json:"lastOrderDate"`  // Tanggal order terakhir (ISO 8601)
+	BaseUnitID     string `json:"baseUnitId"`
+	BaseUnitName   string `json:"baseUnitName"`
+	LatestPrice    string `json:"latestPrice"`    // Harga terakhir yang dibeli (decimal)
+}
+
+// FrequentProductsResponse - Response untuk frequent products
+type FrequentProductsResponse struct {
+	CustomerID      string                `json:"customerId"`
+	CustomerName    string                `json:"customerName"`
+	WarehouseID     string                `json:"warehouseId,omitempty"` // Optional filter
+	FrequentProducts []FrequentProductItem `json:"frequentProducts"`
+	TotalOrders     int                   `json:"totalOrders"`     // Total sales orders analyzed
+	DateRangeFrom   string                `json:"dateRangeFrom"`   // Analyzed from date
+	DateRangeTo     string                `json:"dateRangeTo"`     // Analyzed to date
+}
+
+// ============================================================================
+// CUSTOMER CREDIT INFO DTOs
+// ============================================================================
+
+// CustomerCreditInfoResponse - Response for customer credit limit and outstanding balance
+type CustomerCreditInfoResponse struct {
+	CustomerID         string `json:"customerId"`
+	CustomerName       string `json:"customerName"`
+	CustomerCode       string `json:"customerCode"`
+	CreditLimit        string `json:"creditLimit"`        // Credit limit (decimal as string)
+	OutstandingAmount  string `json:"outstandingAmount"`  // Total unpaid invoices (decimal)
+	AvailableCredit    string `json:"availableCredit"`    // Credit limit - outstanding (decimal)
+	OverdueAmount      string `json:"overdueAmount"`      // Overdue invoices (decimal)
+	PaymentTermDays    int    `json:"paymentTermDays"`    // Payment terms in days
+	IsExceedingLimit   bool   `json:"isExceedingLimit"`   // True if outstanding > credit limit
+	UtilizationPercent string `json:"utilizationPercent"` // (Outstanding / Credit Limit) * 100
+}

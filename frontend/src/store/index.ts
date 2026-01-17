@@ -20,6 +20,10 @@ import { purchaseOrderApi } from './services/purchaseOrderApi'; // Purchase orde
 import { goodsReceiptApi } from './services/goodsReceiptApi'; // Goods receipt API
 import { purchaseInvoiceApi } from './services/purchaseInvoiceApi'; // Purchase invoice API
 import { paymentApi } from './services/paymentApi'; // Payment API
+import { salesOrderApi } from './services/salesOrderApi'; // Sales order API
+import { deliveryApi } from './services/deliveryApi'; // Delivery API
+import { invoiceApi } from './services/invoiceApi'; // Sales invoice API
+import { salesPaymentApi } from './services/salesPaymentApi'; // Sales payment API (customer payments)
 import authReducer, { logout } from './slices/authSlice';
 import companyReducer, { setActiveCompany } from './slices/companySlice';
 
@@ -80,6 +84,10 @@ const resetAllApiStatesOnLogout: Middleware = (storeAPI) => (next) => (action) =
     storeAPI.dispatch(goodsReceiptApi.util.resetApiState());
     storeAPI.dispatch(purchaseInvoiceApi.util.resetApiState());
     storeAPI.dispatch(paymentApi.util.resetApiState());
+    storeAPI.dispatch(salesOrderApi.util.resetApiState());
+    storeAPI.dispatch(deliveryApi.util.resetApiState());
+    storeAPI.dispatch(invoiceApi.util.resetApiState());
+    storeAPI.dispatch(salesPaymentApi.util.resetApiState());
 
     // CRITICAL: Clear company Redux state to prevent cross-user data exposure
     // Import clearCompanyState from companySlice
@@ -92,7 +100,7 @@ const resetAllApiStatesOnLogout: Middleware = (storeAPI) => (next) => (action) =
       localStorage.removeItem('activeCompanyId');
     }
 
-    console.log('[Middleware] All API caches cleared (authApi, companyApi, tenantApi, multiCompanyApi, companyUserApi, productApi, customerApi, supplierApi, warehouseApi, stockApi, initialStockApi, transferApi, opnameApi, adjustmentApi, purchaseOrderApi, goodsReceiptApi, purchaseInvoiceApi, paymentApi)');
+    console.log('[Middleware] All API caches cleared (authApi, companyApi, tenantApi, multiCompanyApi, companyUserApi, productApi, customerApi, supplierApi, warehouseApi, stockApi, initialStockApi, transferApi, opnameApi, adjustmentApi, purchaseOrderApi, goodsReceiptApi, purchaseInvoiceApi, paymentApi, salesOrderApi, deliveryApi)');
     console.log('[Middleware] Company Redux state cleared (activeCompany, availableCompanies)');
     console.log('[Middleware] localStorage.activeCompanyId cleared to prevent cross-user contamination');
   }
@@ -144,9 +152,13 @@ const resetAllApiStatesOnCompanySwitch: Middleware = (storeAPI) => (next) => (ac
       storeAPI.dispatch(goodsReceiptApi.util.resetApiState());
       storeAPI.dispatch(purchaseInvoiceApi.util.resetApiState());
       storeAPI.dispatch(paymentApi.util.resetApiState());
+      storeAPI.dispatch(salesOrderApi.util.resetApiState());
+      storeAPI.dispatch(deliveryApi.util.resetApiState());
+      storeAPI.dispatch(invoiceApi.util.resetApiState());
+      storeAPI.dispatch(salesPaymentApi.util.resetApiState());
       // Note: authApi, tenantApi, multiCompanyApi are NOT reset (user-level, not company-level)
 
-      console.log('[Middleware] All company-scoped API caches cleared (companyApi, companyUserApi, productApi, customerApi, supplierApi, warehouseApi, stockApi, initialStockApi, transferApi, opnameApi, adjustmentApi, purchaseOrderApi, goodsReceiptApi, purchaseInvoiceApi, paymentApi)');
+      console.log('[Middleware] All company-scoped API caches cleared (companyApi, companyUserApi, productApi, customerApi, supplierApi, warehouseApi, stockApi, initialStockApi, transferApi, opnameApi, adjustmentApi, purchaseOrderApi, goodsReceiptApi, purchaseInvoiceApi, paymentApi, salesOrderApi, deliveryApi)');
       console.log('[Middleware] Next API calls will fetch data for company:', newCompanyId);
     } else if (!prevCompanyId) {
       console.log('[Middleware] Initial company selection:', newCompanyId);
@@ -191,6 +203,10 @@ export const store = configureStore({
     [goodsReceiptApi.reducerPath]: goodsReceiptApi.reducer, // Goods receipt API
     [purchaseInvoiceApi.reducerPath]: purchaseInvoiceApi.reducer, // Purchase invoice API
     [paymentApi.reducerPath]: paymentApi.reducer, // Payment API
+    [salesOrderApi.reducerPath]: salesOrderApi.reducer, // Sales order API
+    [deliveryApi.reducerPath]: deliveryApi.reducer, // Delivery API
+    [invoiceApi.reducerPath]: invoiceApi.reducer, // Sales invoice API
+    [salesPaymentApi.reducerPath]: salesPaymentApi.reducer, // Sales payment API (customer payments)
   },
 
   // Add RTK Query middleware for caching, invalidation, etc.
@@ -214,6 +230,10 @@ export const store = configureStore({
       goodsReceiptApi.middleware, // Goods receipt middleware
       purchaseInvoiceApi.middleware, // Purchase invoice middleware
       paymentApi.middleware, // Payment middleware
+      salesOrderApi.middleware, // Sales order middleware
+      deliveryApi.middleware, // Delivery middleware
+      invoiceApi.middleware, // Sales invoice middleware
+      salesPaymentApi.middleware, // Sales payment middleware (customer payments)
       redirectToLogoutOnSessionExpiry, // CRITICAL: Redirect to /logout page when session expires
       resetAllApiStatesOnLogout, // CRITICAL: Reset all API caches on logout
       resetAllApiStatesOnCompanySwitch // CRITICAL: Reset company-scoped caches on company switch

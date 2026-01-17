@@ -337,7 +337,7 @@ export function CompanyProfileForm({
             <FileText className="h-5 w-5 text-primary" />
             <h3 className="text-xl font-semibold">Informasi Pajak</h3>
           </div>
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2">
             <FormField
               control={form.control}
               name="npwp"
@@ -407,34 +407,37 @@ export function CompanyProfileForm({
                 </FormItem>
               )}
             />
+
+            <FormField
+              control={form.control}
+              name="ppnRate"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>PPN Rate (%)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      placeholder="11"
+                      {...field}
+                      value={field.value || 11}
+                      onChange={(e) =>
+                        field.onChange(parseFloat(e.target.value))
+                      }
+                      className="bg-background"
+                      disabled={!isPkp}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {isPkp ? "Tarif PPN untuk perusahaan ini" : "Set Status PKP untuk mengaktifkan"}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
-          {isPkp && (
-            <div className="grid gap-4 md:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="ppnRate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>PPN Rate (%)</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        placeholder="11"
-                        {...field}
-                        value={field.value || 11}
-                        onChange={(e) =>
-                          field.onChange(parseFloat(e.target.value))
-                        }
-                        className="bg-background"
-                      />
-                    </FormControl>
-                    <FormDescription>Tarif PPN saat ini: 11%</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-          )}
         </div>
 
         <Separator />

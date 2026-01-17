@@ -382,6 +382,7 @@ export interface AvailableCompany {
   city?: string;
   province?: string;
   isPKP: boolean;
+  ppnRate: number; // Tax rate for this company (e.g., 11 for 11%)
   isActive: boolean;
   logoUrl?: string | null;
   // User access info

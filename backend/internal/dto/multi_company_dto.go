@@ -51,7 +51,9 @@ type CompanyListResponse struct {
 	City             string  `json:"city,omitempty"`
 	Province         string  `json:"province,omitempty"`
 	IsPKP            bool    `json:"isPkp"`
+	PPNRate          float64 `json:"ppnRate"`                    // Tax rate for this company (e.g., 11.0 for 11%)
 	IsActive         bool    `json:"isActive"`
+	LogoURL          string  `json:"logoUrl,omitempty"`
 	UserRole         string  `json:"userRole,omitempty"`         // User's role in this company (Tier 2)
 	AccessTier       int     `json:"accessTier"`                 // 1=Tenant-level, 2=Company-level
 }

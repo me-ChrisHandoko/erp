@@ -99,14 +99,18 @@ const (
 	BatchStatusSold      BatchStatus = "SOLD"      // Fully sold out
 )
 
-// SalesOrderStatus - Simplified SO workflow (PHASE 0)
+// SalesOrderStatus - Complete SO workflow with 8 statuses
 type SalesOrderStatus string
 
 const (
-	SalesOrderStatusDraft     SalesOrderStatus = "DRAFT"     // Belum dikonfirmasi
-	SalesOrderStatusConfirmed SalesOrderStatus = "CONFIRMED" // Dikonfirmasi, ready proses
-	SalesOrderStatusCompleted SalesOrderStatus = "COMPLETED" // Selesai (delivered & invoiced)
-	SalesOrderStatusCancelled SalesOrderStatus = "CANCELLED" // Dibatalkan
+	SalesOrderStatusDraft      SalesOrderStatus = "DRAFT"      // Belum dikonfirmasi
+	SalesOrderStatusPending    SalesOrderStatus = "PENDING"    // Menunggu persetujuan
+	SalesOrderStatusApproved   SalesOrderStatus = "APPROVED"   // Disetujui, siap diproses
+	SalesOrderStatusProcessing SalesOrderStatus = "PROCESSING" // Sedang diproses/disiapkan
+	SalesOrderStatusShipped    SalesOrderStatus = "SHIPPED"    // Sudah dikirim
+	SalesOrderStatusDelivered  SalesOrderStatus = "DELIVERED"  // Sudah diterima customer
+	SalesOrderStatusCancelled  SalesOrderStatus = "CANCELLED"  // Dibatalkan
+	SalesOrderStatusCompleted  SalesOrderStatus = "COMPLETED"  // Selesai (delivered & invoiced)
 )
 
 // PurchaseOrderStatus - Simplified PO workflow (PHASE 0)
@@ -133,11 +137,14 @@ const (
 type PaymentMethod string
 
 const (
-	PaymentMethodCash     PaymentMethod = "CASH"
-	PaymentMethodTransfer PaymentMethod = "TRANSFER"
-	PaymentMethodCheck    PaymentMethod = "CHECK"
-	PaymentMethodGiro     PaymentMethod = "GIRO"
-	PaymentMethodOther    PaymentMethod = "OTHER"
+	PaymentMethodCash         PaymentMethod = "CASH"
+	PaymentMethodBankTransfer PaymentMethod = "BANK_TRANSFER"
+	PaymentMethodCheck        PaymentMethod = "CHECK"
+	PaymentMethodGiro         PaymentMethod = "GIRO"
+	PaymentMethodCreditCard   PaymentMethod = "CREDIT_CARD"
+	PaymentMethodDebitCard    PaymentMethod = "DEBIT_CARD"
+	PaymentMethodEWallet      PaymentMethod = "E_WALLET"
+	PaymentMethodOther        PaymentMethod = "OTHER"
 )
 
 // CheckStatus - Check/Giro status tracking

@@ -108,6 +108,7 @@ func (h *MultiCompanyHandler) ListCompanies(c *gin.Context) {
 			City:       company.City,
 			Province:   company.Province,
 			IsPKP:      company.IsPKP,
+			PPNRate:    company.PPNRate.InexactFloat64(),
 			IsActive:   company.IsActive,
 			AccessTier: 2, // Default to company-level access
 		}
@@ -115,6 +116,9 @@ func (h *MultiCompanyHandler) ListCompanies(c *gin.Context) {
 		// Set optional fields
 		if company.NPWP != nil {
 			companyResp.NPWP = *company.NPWP
+		}
+		if company.LogoURL != nil {
+			companyResp.LogoURL = *company.LogoURL
 		}
 
 		// Set user role based on access tier

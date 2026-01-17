@@ -194,7 +194,9 @@ export function EditStockSettingsForm({
                       {stock.warehouseCode}
                     </Badge>
                   )}
-                  <p className="font-semibold text-base">{stock.warehouseName}</p>
+                  <p className="font-semibold text-base">
+                    {stock.warehouseName}
+                  </p>
                 </div>
               </div>
 
@@ -350,7 +352,7 @@ export function EditStockSettingsForm({
           type="submit"
           disabled={isLoading}
           size="lg"
-          className="min-w-[150px]"
+          className="min-w-37.5"
         >
           {isLoading ? (
             <>

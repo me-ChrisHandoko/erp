@@ -16,10 +16,13 @@ import (
 	"backend/internal/service/document"
 	"backend/internal/service/goodsreceipt"
 	"backend/internal/service/inventoryadjustment"
+	"backend/internal/service/invoice"
+	"backend/internal/service/payment"
 	"backend/internal/service/permission"
 	"backend/internal/service/product"
 	"backend/internal/service/purchase"
 	"backend/internal/service/purchaseinvoice"
+	"backend/internal/service/sales"
 	"backend/internal/service/stock_transfer"
 	"backend/internal/service/stockopname"
 	"backend/internal/service/supplier"
@@ -340,6 +343,8 @@ func setupProtectedRoutes(
 			// GET endpoints - all authenticated users can view
 			customerGroup.GET("", customerHandler.ListCustomers)
 			customerGroup.GET("/:id", customerHandler.GetCustomer)
+			customerGroup.GET("/:id/frequent-products", customerHandler.GetFrequentProducts)
+			customerGroup.GET("/:id/credit-info", customerHandler.GetCustomerCreditInfo)
 
 			// POST/PUT/DELETE endpoints - OWNER/ADMIN only
 			customerGroup.POST("", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), customerHandler.CreateCustomer)
@@ -582,6 +587,111 @@ func setupProtectedRoutes(
 
 			// Approval endpoint - OWNER/ADMIN only
 			supplierPaymentGroup.POST("/:id/approve", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), supplierPaymentHandler.ApproveSupplierPayment)
+		}
+
+		// ============================================================================
+		// SALES ORDER MANAGEMENT ROUTES (PHASE 4 - Sales Management)
+		// Reference: Sales order management for sales workflow with 8-state lifecycle
+		// Status flow: DRAFT → PENDING → APPROVED → PROCESSING → SHIPPED → DELIVERED → COMPLETED
+		// ============================================================================
+		salesOrderService := sales.NewSalesOrderService(db, docNumberGen)
+		salesOrderHandler := handler.NewSalesOrderHandler(salesOrderService)
+
+		salesOrderGroup := businessProtected.Group("/sales-orders")
+		salesOrderGroup.Use(middleware.CompanyContextMiddleware(db))
+		{
+			// GET endpoints - all authenticated users can view
+			salesOrderGroup.GET("", salesOrderHandler.ListSalesOrders)
+			salesOrderGroup.GET("/:id", salesOrderHandler.GetSalesOrder)
+
+			// POST/PUT/DELETE endpoints - OWNER/ADMIN only
+			salesOrderGroup.POST("", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), salesOrderHandler.CreateSalesOrder)
+			salesOrderGroup.PUT("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), salesOrderHandler.UpdateSalesOrder)
+			salesOrderGroup.DELETE("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), salesOrderHandler.DeleteSalesOrder)
+
+			// Status transition endpoints - OWNER/ADMIN only
+			salesOrderGroup.POST("/:id/submit", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), salesOrderHandler.SubmitSalesOrder)
+			salesOrderGroup.POST("/:id/approve", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), salesOrderHandler.ApproveSalesOrder)
+			salesOrderGroup.POST("/:id/start-processing", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), salesOrderHandler.StartProcessingSalesOrder)
+			salesOrderGroup.POST("/:id/ship", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), salesOrderHandler.ShipSalesOrder)
+			salesOrderGroup.POST("/:id/deliver", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), salesOrderHandler.DeliverSalesOrder)
+			salesOrderGroup.POST("/:id/complete", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), salesOrderHandler.CompleteSalesOrder)
+			salesOrderGroup.POST("/:id/cancel", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), salesOrderHandler.CancelSalesOrder)
+		}
+
+		// ============================================================================
+		// DELIVERY MANAGEMENT ROUTES (PHASE 4 - Delivery Management)
+		// Reference: Delivery order management for distribution workflow with 5-state lifecycle
+		// Status flow: PREPARED → IN_TRANSIT → DELIVERED → CONFIRMED
+		// ============================================================================
+		deliveryService := sales.NewDeliveryService(db, docNumberGen)
+		deliveryHandler := handler.NewDeliveryHandler(deliveryService)
+
+		deliveryGroup := businessProtected.Group("/deliveries")
+		deliveryGroup.Use(middleware.CompanyContextMiddleware(db))
+		{
+			// GET endpoints - all authenticated users can view
+			deliveryGroup.GET("", deliveryHandler.ListDeliveries)
+			deliveryGroup.GET("/:id", deliveryHandler.GetDelivery)
+			deliveryGroup.GET("/:id/pdf", deliveryHandler.DownloadDeliveryPDF)
+
+			// POST/PUT endpoints - OWNER/ADMIN only
+			deliveryGroup.POST("", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), deliveryHandler.CreateDelivery)
+
+			// Status update endpoint - OWNER/ADMIN only
+			deliveryGroup.PUT("/:id/status", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), deliveryHandler.UpdateDeliveryStatus)
+
+			// Quick action endpoints - OWNER/ADMIN only
+			deliveryGroup.POST("/:id/start", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), deliveryHandler.StartDelivery)
+			deliveryGroup.POST("/:id/complete", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), deliveryHandler.CompleteDelivery)
+			deliveryGroup.POST("/:id/confirm", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), deliveryHandler.ConfirmDelivery)
+			deliveryGroup.POST("/:id/cancel", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), deliveryHandler.CancelDelivery)
+		}
+
+		// ============================================================================
+		// INVOICE MANAGEMENT ROUTES (PHASE 4 - Sales Invoice Management)
+		// Reference: Customer invoice (sales invoice) management for sales billing
+		// ============================================================================
+		invoiceService := invoice.NewInvoiceService(db, docNumberGen)
+		invoiceHandler := handler.NewInvoiceHandler(invoiceService)
+
+		invoiceGroup := businessProtected.Group("/invoices")
+		invoiceGroup.Use(middleware.CompanyContextMiddleware(db))
+		{
+			// GET endpoints - all authenticated users can view
+			invoiceGroup.GET("", invoiceHandler.ListInvoices)
+			invoiceGroup.GET("/:id", invoiceHandler.GetInvoice)
+
+			// POST/PUT/DELETE endpoints - OWNER/ADMIN only
+			invoiceGroup.POST("", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), invoiceHandler.CreateInvoice)
+			invoiceGroup.PUT("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), invoiceHandler.UpdateInvoice)
+			invoiceGroup.DELETE("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), invoiceHandler.DeleteInvoice)
+
+			// Payment recording endpoint - OWNER/ADMIN only
+			invoiceGroup.POST("/:id/payments", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), invoiceHandler.RecordPayment)
+		}
+
+		// ============================================================================
+		// PAYMENT MANAGEMENT ROUTES (PHASE 4 - Customer Payment Management)
+		// Reference: Customer payment (invoice payment) management for sales
+		// ============================================================================
+		paymentService := payment.NewPaymentService(db, docNumberGen)
+		paymentHandler := handler.NewPaymentHandler(paymentService)
+
+		paymentGroup := businessProtected.Group("/payments")
+		paymentGroup.Use(middleware.CompanyContextMiddleware(db))
+		{
+			// GET endpoints - all authenticated users can view
+			paymentGroup.GET("", paymentHandler.ListPayments)
+			paymentGroup.GET("/:id", paymentHandler.GetPayment)
+
+			// POST/PUT/DELETE endpoints - OWNER/ADMIN only
+			paymentGroup.POST("", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), paymentHandler.CreatePayment)
+			paymentGroup.PUT("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), paymentHandler.UpdatePayment)
+			paymentGroup.DELETE("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), paymentHandler.VoidPayment)
+
+			// Check status update endpoint - OWNER/ADMIN only
+			paymentGroup.PATCH("/:id/check-status", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), paymentHandler.UpdateCheckStatus)
 		}
 
 		// Example of role-based routes

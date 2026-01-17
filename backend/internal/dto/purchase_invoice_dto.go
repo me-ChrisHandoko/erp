@@ -192,20 +192,4 @@ const (
 	PurchaseInvoiceStatusCancelled = "CANCELLED"
 )
 
-// Payment Status Constants
-const (
-	PaymentStatusUnpaid  = "UNPAID"
-	PaymentStatusPartial = "PARTIAL"
-	PaymentStatusPaid    = "PAID"
-	PaymentStatusOverdue = "OVERDUE"
-)
-
-// Payment Method Constants
-const (
-	PaymentMethodCash         = "CASH"
-	PaymentMethodBankTransfer = "BANK_TRANSFER"
-	PaymentMethodCheck        = "CHECK"
-	PaymentMethodGiro         = "GIRO"
-	PaymentMethodCreditCard   = "CREDIT_CARD"
-	PaymentMethodOther        = "OTHER"
-)
+// Payment Status and Payment Method constants are defined in payment_dto.go

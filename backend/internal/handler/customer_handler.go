@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -367,6 +368,120 @@ func (h *CustomerHandler) DeleteCustomer(c *gin.Context) {
 }
 
 // ============================================================================
+// GET FREQUENT PRODUCTS
+// ============================================================================
+
+// GetFrequentProducts handles GET /api/v1/customers/:id/frequent-products
+// @Summary Get frequently purchased products for a customer
+// @Description Retrieves the most frequently purchased products for Quick Add panel optimization
+// @Tags Customers
+// @Accept json
+// @Produce json
+// @Param id path string true "Customer ID"
+// @Param warehouse_id query string false "Filter by warehouse ID"
+// @Param limit query int false "Maximum number of products (default: 8)"
+// @Success 200 {object} dto.FrequentProductsResponse
+// @Failure 400 {object} pkgerrors.ErrorResponse
+// @Failure 404 {object} pkgerrors.ErrorResponse
+// @Failure 500 {object} pkgerrors.ErrorResponse
+// @Router /api/v1/customers/{id}/frequent-products [get]
+// @Security BearerAuth
+func (h *CustomerHandler) GetFrequentProducts(c *gin.Context) {
+	// Get tenant_id from context (set by middleware)
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
+	// Get company ID from context
+	companyID, exists := c.Get("company_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Company context not found. Please set X-Company-ID header."))
+		return
+	}
+
+	// Get customer ID from path
+	customerID := c.Param("id")
+	if customerID == "" {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Customer ID is required"))
+		return
+	}
+
+	// Parse query parameters
+	var warehouseID *string
+	if whID := c.Query("warehouse_id"); whID != "" {
+		warehouseID = &whID
+	}
+
+	limit := 8 // Default limit
+	if limitParam := c.Query("limit"); limitParam != "" {
+		if parsedLimit, err := parseIntQuery(limitParam); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	// Get frequent products
+	response, err := h.customerService.GetFrequentProducts(c.Request.Context(), tenantID.(string), companyID.(string), customerID, warehouseID, limit)
+	if err != nil {
+		if appErr, ok := err.(*pkgerrors.AppError); ok {
+			c.JSON(appErr.StatusCode, appErr)
+			return
+		}
+		c.JSON(http.StatusInternalServerError, pkgerrors.NewInternalError(err))
+		return
+	}
+
+	// Return response in standard API format
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    response,
+	})
+}
+
+// GetCustomerCreditInfo handles GET /api/v1/customers/:id/credit-info
+// Returns customer credit limit, outstanding balance, and available credit
+// Used for credit limit validation in sales orders
+func (h *CustomerHandler) GetCustomerCreditInfo(c *gin.Context) {
+	// Extract tenant and company context
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
+	companyID, exists := c.Get("company_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Company context not found. Please set X-Company-ID header."))
+		return
+	}
+
+	// Extract customer ID from URL parameter
+	customerID := c.Param("id")
+	if customerID == "" {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Customer ID is required"))
+		return
+	}
+
+	// Call service to get customer credit info
+	response, err := h.customerService.GetCustomerCreditInfo(c.Request.Context(), tenantID.(string), companyID.(string), customerID)
+	if err != nil {
+		if appErr, ok := err.(*pkgerrors.AppError); ok {
+			c.JSON(appErr.StatusCode, appErr)
+			return
+		}
+		c.JSON(http.StatusInternalServerError, pkgerrors.NewInternalError(err))
+		return
+	}
+
+	// Return response in standard API format
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    response,
+	})
+}
+
+// ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
 
@@ -431,4 +546,13 @@ func mapCustomerToResponse(customer *models.Customer) dto.CustomerResponse {
 		CreatedAt:          customer.CreatedAt,
 		UpdatedAt:          customer.UpdatedAt,
 	}
+}
+
+// parseIntQuery safely parses an integer query parameter
+func parseIntQuery(value string) (int, error) {
+	var result int
+	if _, err := fmt.Sscanf(value, "%d", &result); err != nil {
+		return 0, err
+	}
+	return result, nil
 }

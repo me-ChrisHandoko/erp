@@ -18,6 +18,10 @@ import type {
   CreateCustomerRequest,
   UpdateCustomerRequest,
   CustomerFilters,
+  FrequentProductsResponse,
+  FrequentProductsApiResponse,
+  CustomerCreditInfoResponse,
+  CustomerCreditInfoApiResponse,
 } from "@/types/customer.types";
 import type { ApiSuccessResponse } from "@/types/api";
 
@@ -90,6 +94,50 @@ export const customerApi = createApi({
     }),
 
     /**
+     * Get Frequent Products for Customer
+     * GET /api/v1/customers/:id/frequent-products
+     * Optimized endpoint for Quick Add panel in Sales Orders
+     */
+    getFrequentProducts: builder.query<
+      FrequentProductsResponse,
+      { customerId: string; warehouseId?: string; limit?: number }
+    >({
+      query: ({ customerId, warehouseId, limit }) => {
+        const params: Record<string, any> = {};
+        if (warehouseId) params.warehouse_id = warehouseId;
+        if (limit) params.limit = limit;
+
+        return {
+          url: `/customers/${customerId}/frequent-products`,
+          params,
+        };
+      },
+      transformResponse: (response: FrequentProductsApiResponse) =>
+        response.data,
+      // Don't cache - we want fresh data for each customer/warehouse combination
+      keepUnusedDataFor: 0,
+    }),
+
+    /**
+     * Get Customer Credit Info
+     * GET /api/v1/customers/:id/credit-info
+     * Returns credit limit, outstanding balance, and available credit
+     * Used for credit limit validation in sales orders
+     */
+    getCustomerCreditInfo: builder.query<
+      CustomerCreditInfoResponse,
+      string // customerId
+    >({
+      query: (customerId) => ({
+        url: `/customers/${customerId}/credit-info`,
+      }),
+      transformResponse: (response: CustomerCreditInfoApiResponse) =>
+        response.data,
+      // Don't cache - we want fresh credit data
+      keepUnusedDataFor: 0,
+    }),
+
+    /**
      * Create Customer
      * POST /api/v1/customers
      * Requires OWNER or ADMIN role
@@ -150,6 +198,8 @@ export const {
   // Customer CRUD
   useListCustomersQuery,
   useGetCustomerQuery,
+  useGetFrequentProductsQuery,
+  useGetCustomerCreditInfoQuery,
   useCreateCustomerMutation,
   useUpdateCustomerMutation,
   useDeleteCustomerMutation,

@@ -28,6 +28,8 @@ const (
 	DocTypePurchaseInvoice  DocumentType = "purchase_invoice"
 	DocTypeSalesInvoice     DocumentType = "sales_invoice"
 	DocTypeSupplierPayment  DocumentType = "supplier_payment"
+	DocTypeCustomerPayment  DocumentType = "customer_payment"
+	DocTypeDelivery         DocumentType = "delivery"
 )
 
 // NewDocumentNumberGenerator creates a new document number generator
@@ -67,6 +69,14 @@ func (g *DocumentNumberGenerator) GenerateNumber(
 	case DocTypePurchaseInvoice, DocTypeSalesInvoice:
 		prefix = company.InvoicePrefix
 		format = company.InvoiceNumberFormat
+	case DocTypeSupplierPayment, DocTypeCustomerPayment:
+		// Use default payment prefix
+		prefix = "PAY"
+		format = "{PREFIX}/{YEAR}/{MONTH}/{NUMBER}"
+	case DocTypeDelivery:
+		// Use SO prefix for deliveries or create separate if needed
+		prefix = "DEL"
+		format = "{PREFIX}/{YEAR}/{MONTH}/{NUMBER}"
 	default:
 		return "", fmt.Errorf("unsupported document type: %s", docType)
 	}
@@ -127,12 +137,26 @@ func (g *DocumentNumberGenerator) getNextSequence(
 			Where("company_id = ?", companyID)
 
 	case DocTypeSalesOrder:
-		// TODO: Implement when sales order model is ready
-		return 0, fmt.Errorf("sales order not implemented yet")
+		query = g.db.WithContext(ctx).
+			Set("tenant_id", tenantID).
+			Model(&models.SalesOrder{}).
+			Where("company_id = ?", companyID)
+
+	case DocTypeDelivery:
+		query = g.db.WithContext(ctx).
+			Set("tenant_id", tenantID).
+			Model(&models.Delivery{}).
+			Where("company_id = ?", companyID)
 
 	case DocTypeSalesInvoice:
 		// TODO: Implement when sales invoice model is ready
 		return 0, fmt.Errorf("sales invoice not implemented yet")
+
+	case DocTypeCustomerPayment, DocTypeSupplierPayment:
+		query = g.db.WithContext(ctx).
+			Set("tenant_id", tenantID).
+			Model(&models.Payment{}).
+			Where("company_id = ?", companyID)
 
 	default:
 		return 0, fmt.Errorf("unsupported document type: %s", docType)
@@ -153,6 +177,96 @@ func (g *DocumentNumberGenerator) getNextSequence(
 
 	if err := query.Count(&count).Error; err != nil {
 		return 0, fmt.Errorf("failed to count documents: %w", err)
+	}
+
+	return int(count) + 1, nil
+}
+
+// GeneratePaymentNumber generates payment document number
+func (g *DocumentNumberGenerator) GeneratePaymentNumber(
+	ctx context.Context,
+	tx *gorm.DB,
+	companyID string,
+	paymentDate time.Time,
+) (string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	// Get tenant_id from context
+	tenantID, ok := tx.Get("tenant_id")
+	if !ok {
+		return "", fmt.Errorf("tenant_id not found in transaction context")
+	}
+
+	// 1. Get company settings
+	var company models.Company
+	if err := tx.WithContext(ctx).
+		Set("tenant_id", tenantID).
+		First(&company, "id = ?", companyID).Error; err != nil {
+		return "", fmt.Errorf("failed to get company: %w", err)
+	}
+
+	// 2. Use default payment prefix and format
+	prefix := "PAY"
+	format := "{PREFIX}/{YEAR}/{MONTH}/{NUMBER}"
+
+	// 3. Get next sequence number based on payment date
+	sequence, err := g.getNextPaymentSequence(ctx, tx, tenantID.(string), companyID, format, paymentDate)
+	if err != nil {
+		return "", err
+	}
+
+	// 4. Build number using payment date for year/month
+	number := g.buildPaymentNumber(prefix, format, sequence, paymentDate)
+
+	return number, nil
+}
+
+// buildPaymentNumber builds payment number using payment date for year/month
+func (g *DocumentNumberGenerator) buildPaymentNumber(prefix, format string, sequence int, paymentDate time.Time) string {
+	// Replace placeholders using payment date
+	result := format
+	result = strings.ReplaceAll(result, "{PREFIX}", prefix)
+	result = strings.ReplaceAll(result, "{YEAR}", fmt.Sprintf("%d", paymentDate.Year()))
+	result = strings.ReplaceAll(result, "{MONTH}", fmt.Sprintf("%02d", paymentDate.Month()))
+	result = strings.ReplaceAll(result, "{NUMBER}", fmt.Sprintf("%04d", sequence))
+
+	return result
+}
+
+// getNextPaymentSequence gets the next sequence number for payments based on payment date
+func (g *DocumentNumberGenerator) getNextPaymentSequence(
+	ctx context.Context,
+	tx *gorm.DB,
+	tenantID string,
+	companyID string,
+	format string,
+	paymentDate time.Time,
+) (int, error) {
+	// Determine if sequence should reset based on format
+	shouldResetMonthly := strings.Contains(format, "{MONTH}")
+	shouldResetYearly := strings.Contains(format, "{YEAR}") && !shouldResetMonthly
+
+	var count int64
+	query := tx.WithContext(ctx).
+		Set("tenant_id", tenantID).
+		Model(&models.Payment{}).
+		Where("company_id = ?", companyID)
+
+	// Add time filters based on format using payment_date
+	if shouldResetMonthly {
+		year := paymentDate.Year()
+		month := int(paymentDate.Month())
+		query = query.Where("EXTRACT(YEAR FROM payment_date) = ? AND EXTRACT(MONTH FROM payment_date) = ?",
+			year, month)
+	} else if shouldResetYearly {
+		year := paymentDate.Year()
+		query = query.Where("EXTRACT(YEAR FROM payment_date) = ?", year)
+	}
+	// else: never reset (continuous sequence)
+
+	if err := query.Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("failed to count payments: %w", err)
 	}
 
 	return int(count) + 1, nil

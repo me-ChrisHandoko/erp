@@ -484,6 +484,233 @@ func (s *CustomerService) DeleteCustomer(ctx context.Context, tenantID, companyI
 }
 
 // ============================================================================
+// GET FREQUENT PRODUCTS
+// ============================================================================
+
+// GetFrequentProducts retrieves the most frequently purchased products for a customer
+// Optimized endpoint for Quick Add panel in Sales Orders
+func (s *CustomerService) GetFrequentProducts(ctx context.Context, tenantID, companyID, customerID string, warehouseID *string, limit int) (*dto.FrequentProductsResponse, error) {
+	// Validate customer exists
+	customer, err := s.GetCustomerByID(ctx, tenantID, companyID, customerID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set default limit
+	if limit <= 0 {
+		limit = 8
+	}
+
+	// Define result structure
+	type FrequentProductResult struct {
+		ProductID     string
+		ProductCode   string
+		ProductName   string
+		Frequency     int
+		TotalQty      decimal.Decimal
+		LastOrderDate string
+		BaseUnit      string
+		LatestPrice   decimal.Decimal
+	}
+
+	var results []FrequentProductResult
+
+	// Build base query with tenant context
+	query := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+		Table("sales_order_items soi").
+		Select(`
+			soi.product_id,
+			p.code as product_code,
+			p.name as product_name,
+			COUNT(DISTINCT so.id) as frequency,
+			SUM(soi.quantity) as total_qty,
+			MAX(so.so_date) as last_order_date,
+			p.base_unit,
+			(SELECT soi2.unit_price
+			 FROM sales_order_items soi2
+			 JOIN sales_orders so2 ON soi2.sales_order_id = so2.id
+			 WHERE soi2.product_id = soi.product_id
+			   AND so2.customer_id = ?
+			   AND so2.company_id = ?
+			 ORDER BY so2.so_date DESC
+			 LIMIT 1) as latest_price
+		`, customerID, companyID).
+		Joins("JOIN sales_orders so ON soi.sales_order_id = so.id").
+		Joins("JOIN products p ON soi.product_id = p.id").
+		Where("so.customer_id = ?", customerID).
+		Where("so.company_id = ?", companyID).
+		Where("so.status IN ('APPROVED', 'COMPLETED', 'DELIVERED')"). // Only count fulfilled orders
+		Group("soi.product_id, p.code, p.name, p.base_unit")
+
+	// Optional warehouse filter
+	if warehouseID != nil && *warehouseID != "" {
+		query = query.Where("so.warehouse_id = ?", *warehouseID)
+	}
+
+	// Order by frequency (DESC), total quantity (DESC), last order date (DESC)
+	query = query.Order("frequency DESC, total_qty DESC, last_order_date DESC").
+		Limit(limit)
+
+	// Execute query
+	if err := query.Scan(&results).Error; err != nil {
+		return nil, fmt.Errorf("failed to get frequent products: %w", err)
+	}
+
+	// Get date range from sales orders
+	type DateRange struct {
+		MinDate *string
+		MaxDate *string
+	}
+	var dateRange DateRange
+
+	dateRangeQuery := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+		Table("sales_orders").
+		Select("MIN(so_date) as min_date, MAX(so_date) as max_date").
+		Where("customer_id = ?", customerID).
+		Where("company_id = ?", companyID).
+		Where("status IN ('APPROVED', 'COMPLETED', 'DELIVERED')")
+
+	if warehouseID != nil && *warehouseID != "" {
+		dateRangeQuery = dateRangeQuery.Where("warehouse_id = ?", *warehouseID)
+	}
+
+	if err := dateRangeQuery.Scan(&dateRange).Error; err != nil {
+		return nil, fmt.Errorf("failed to get date range: %w", err)
+	}
+
+	// Count total orders
+	var totalOrders int64
+	ordersCountQuery := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+		Model(&models.SalesOrder{}).
+		Where("customer_id = ?", customerID).
+		Where("company_id = ?", companyID).
+		Where("status IN ('APPROVED', 'COMPLETED', 'DELIVERED')")
+
+	if warehouseID != nil && *warehouseID != "" {
+		ordersCountQuery = ordersCountQuery.Where("warehouse_id = ?", *warehouseID)
+	}
+
+	if err := ordersCountQuery.Count(&totalOrders).Error; err != nil {
+		return nil, fmt.Errorf("failed to count orders: %w", err)
+	}
+
+	// Map to response DTO
+	frequentProducts := make([]dto.FrequentProductItem, len(results))
+	for i, result := range results {
+		frequentProducts[i] = dto.FrequentProductItem{
+			ProductID:     result.ProductID,
+			ProductCode:   result.ProductCode,
+			ProductName:   result.ProductName,
+			Frequency:     result.Frequency,
+			TotalQty:      result.TotalQty.String(),
+			LastOrderDate: result.LastOrderDate,
+			BaseUnitID:    "", // Not using unit ID, just name
+			BaseUnitName:  result.BaseUnit,
+			LatestPrice:   result.LatestPrice.String(),
+		}
+	}
+
+	// Build response
+	response := &dto.FrequentProductsResponse{
+		CustomerID:       customer.ID,
+		CustomerName:     customer.Name,
+		FrequentProducts: frequentProducts,
+		TotalOrders:      int(totalOrders),
+		DateRangeFrom:    "",
+		DateRangeTo:      "",
+	}
+
+	if warehouseID != nil && *warehouseID != "" {
+		response.WarehouseID = *warehouseID
+	}
+
+	if dateRange.MinDate != nil {
+		response.DateRangeFrom = *dateRange.MinDate
+	}
+
+	if dateRange.MaxDate != nil {
+		response.DateRangeTo = *dateRange.MaxDate
+	}
+
+	return response, nil
+}
+
+// GetCustomerCreditInfo retrieves customer credit limit and outstanding balance information
+// Used for credit limit validation in sales orders
+func (s *CustomerService) GetCustomerCreditInfo(ctx context.Context, tenantID, companyID, customerID string) (*dto.CustomerCreditInfoResponse, error) {
+	// Validate customer exists and get customer data
+	customer, err := s.GetCustomerByID(ctx, tenantID, companyID, customerID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Calculate outstanding amount from unpaid/partially paid sales invoices
+	type OutstandingResult struct {
+		TotalOutstanding decimal.Decimal
+		TotalOverdue     decimal.Decimal
+	}
+
+	var result OutstandingResult
+
+	// TEMPORARY SOLUTION: Use sales_orders as estimation until sales_invoices is implemented
+	// Query to calculate outstanding and overdue amounts from sales orders
+	// Outstanding: Total amount from orders with status APPROVED or COMPLETED (not yet invoiced/paid)
+	// Overdue: Orders where required_date has passed and still not DELIVERED
+	err = s.db.WithContext(ctx).Set("tenant_id", tenantID).
+		Table("sales_orders so").
+		Select(`
+			COALESCE(SUM(so.total_amount), 0) as total_outstanding,
+			COALESCE(SUM(
+				CASE
+					WHEN so.required_date < NOW() AND so.status NOT IN ('DELIVERED', 'CANCELLED')
+					THEN so.total_amount
+					ELSE 0
+				END
+			), 0) as total_overdue
+		`).
+		Where("so.customer_id = ?", customerID).
+		Where("so.company_id = ?", companyID).
+		Where("so.status IN ('APPROVED', 'COMPLETED')"). // Orders that are approved but not yet delivered
+		Scan(&result).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to calculate customer outstanding: %w", err)
+	}
+
+	// Calculate available credit (credit limit - outstanding)
+	creditLimit := customer.CreditLimit
+	outstandingAmount := result.TotalOutstanding
+	availableCredit := creditLimit.Sub(outstandingAmount)
+
+	// Check if exceeding limit
+	isExceedingLimit := outstandingAmount.GreaterThan(creditLimit)
+
+	// Calculate utilization percentage
+	var utilizationPercent decimal.Decimal
+	if creditLimit.GreaterThan(decimal.Zero) {
+		utilizationPercent = outstandingAmount.Div(creditLimit).Mul(decimal.NewFromInt(100))
+	} else {
+		utilizationPercent = decimal.Zero
+	}
+
+	// Build response
+	response := &dto.CustomerCreditInfoResponse{
+		CustomerID:         customer.ID,
+		CustomerName:       customer.Name,
+		CustomerCode:       customer.Code,
+		CreditLimit:        creditLimit.String(),
+		OutstandingAmount:  outstandingAmount.String(),
+		AvailableCredit:    availableCredit.String(),
+		OverdueAmount:      result.TotalOverdue.String(),
+		PaymentTermDays:    customer.PaymentTerm,
+		IsExceedingLimit:   isExceedingLimit,
+		UtilizationPercent: utilizationPercent.StringFixed(2),
+	}
+
+	return response, nil
+}
+
+// ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
 

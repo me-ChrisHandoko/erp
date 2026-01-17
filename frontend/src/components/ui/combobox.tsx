@@ -25,12 +25,14 @@ export interface ComboboxOption {
   searchLabel?: string;
   disabled?: boolean;
   group?: string;
+  code?: string; // For product code matching
 }
 
 interface ComboboxProps {
   options: ComboboxOption[];
   value?: string;
   onValueChange?: (value: string) => void;
+  onSearchChange?: (search: string) => void; // New: Callback when search input changes
   placeholder?: string;
   searchPlaceholder?: string;
   emptyMessage?: string;
@@ -42,18 +44,23 @@ interface ComboboxProps {
   ) => React.ReactNode;
 }
 
-export function Combobox({
-  options,
-  value,
-  onValueChange,
-  placeholder = "Select option...",
-  searchPlaceholder = "Search...",
-  emptyMessage = "No results found.",
-  disabled = false,
-  className,
-  renderOption,
-  renderTrigger,
-}: ComboboxProps) {
+export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
+  function Combobox(
+    {
+      options,
+      value,
+      onValueChange,
+      onSearchChange,
+      placeholder = "Select option...",
+      searchPlaceholder = "Search...",
+      emptyMessage = "No results found.",
+      disabled = false,
+      className,
+      renderOption,
+      renderTrigger,
+    },
+    ref
+  ) {
   const [open, setOpen] = React.useState(false);
   const commandListRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -152,6 +159,7 @@ export function Combobox({
     <Popover open={open} onOpenChange={setOpen} modal={true}>
       <PopoverTrigger asChild>
         <Button
+          ref={ref}
           variant="outline"
           role="combobox"
           aria-expanded={open}
@@ -207,7 +215,14 @@ export function Combobox({
             return 0;
           }}
         >
-          <CommandInput ref={inputRef} placeholder={searchPlaceholder} />
+          <CommandInput
+            ref={inputRef}
+            placeholder={searchPlaceholder}
+            onValueChange={(search) => {
+              // Notify parent component about search changes (for product code auto-complete)
+              onSearchChange?.(search);
+            }}
+          />
           <CommandList
             ref={commandListRef}
             className="max-h-[300px] overflow-y-auto overscroll-contain"
@@ -291,4 +306,4 @@ export function Combobox({
       </PopoverContent>
     </Popover>
   );
-}
+});

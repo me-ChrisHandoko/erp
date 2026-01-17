@@ -16,11 +16,14 @@ type SalesOrder struct {
 	CompanyID        string            `gorm:"type:varchar(255);not null;index:idx_company_sales_order;uniqueIndex:idx_company_so_number"`
 	SONumber         string            `gorm:"type:varchar(100);not null;uniqueIndex:idx_company_so_number"`
 	SODate           time.Time         `gorm:"type:timestamp;not null;index"`
+	RequiredDate     *time.Time        `gorm:"type:timestamp"` // Tanggal dibutuhkan
 	CustomerID       string            `gorm:"type:varchar(255);not null;index"`
+	WarehouseID      string            `gorm:"type:varchar(255);not null;index"` // Gudang untuk order ini
 	Status           SalesOrderStatus  `gorm:"type:varchar(20);default:'DRAFT';index"`
 	Subtotal         decimal.Decimal   `gorm:"type:decimal(15,2);default:0"`
 	DiscountAmount   decimal.Decimal   `gorm:"type:decimal(15,2);default:0"`
 	TaxAmount        decimal.Decimal   `gorm:"type:decimal(15,2);default:0"`
+	ShippingCost     decimal.Decimal   `gorm:"type:decimal(15,2);default:0"` // Ongkos kirim
 	TotalAmount      decimal.Decimal   `gorm:"type:decimal(15,2);default:0"`
 	Notes            *string           `gorm:"type:text"`
 	DeliveryAddress  *string           `gorm:"type:text"`
@@ -38,6 +41,7 @@ type SalesOrder struct {
 	Tenant      Tenant            `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE"`
 	Company     Company           `gorm:"foreignKey:CompanyID;constraint:OnDelete:CASCADE"`
 	Customer    Customer          `gorm:"foreignKey:CustomerID;constraint:OnDelete:RESTRICT"`
+	Warehouse   Warehouse         `gorm:"foreignKey:WarehouseID;constraint:OnDelete:RESTRICT"`
 	Salesperson *User             `gorm:"foreignKey:SalespersonID"`
 	Items       []SalesOrderItem  `gorm:"foreignKey:SalesOrderID"`
 	// Note: Invoices, Deliveries will reference this SO

@@ -59,17 +59,17 @@ export function CreatePaymentForm({
   // Fetch suppliers
   const { data: suppliersData } = useListSuppliersQuery({
     page: 1,
-    page_size: 100,
-    sort_by: "name",
-    sort_order: "asc",
+    pageSize: 100,
+    sortBy: "name",
+    sortOrder: "asc",
   });
 
   // Fetch purchase orders
   const { data: purchaseOrdersData } = useListPurchaseOrdersQuery({
     page: 1,
-    page_size: 100,
-    sort_by: "poDate",
-    sort_order: "desc",
+    pageSize: 100,
+    sortBy: "poDate",
+    sortOrder: "desc",
   });
 
   // Fetch bank accounts
