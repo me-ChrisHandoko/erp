@@ -10,6 +10,7 @@ import { store, RootState } from "@/store";
 import { setCredentials } from "@/store/slices/authSlice";
 import { useGetCurrentUserQuery } from "@/store/services/authApi";
 import { jwtDecode } from "jwt-decode";
+import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import type { JWTPayload } from "@/types/api";
 
 /**
@@ -361,10 +362,7 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
   if (isRestoring) {
     return (
       <div className="flex h-screen items-center justify-center">
-        <div className="flex flex-col items-center gap-2">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-          <p className="text-sm text-muted-foreground">Memulihkan sesi...</p>
-        </div>
+        <LoadingSpinner size="lg" text="Memulihkan sesi..." />
       </div>
     );
   }

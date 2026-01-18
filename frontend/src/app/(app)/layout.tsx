@@ -1,10 +1,11 @@
 "use client";
 
+import { Suspense, useState, useEffect } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AuthGuard } from "@/components/auth-guard";
 import { CompanyInitializer } from "@/components/company-initializer";
+import { NavigationProgress } from "@/components/shared/navigation-progress";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
-import { useState, useEffect } from "react";
 
 export default function AppLayout({
   children,
@@ -34,6 +35,11 @@ export default function AppLayout({
 
   return (
     <AuthGuard>
+      {/* Progress bar untuk navigasi - dibungkus Suspense karena menggunakan useSearchParams */}
+      <Suspense fallback={null}>
+        <NavigationProgress />
+      </Suspense>
+
       <SidebarProvider open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
         <CompanyInitializer />
         <AppSidebar />

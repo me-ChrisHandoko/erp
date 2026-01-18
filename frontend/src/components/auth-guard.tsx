@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useSelector } from "react-redux";
 import { selectIsAuthenticated } from "@/store/slices/authSlice";
-import { Loader2 } from "lucide-react";
+import { LoadingSpinner } from "@/components/shared/loading-spinner";
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -78,7 +78,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
   if (isChecking || isRedirecting.current) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <LoadingSpinner size="lg" text="Memeriksa autentikasi..." />
       </div>
     );
   }
@@ -87,7 +87,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
   if (!isAuthenticated && wasAuthenticated.current) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <LoadingSpinner size="lg" text="Mengalihkan ke login..." />
       </div>
     );
   }
