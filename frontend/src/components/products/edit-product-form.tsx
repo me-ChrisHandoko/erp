@@ -50,6 +50,8 @@ import {
   PRODUCT_CATEGORIES,
   COMMON_UNITS,
   type UpdateProductRequest,
+  type UpdateProductSuppliersRequest,
+  type UpdateProductUnitsRequest,
   type ProductResponse,
 } from "@/types/product.types";
 import {
@@ -94,6 +96,20 @@ export function EditProductForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 
+  // Units state - initialize from product data
+  const [units, setUnits] = useState(() => {
+    console.log("🔍 Product units from props:", product.units);
+    const mappedUnits = (product.units || []).map((u) => ({
+      id: u.id,
+      unitName: u.unitName,
+      conversionRate: u.conversionRate,
+      isBaseUnit: u.isBaseUnit,
+      isEdited: false,
+    }));
+    console.log("🔍 Mapped units state:", mappedUnits);
+    return mappedUnits;
+  });
+
   // Suppliers state - initialize from product data
   const [suppliers, setSuppliers] = useState<SupplierFormData[]>(() => {
     return (product.suppliers || []).map((s) => ({
@@ -120,6 +136,14 @@ export function EditProductForm({
 
   const handleBlur = (field: string) => {
     setTouched((prev) => ({ ...prev, [field]: true }));
+  };
+
+  const handleUnitChange = (unitId: string, newUnitName: string) => {
+    setUnits((prev) =>
+      prev.map((unit) =>
+        unit.id === unitId ? { ...unit, unitName: newUnitName, isEdited: true } : unit
+      )
+    );
   };
 
   const formatCurrency = (value: string): string => {
@@ -208,6 +232,41 @@ export function EditProductForm({
     }
 
     try {
+      // Build supplier changes object
+      const supplierChanges: UpdateProductSuppliersRequest = {
+        delete: suppliers
+          .filter((s) => s.isDeleted && s.id)
+          .map((s) => s.id!),
+
+        add: suppliers
+          .filter((s) => s.isNew && !s.isDeleted)
+          .map((s) => ({
+            supplierId: s.supplierId,
+            supplierPrice: s.supplierPrice,
+            leadTime: s.leadTimeDays ? parseInt(s.leadTimeDays) : 7,
+            isPrimary: s.isPrimarySupplier || false,
+          })),
+
+        update: suppliers
+          .filter((s) => s.isEdited && s.id && !s.isDeleted && !s.isNew)
+          .map((s) => ({
+            id: s.id!,
+            supplierPrice: s.supplierPrice,
+            leadTime: s.leadTimeDays ? parseInt(s.leadTimeDays) : undefined,
+            isPrimary: s.isPrimarySupplier,
+          })),
+      };
+
+      // Build unit changes object
+      const unitChanges: UpdateProductUnitsRequest = {
+        update: units
+          .filter((u) => u.isEdited && u.id)
+          .map((u) => ({
+            id: u.id,
+            unitName: u.unitName,
+          })),
+      };
+
       // Clean up empty optional fields before sending
       const cleanedData: UpdateProductRequest = {
         code: formData.code,
@@ -231,79 +290,25 @@ export function EditProductForm({
           formData.minimumStock !== "0" && {
             minimumStock: formData.minimumStock,
           }),
+        // Include supplier changes if there are any
+        ...(( supplierChanges.delete && supplierChanges.delete.length > 0 ||
+            supplierChanges.add && supplierChanges.add.length > 0 ||
+            supplierChanges.update && supplierChanges.update.length > 0
+          ) && { suppliers: supplierChanges }),
+        // Include unit changes if there are any
+        ...(unitChanges.update && unitChanges.update.length > 0 && { units: unitChanges }),
       };
 
-      // Update product basic info
+      // Update product with all changes (including suppliers and units) in one request
       const result = await updateProduct({
         id: product.id,
         data: cleanedData,
       }).unwrap();
 
-      // Handle supplier changes
-      const supplierErrors: string[] = [];
-
-      // Process deleted suppliers
-      for (const supplier of suppliers.filter((s) => s.isDeleted && s.id)) {
-        try {
-          await removeProductSupplier({
-            productId: product.id,
-            supplierId: supplier.supplierId,
-          }).unwrap();
-        } catch (error: any) {
-          supplierErrors.push(`Gagal menghapus supplier ${supplier.supplierName}`);
-        }
-      }
-
-      // Process new suppliers
-      for (const supplier of suppliers.filter((s) => s.isNew && !s.isDeleted)) {
-        try {
-          await linkSupplier({
-            productId: product.id,
-            data: {
-              supplierId: supplier.supplierId,
-              supplierPrice: supplier.supplierPrice,
-              leadTimeDays: supplier.leadTimeDays ? parseInt(supplier.leadTimeDays) : undefined,
-              minimumOrderQty: supplier.minimumOrderQty || undefined,
-              supplierProductCode: supplier.supplierProductCode || undefined,
-              supplierProductName: supplier.supplierProductName || undefined,
-              isPrimarySupplier: supplier.isPrimarySupplier,
-            },
-          }).unwrap();
-        } catch (error: any) {
-          supplierErrors.push(`Gagal menambahkan supplier ${supplier.supplierName}`);
-        }
-      }
-
-      // Process edited suppliers (existing ones that were modified)
-      for (const supplier of suppliers.filter((s) => s.isEdited && s.id && !s.isDeleted && !s.isNew)) {
-        try {
-          await updateProductSupplier({
-            productId: product.id,
-            supplierId: supplier.supplierId,
-            data: {
-              supplierPrice: supplier.supplierPrice,
-              leadTimeDays: supplier.leadTimeDays ? parseInt(supplier.leadTimeDays) : undefined,
-              minimumOrderQty: supplier.minimumOrderQty || undefined,
-              supplierProductCode: supplier.supplierProductCode || undefined,
-              supplierProductName: supplier.supplierProductName || undefined,
-              isPrimarySupplier: supplier.isPrimarySupplier,
-            },
-          }).unwrap();
-        } catch (error: any) {
-          supplierErrors.push(`Gagal memperbarui supplier ${supplier.supplierName}`);
-        }
-      }
-
       // Show success message
-      if (supplierErrors.length > 0) {
-        toast.warning("Produk Diperbarui dengan Peringatan", {
-          description: `${result.name} telah diperbarui, tetapi: ${supplierErrors.join(", ")}`,
-        });
-      } else {
-        toast.success("Produk Berhasil Diperbarui", {
-          description: `${result.name} telah diperbarui`,
-        });
-      }
+      toast.success("Produk Berhasil Diperbarui", {
+        description: `${result.name} telah diperbarui`,
+      });
 
       if (onSuccess) {
         onSuccess();
@@ -456,8 +461,54 @@ export function EditProductForm({
       {/* Pricing & Unit */}
       <Card className="border-2">
         <CardContent>
-          <div className="grid gap-6 sm:grid-cols-3">
-            {/* Base Unit */}
+          <div className="grid gap-6 lg:grid-cols-[240px,180px,1fr,1fr] items-start">
+            {/* Column 1: Product Units List */}
+            {(() => {
+              console.log("🔍 Rendering units, length:", units?.length, units);
+              return null;
+            })()}
+            {units && units.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Satuan Produk</Label>
+                <div className="space-y-2">
+                  {units.map((unit) => (
+                    <div key={unit.id} className="space-y-1">
+                      <Select
+                        value={unit.unitName}
+                        onValueChange={(value) => handleUnitChange(unit.id, value)}
+                        disabled={unit.isBaseUnit}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {COMMON_UNITS.map((unitOption) => (
+                            <SelectItem key={unitOption} value={unitOption}>
+                              {unitOption}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {unit.isBaseUnit && (
+                        <p className="text-xs text-muted-foreground">
+                          Satuan dasar
+                        </p>
+                      )}
+                      {!unit.isBaseUnit && (
+                        <p className="text-xs text-muted-foreground">
+                          1 = {unit.conversionRate} {formData.baseUnit}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Satuan yang tersedia untuk produk ini
+                </p>
+              </div>
+            )}
+
+            {/* Column 2: Base Unit */}
             <div className="space-y-2">
               <Label htmlFor="baseUnit" className="text-sm font-medium">
                 Satuan Dasar <span className="text-destructive">*</span>
@@ -488,7 +539,7 @@ export function EditProductForm({
               </p>
             </div>
 
-            {/* Base Cost */}
+            {/* Column 3: Base Cost */}
             <div className="space-y-2">
               <Label htmlFor="baseCost" className="text-sm font-medium">
                 Harga Beli (HPP) <span className="text-destructive">*</span>
@@ -523,7 +574,7 @@ export function EditProductForm({
               </p>
             </div>
 
-            {/* Base Price */}
+            {/* Column 4: Base Price */}
             <div className="space-y-2">
               <Label htmlFor="basePrice" className="text-sm font-medium">
                 Harga Jual <span className="text-destructive">*</span>
@@ -558,9 +609,9 @@ export function EditProductForm({
               </p>
             </div>
 
-            {/* Profit Margin Display */}
+            {/* Profit Margin Display - Spans all 4 columns */}
             {profitData && profitData.margin > 0 && (
-              <div className="sm:col-span-3">
+              <div className="lg:col-span-4">
                 <Alert className="bg-green-50 border-green-200 dark:bg-green-900/10 dark:border-green-900">
                   <TrendingUp className="h-4 w-4 text-green-600" />
                   <AlertDescription className="text-green-800 dark:text-green-200">

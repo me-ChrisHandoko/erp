@@ -234,8 +234,10 @@ func (s *ProductService) GetProduct(ctx context.Context, companyID, tenantID, pr
 	var product models.Product
 
 	err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
-		Preload("Units", "is_active = ?", true).
-		Preload("ProductSuppliers.Supplier").
+		Preload("Units").
+		Preload("ProductSuppliers.Supplier", func(db *gorm.DB) *gorm.DB {
+			return db.Set("tenant_id", tenantID)
+		}).
 		Preload("WarehouseStocks.Warehouse", "is_active = ?", true).
 		Where("company_id = ? AND id = ?", companyID, productID).
 		First(&product).Error
@@ -405,7 +407,37 @@ func (s *ProductService) UpdateProduct(ctx context.Context, companyID, tenantID,
 		updates["is_active"] = *req.IsActive
 	}
 
-	// Capture old values for audit
+	// Capture old values for audit (including suppliers and units)
+	oldSuppliers := make([]map[string]interface{}, 0)
+	for _, ps := range product.ProductSuppliers {
+		supplierCode := ""
+		supplierName := ""
+		// Check if Supplier is loaded (has non-empty ID)
+		if ps.Supplier.ID != "" {
+			supplierCode = ps.Supplier.Code
+			supplierName = ps.Supplier.Name
+		}
+		oldSuppliers = append(oldSuppliers, map[string]interface{}{
+			"id":             ps.ID,
+			"supplier_id":    ps.SupplierID,
+			"supplier_code":  supplierCode,
+			"supplier_name":  supplierName,
+			"supplier_price": ps.SupplierPrice.String(),
+			"lead_time":      ps.LeadTime,
+			"is_primary":     ps.IsPrimary,
+		})
+	}
+
+	oldUnits := make([]map[string]interface{}, 0)
+	for _, pu := range product.Units {
+		oldUnits = append(oldUnits, map[string]interface{}{
+			"id":              pu.ID,
+			"unit_name":       pu.UnitName,
+			"conversion_rate": pu.ConversionRate.String(),
+			"is_base_unit":    pu.IsBaseUnit,
+		})
+	}
+
 	oldValues := map[string]interface{}{
 		"code":             product.Code,
 		"name":             product.Name,
@@ -419,6 +451,8 @@ func (s *ProductService) UpdateProduct(ctx context.Context, companyID, tenantID,
 		"is_batch_tracked": product.IsBatchTracked,
 		"is_perishable":    product.IsPerishable,
 		"is_active":        product.IsActive,
+		"suppliers":        oldSuppliers,
+		"units":            oldUnits,
 	}
 
 	// Update product directly without preloaded associations
@@ -445,7 +479,120 @@ func (s *ProductService) UpdateProduct(ctx context.Context, companyID, tenantID,
 		return nil, fmt.Errorf("failed to update product: %w", err)
 	}
 
-	// Reload product
+	// Process supplier changes if provided in the request
+	// Note: We do direct GORM operations here instead of calling AddProductSupplier/UpdateProductSupplier
+	// to avoid creating separate audit logs. All changes will be captured in one audit log below.
+	if req.Suppliers != nil {
+		// Delete suppliers
+		for _, supplierID := range req.Suppliers.Delete {
+			if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+				Where("id = ? AND product_id = ?", supplierID, productID).
+				Delete(&models.ProductSupplier{}).Error; err != nil {
+				return nil, fmt.Errorf("failed to delete supplier: %w", err)
+			}
+		}
+
+		// Add new suppliers
+		for _, addReq := range req.Suppliers.Add {
+			supplierPrice, err := decimal.NewFromString(addReq.SupplierPrice)
+			if err != nil {
+				return nil, pkgerrors.NewBadRequestError("invalid supplier price format")
+			}
+
+			leadTime := addReq.LeadTime
+			if leadTime == 0 {
+				leadTime = 7 // default
+			}
+
+			productSupplier := &models.ProductSupplier{
+				ID:            uuid.New().String(),
+				ProductID:     productID,
+				SupplierID:    addReq.SupplierID,
+				SupplierPrice: supplierPrice,
+				LeadTime:      leadTime,
+				IsPrimary:     addReq.IsPrimary,
+			}
+
+			// If setting as primary, unset other primary suppliers first
+			if addReq.IsPrimary {
+				if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+					Model(&models.ProductSupplier{}).
+					Where("product_id = ? AND is_primary = ?", productID, true).
+					Update("is_primary", false).Error; err != nil {
+					return nil, fmt.Errorf("failed to unset primary suppliers: %w", err)
+				}
+			}
+
+			if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+				Create(productSupplier).Error; err != nil {
+				return nil, fmt.Errorf("failed to add supplier: %w", err)
+			}
+		}
+
+		// Update existing suppliers
+		for _, updateReq := range req.Suppliers.Update {
+			updates := make(map[string]interface{})
+
+			if updateReq.SupplierPrice != nil {
+				supplierPrice, err := decimal.NewFromString(*updateReq.SupplierPrice)
+				if err != nil {
+					return nil, pkgerrors.NewBadRequestError("invalid supplier price format")
+				}
+				updates["supplier_price"] = supplierPrice
+			}
+
+			if updateReq.LeadTime != nil {
+				updates["lead_time"] = *updateReq.LeadTime
+			}
+
+			if updateReq.IsPrimary != nil {
+				updates["is_primary"] = *updateReq.IsPrimary
+
+				// If setting as primary, unset other primary suppliers first
+				if *updateReq.IsPrimary {
+					if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+						Model(&models.ProductSupplier{}).
+						Where("product_id = ? AND is_primary = ? AND id != ?", productID, true, updateReq.ID).
+						Update("is_primary", false).Error; err != nil {
+						return nil, fmt.Errorf("failed to unset primary suppliers: %w", err)
+					}
+				}
+			}
+
+			if len(updates) > 0 {
+				if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+					Model(&models.ProductSupplier{}).
+					Where("id = ? AND product_id = ?", updateReq.ID, productID).
+					Updates(updates).Error; err != nil {
+					return nil, fmt.Errorf("failed to update supplier: %w", err)
+				}
+			}
+		}
+	}
+
+	// Process unit changes if provided in the request
+	// Note: We do direct GORM operations here to avoid creating separate audit logs
+	if req.Units != nil {
+		// Update existing units
+		for _, updateReq := range req.Units.Update {
+			updates := make(map[string]interface{})
+
+			if updateReq.UnitName != nil {
+				updates["unit_name"] = *updateReq.UnitName
+			}
+
+			if len(updates) > 0 {
+				if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+					Model(&models.ProductUnit{}).
+					Where("id = ? AND product_id = ?", updateReq.ID, productID).
+					Updates(updates).Error; err != nil {
+					return nil, fmt.Errorf("failed to update unit: %w", err)
+				}
+			}
+		}
+	}
+
+	// Reload product (after all changes including suppliers and units)
 	updatedProduct, err := s.GetProduct(ctx, companyID, tenantID, productID)
 	if err != nil {
 		return nil, err
@@ -466,6 +613,37 @@ func (s *ProductService) UpdateProduct(ctx context.Context, companyID, tenantID,
 		UserAgent: &userAgent,
 	}
 
+	// Capture new values for audit (including suppliers and units)
+	newSuppliers := make([]map[string]interface{}, 0)
+	for _, ps := range updatedProduct.ProductSuppliers {
+		supplierCode := ""
+		supplierName := ""
+		// Check if Supplier is loaded (has non-empty ID)
+		if ps.Supplier.ID != "" {
+			supplierCode = ps.Supplier.Code
+			supplierName = ps.Supplier.Name
+		}
+		newSuppliers = append(newSuppliers, map[string]interface{}{
+			"id":             ps.ID,
+			"supplier_id":    ps.SupplierID,
+			"supplier_code":  supplierCode,
+			"supplier_name":  supplierName,
+			"supplier_price": ps.SupplierPrice.String(),
+			"lead_time":      ps.LeadTime,
+			"is_primary":     ps.IsPrimary,
+		})
+	}
+
+	newUnits := make([]map[string]interface{}, 0)
+	for _, pu := range updatedProduct.Units {
+		newUnits = append(newUnits, map[string]interface{}{
+			"id":              pu.ID,
+			"unit_name":       pu.UnitName,
+			"conversion_rate": pu.ConversionRate.String(),
+			"is_base_unit":    pu.IsBaseUnit,
+		})
+	}
+
 	newValues := map[string]interface{}{
 		"code":             updatedProduct.Code,
 		"name":             updatedProduct.Name,
@@ -479,6 +657,8 @@ func (s *ProductService) UpdateProduct(ctx context.Context, companyID, tenantID,
 		"is_batch_tracked": updatedProduct.IsBatchTracked,
 		"is_perishable":    updatedProduct.IsPerishable,
 		"is_active":        updatedProduct.IsActive,
+		"suppliers":        newSuppliers,
+		"units":            newUnits,
 	}
 
 	// 🔍 DEBUG: Check if auditService is nil
@@ -788,37 +968,66 @@ func (s *ProductService) DeleteProductUnit(ctx context.Context, companyID, produ
 // ============================================================================
 
 // AddProductSupplier links a supplier to a product
-func (s *ProductService) AddProductSupplier(ctx context.Context, companyID, productID string, req *dto.AddProductSupplierRequest) (*models.ProductSupplier, error) {
+func (s *ProductService) AddProductSupplier(ctx context.Context, companyID, tenantID, userID, ipAddress, userAgent, productID string, req *dto.AddProductSupplierRequest) (*models.ProductSupplier, error) {
+	// Build audit context
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
 	// Verify product exists
-	_, err := s.GetProduct(ctx, companyID, "", productID)
+	_, err := s.GetProduct(ctx, companyID, tenantID, productID)
 	if err != nil {
+		// Log failed operation
+		if auditErr := s.auditService.LogProductSupplierOperationFailed(ctx, auditCtx, "PRODUCT_SUPPLIER_ADDED", productID, err.Error()); auditErr != nil {
+			fmt.Printf("WARNING: Failed to log failed product supplier add: %v\n", auditErr)
+		}
 		return nil, err
 	}
 
 	// Verify supplier exists and belongs to company
 	var supplier models.Supplier
-	err = s.db.WithContext(ctx).
+	err = s.db.WithContext(ctx).Set("tenant_id", tenantID).
 		Where("company_id = ? AND id = ? AND is_active = ?", companyID, req.SupplierID, true).
 		First(&supplier).Error
 
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, pkgerrors.NewNotFoundError("supplier not found")
+			err = pkgerrors.NewNotFoundError("supplier not found")
+		} else {
+			err = fmt.Errorf("failed to get supplier: %w", err)
 		}
-		return nil, fmt.Errorf("failed to get supplier: %w", err)
+		// Log failed operation
+		if auditErr := s.auditService.LogProductSupplierOperationFailed(ctx, auditCtx, "PRODUCT_SUPPLIER_ADDED", productID, err.Error()); auditErr != nil {
+			fmt.Printf("WARNING: Failed to log failed product supplier add: %v\n", auditErr)
+		}
+		return nil, err
 	}
 
 	// Check if already linked
 	var existing models.ProductSupplier
 	err = s.db.Where("product_id = ? AND supplier_id = ?", productID, req.SupplierID).First(&existing).Error
 	if err == nil {
-		return nil, pkgerrors.NewBadRequestError("supplier already linked to this product")
+		err = pkgerrors.NewBadRequestError("supplier already linked to this product")
+		// Log failed operation
+		if auditErr := s.auditService.LogProductSupplierOperationFailed(ctx, auditCtx, "PRODUCT_SUPPLIER_ADDED", productID, err.Error()); auditErr != nil {
+			fmt.Printf("WARNING: Failed to log failed product supplier add: %v\n", auditErr)
+		}
+		return nil, err
 	}
 
 	// Parse supplier price
 	supplierPrice, err := decimal.NewFromString(req.SupplierPrice)
 	if err != nil {
-		return nil, pkgerrors.NewBadRequestError("invalid supplierPrice format")
+		err = pkgerrors.NewBadRequestError("invalid supplierPrice format")
+		// Log failed operation
+		if auditErr := s.auditService.LogProductSupplierOperationFailed(ctx, auditCtx, "PRODUCT_SUPPLIER_ADDED", productID, err.Error()); auditErr != nil {
+			fmt.Printf("WARNING: Failed to log failed product supplier add: %v\n", auditErr)
+		}
+		return nil, err
 	}
 
 	leadTime := req.LeadTime
@@ -853,31 +1062,55 @@ func (s *ProductService) AddProductSupplier(ctx context.Context, companyID, prod
 	})
 
 	if err != nil {
+		// Log failed operation
+		if auditErr := s.auditService.LogProductSupplierOperationFailed(ctx, auditCtx, "PRODUCT_SUPPLIER_ADDED", productID, err.Error()); auditErr != nil {
+			fmt.Printf("WARNING: Failed to log failed product supplier add: %v\n", auditErr)
+		}
 		return nil, err
 	}
 
+	// No separate audit log - changes will be recorded with product update in the form
 	return productSupplier, nil
 }
 
 // UpdateProductSupplier updates a product-supplier relationship
-func (s *ProductService) UpdateProductSupplier(ctx context.Context, companyID, productID, productSupplierID string, req *dto.UpdateProductSupplierRequest) (*models.ProductSupplier, error) {
+func (s *ProductService) UpdateProductSupplier(ctx context.Context, companyID, tenantID, userID, ipAddress, userAgent, productID, productSupplierID string, req *dto.UpdateProductSupplierRequest) (*models.ProductSupplier, error) {
+	// Build audit context
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
 	// Verify product exists
-	_, err := s.GetProduct(ctx, companyID, "", productID)
+	_, err := s.GetProduct(ctx, companyID, tenantID, productID)
 	if err != nil {
+		// Log failed operation
+		if auditErr := s.auditService.LogProductSupplierOperationFailed(ctx, auditCtx, "PRODUCT_SUPPLIER_UPDATED", productID, err.Error()); auditErr != nil {
+			fmt.Printf("WARNING: Failed to log failed product supplier update: %v\n", auditErr)
+		}
 		return nil, err
 	}
 
-	// Get product supplier
+	// Get product supplier with supplier relation for audit
 	var ps models.ProductSupplier
-	err = s.db.WithContext(ctx).
+	err = s.db.WithContext(ctx).Set("tenant_id", tenantID).Preload("Supplier").
 		Where("id = ? AND product_id = ?", productSupplierID, productID).
 		First(&ps).Error
 
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, pkgerrors.NewNotFoundError("product supplier not found")
+			err = pkgerrors.NewNotFoundError("product supplier not found")
+		} else {
+			err = fmt.Errorf("failed to get product supplier: %w", err)
 		}
-		return nil, fmt.Errorf("failed to get product supplier: %w", err)
+		// Log failed operation
+		if auditErr := s.auditService.LogProductSupplierOperationFailed(ctx, auditCtx, "PRODUCT_SUPPLIER_UPDATED", productID, err.Error()); auditErr != nil {
+			fmt.Printf("WARNING: Failed to log failed product supplier update: %v\n", auditErr)
+		}
+		return nil, err
 	}
 
 	// Build updates
@@ -886,7 +1119,12 @@ func (s *ProductService) UpdateProductSupplier(ctx context.Context, companyID, p
 	if req.SupplierPrice != nil {
 		supplierPrice, err := decimal.NewFromString(*req.SupplierPrice)
 		if err != nil {
-			return nil, pkgerrors.NewBadRequestError("invalid supplierPrice format")
+			err = pkgerrors.NewBadRequestError("invalid supplierPrice format")
+			// Log failed operation
+			if auditErr := s.auditService.LogProductSupplierOperationFailed(ctx, auditCtx, "PRODUCT_SUPPLIER_UPDATED", productID, err.Error()); auditErr != nil {
+				fmt.Printf("WARNING: Failed to log failed product supplier update: %v\n", auditErr)
+			}
+			return nil, err
 		}
 		updates["supplier_price"] = supplierPrice
 	}
@@ -918,23 +1156,60 @@ func (s *ProductService) UpdateProductSupplier(ctx context.Context, companyID, p
 	})
 
 	if err != nil {
+		// Log failed operation
+		if auditErr := s.auditService.LogProductSupplierOperationFailed(ctx, auditCtx, "PRODUCT_SUPPLIER_UPDATED", productID, err.Error()); auditErr != nil {
+			fmt.Printf("WARNING: Failed to log failed product supplier update: %v\n", auditErr)
+		}
 		return nil, err
 	}
 
 	// Reload
-	err = s.db.WithContext(ctx).Where("id = ?", productSupplierID).First(&ps).Error
+	err = s.db.WithContext(ctx).Set("tenant_id", tenantID).Preload("Supplier").Where("id = ?", productSupplierID).First(&ps).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to reload product supplier: %w", err)
 	}
 
+	// No separate audit log - changes will be recorded with product update in the form
 	return &ps, nil
 }
 
 // DeleteProductSupplier removes a supplier from a product
-func (s *ProductService) DeleteProductSupplier(ctx context.Context, companyID, productID, productSupplierID string) error {
+func (s *ProductService) DeleteProductSupplier(ctx context.Context, companyID, tenantID, userID, ipAddress, userAgent, productID, productSupplierID string) error {
+	// Build audit context
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
 	// Verify product exists
-	_, err := s.GetProduct(ctx, companyID, "", productID)
+	_, err := s.GetProduct(ctx, companyID, tenantID, productID)
 	if err != nil {
+		// Log failed operation
+		if auditErr := s.auditService.LogProductSupplierOperationFailed(ctx, auditCtx, "PRODUCT_SUPPLIER_DELETED", productID, err.Error()); auditErr != nil {
+			fmt.Printf("WARNING: Failed to log failed product supplier delete: %v\n", auditErr)
+		}
+		return err
+	}
+
+	// Get product supplier with supplier relation for audit before deletion
+	var ps models.ProductSupplier
+	err = s.db.WithContext(ctx).Set("tenant_id", tenantID).Preload("Supplier").
+		Where("id = ? AND product_id = ?", productSupplierID, productID).
+		First(&ps).Error
+
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			err = pkgerrors.NewNotFoundError("product supplier not found")
+		} else {
+			err = fmt.Errorf("failed to get product supplier: %w", err)
+		}
+		// Log failed operation
+		if auditErr := s.auditService.LogProductSupplierOperationFailed(ctx, auditCtx, "PRODUCT_SUPPLIER_DELETED", productID, err.Error()); auditErr != nil {
+			fmt.Printf("WARNING: Failed to log failed product supplier delete: %v\n", auditErr)
+		}
 		return err
 	}
 
@@ -944,13 +1219,24 @@ func (s *ProductService) DeleteProductSupplier(ctx context.Context, companyID, p
 		Delete(&models.ProductSupplier{})
 
 	if result.Error != nil {
-		return fmt.Errorf("failed to delete product supplier: %w", result.Error)
+		err = fmt.Errorf("failed to delete product supplier: %w", result.Error)
+		// Log failed operation
+		if auditErr := s.auditService.LogProductSupplierOperationFailed(ctx, auditCtx, "PRODUCT_SUPPLIER_DELETED", productID, err.Error()); auditErr != nil {
+			fmt.Printf("WARNING: Failed to log failed product supplier delete: %v\n", auditErr)
+		}
+		return err
 	}
 
 	if result.RowsAffected == 0 {
-		return pkgerrors.NewNotFoundError("product supplier not found")
+		err = pkgerrors.NewNotFoundError("product supplier not found")
+		// Log failed operation
+		if auditErr := s.auditService.LogProductSupplierOperationFailed(ctx, auditCtx, "PRODUCT_SUPPLIER_DELETED", productID, err.Error()); auditErr != nil {
+			fmt.Printf("WARNING: Failed to log failed product supplier delete: %v\n", auditErr)
+		}
+		return err
 	}
 
+	// No separate audit log - changes will be recorded with product update in the form
 	return nil
 }
 

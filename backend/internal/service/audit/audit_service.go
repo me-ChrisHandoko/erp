@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"gorm.io/gorm"
@@ -399,7 +400,7 @@ func (s *AuditService) LogProductUpdated(
 	changedFields := []string{}
 	for key, newValue := range newValues {
 		oldValue, exists := oldValues[key]
-		if !exists || oldValue != newValue {
+		if !exists || !reflect.DeepEqual(oldValue, newValue) {
 			changedFields = append(changedFields, key)
 		}
 	}
@@ -560,7 +561,7 @@ func (s *AuditService) LogCustomerUpdated(
 	changedFields := []string{}
 	for key, newValue := range newValues {
 		oldValue, exists := oldValues[key]
-		if !exists || oldValue != newValue {
+		if !exists || !reflect.DeepEqual(oldValue, newValue) {
 			changedFields = append(changedFields, key)
 		}
 	}
@@ -653,6 +654,187 @@ func (s *AuditService) LogProductOperationFailed(
 		EntityType: &entityType,
 		EntityID:   &productID,
 		Status:     StatusFailed, // MVP
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	// Set tenant context for GORM tenant isolation
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// ==================== Product-Supplier Audit Methods ====================
+
+// LogProductSupplierAdded logs when a supplier is linked to a product
+func (s *AuditService) LogProductSupplierAdded(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	productID string,
+	productSupplierID string,
+	supplierData map[string]interface{},
+) error {
+	newValuesJSON, _ := json.Marshal(supplierData)
+	newValuesStr := string(newValuesJSON)
+	entityType := "PRODUCT"
+
+	// Create human-readable notes
+	supplierName := ""
+	if name, ok := supplierData["supplier_name"].(string); ok {
+		supplierName = name
+	}
+	supplierCode := ""
+	if code, ok := supplierData["supplier_code"].(string); ok {
+		supplierCode = code
+	}
+
+	notes := fmt.Sprintf("Added supplier %s (%s) to product", supplierName, supplierCode)
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "PRODUCT_UPDATED",
+		EntityType: &entityType,
+		EntityID:   &productID,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	// Set tenant context for GORM tenant isolation
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogProductSupplierUpdated logs when a product-supplier relationship is updated
+func (s *AuditService) LogProductSupplierUpdated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	productID string,
+	productSupplierID string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesJSON, _ := json.Marshal(newValues)
+	newValuesStr := string(newValuesJSON)
+	entityType := "PRODUCT"
+
+	// Create human-readable notes with changed fields
+	changedFields := []string{}
+	for key := range newValues {
+		if oldValues[key] != newValues[key] {
+			changedFields = append(changedFields, key)
+		}
+	}
+
+	notes := ""
+	if len(changedFields) > 0 {
+		notes = fmt.Sprintf("Updated supplier fields: [%s]", strings.Join(changedFields, ", "))
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "PRODUCT_UPDATED",
+		EntityType: &entityType,
+		EntityID:   &productID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	// Set tenant context for GORM tenant isolation
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogProductSupplierDeleted logs when a supplier is removed from a product
+func (s *AuditService) LogProductSupplierDeleted(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	productID string,
+	productSupplierID string,
+	supplierData map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(supplierData)
+	oldValuesStr := string(oldValuesJSON)
+	entityType := "PRODUCT"
+
+	// Create human-readable notes
+	supplierName := ""
+	if name, ok := supplierData["supplier_name"].(string); ok {
+		supplierName = name
+	}
+	supplierCode := ""
+	if code, ok := supplierData["supplier_code"].(string); ok {
+		supplierCode = code
+	}
+
+	notes := fmt.Sprintf("Removed supplier %s (%s) from product", supplierName, supplierCode)
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "PRODUCT_UPDATED",
+		EntityType: &entityType,
+		EntityID:   &productID,
+		OldValues:  &oldValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	// Set tenant context for GORM tenant isolation
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogProductSupplierOperationFailed logs when a product-supplier operation fails
+func (s *AuditService) LogProductSupplierOperationFailed(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	action string,
+	productID string,
+	errorMsg string,
+) error {
+	entityType := "PRODUCT"
+	notes := fmt.Sprintf("Supplier operation failed: %s", errorMsg)
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     action,
+		EntityType: &entityType,
+		EntityID:   &productID,
+		Status:     StatusFailed,
 		IPAddress:  auditCtx.IPAddress,
 		UserAgent:  auditCtx.UserAgent,
 		Notes:      &notes,

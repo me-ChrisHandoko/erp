@@ -175,6 +175,42 @@ export interface UpdateProductRequest {
   isBatchTracked?: boolean;
   isPerishable?: boolean;
   isActive?: boolean;
+  suppliers?: UpdateProductSuppliersRequest;
+  units?: UpdateProductUnitsRequest;
+}
+
+/**
+ * Supplier changes in product update
+ */
+export interface UpdateProductSuppliersRequest {
+  add?: AddProductSupplierRequest[];
+  update?: UpdateProductSupplierItem[];
+  delete?: string[]; // ProductSupplier IDs to delete
+}
+
+/**
+ * Supplier update item with ID
+ */
+export interface UpdateProductSupplierItem {
+  id: string; // ProductSupplier ID
+  supplierPrice?: string;
+  leadTime?: number;
+  isPrimary?: boolean;
+}
+
+/**
+ * Unit changes in product update
+ */
+export interface UpdateProductUnitsRequest {
+  update?: UpdateProductUnitItem[];
+}
+
+/**
+ * Unit update item with ID
+ */
+export interface UpdateProductUnitItem {
+  id: string; // ProductUnit ID
+  unitName?: string;
 }
 
 /**

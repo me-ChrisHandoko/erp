@@ -416,6 +416,23 @@ func (h *ProductHandler) AddProductSupplier(c *gin.Context) {
 		return
 	}
 
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, errors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
+	// Get user ID from JWT middleware
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
+	// Get IP address and user agent for audit
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	productID := c.Param("id")
 	if productID == "" {
 		c.JSON(http.StatusBadRequest, errors.NewBadRequestError("Product ID is required"))
@@ -428,8 +445,8 @@ func (h *ProductHandler) AddProductSupplier(c *gin.Context) {
 		return
 	}
 
-	// Call service
-	ps, err := h.productService.AddProductSupplier(c.Request.Context(), companyID.(string), productID, &req)
+	// Call service with audit info
+	ps, err := h.productService.AddProductSupplier(c.Request.Context(), companyID.(string), tenantID.(string), userIDStr, ipAddress, userAgent, productID, &req)
 	if err != nil {
 		h.handleError(c, err)
 		return
@@ -437,12 +454,12 @@ func (h *ProductHandler) AddProductSupplier(c *gin.Context) {
 
 	// Map to response (simple response since we don't have supplier name yet)
 	response := gin.H{
-		"id":            ps.ID,
-		"productId":     ps.ProductID,
-		"supplierId":    ps.SupplierID,
-		"supplierPrice": ps.SupplierPrice.String(),
-		"leadTime":      ps.LeadTime,
-		"isPrimary":     ps.IsPrimary,
+		"id":                ps.ID,
+		"productId":         ps.ProductID,
+		"supplierId":        ps.SupplierID,
+		"supplierPrice":     ps.SupplierPrice.String(),
+		"leadTimeDays":      ps.LeadTime,
+		"isPrimarySupplier": ps.IsPrimary,
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
@@ -462,6 +479,23 @@ func (h *ProductHandler) UpdateProductSupplier(c *gin.Context) {
 		return
 	}
 
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, errors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
+	// Get user ID from JWT middleware
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
+	// Get IP address and user agent for audit
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	productID := c.Param("id")
 	if productID == "" {
 		c.JSON(http.StatusBadRequest, errors.NewBadRequestError("Product ID is required"))
@@ -480,8 +514,8 @@ func (h *ProductHandler) UpdateProductSupplier(c *gin.Context) {
 		return
 	}
 
-	// Call service
-	ps, err := h.productService.UpdateProductSupplier(c.Request.Context(), companyID.(string), productID, productSupplierID, &req)
+	// Call service with audit info
+	ps, err := h.productService.UpdateProductSupplier(c.Request.Context(), companyID.(string), tenantID.(string), userIDStr, ipAddress, userAgent, productID, productSupplierID, &req)
 	if err != nil {
 		h.handleError(c, err)
 		return
@@ -489,12 +523,12 @@ func (h *ProductHandler) UpdateProductSupplier(c *gin.Context) {
 
 	// Map to response
 	response := gin.H{
-		"id":            ps.ID,
-		"productId":     ps.ProductID,
-		"supplierId":    ps.SupplierID,
-		"supplierPrice": ps.SupplierPrice.String(),
-		"leadTime":      ps.LeadTime,
-		"isPrimary":     ps.IsPrimary,
+		"id":                ps.ID,
+		"productId":         ps.ProductID,
+		"supplierId":        ps.SupplierID,
+		"supplierPrice":     ps.SupplierPrice.String(),
+		"leadTimeDays":      ps.LeadTime,
+		"isPrimarySupplier": ps.IsPrimary,
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -514,6 +548,23 @@ func (h *ProductHandler) DeleteProductSupplier(c *gin.Context) {
 		return
 	}
 
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, errors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
+	// Get user ID from JWT middleware
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
+	// Get IP address and user agent for audit
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	productID := c.Param("id")
 	if productID == "" {
 		c.JSON(http.StatusBadRequest, errors.NewBadRequestError("Product ID is required"))
@@ -526,8 +577,8 @@ func (h *ProductHandler) DeleteProductSupplier(c *gin.Context) {
 		return
 	}
 
-	// Call service
-	err := h.productService.DeleteProductSupplier(c.Request.Context(), companyID.(string), productID, productSupplierID)
+	// Call service with audit info
+	err := h.productService.DeleteProductSupplier(c.Request.Context(), companyID.(string), tenantID.(string), userIDStr, ipAddress, userAgent, productID, productSupplierID)
 	if err != nil {
 		h.handleError(c, err)
 		return
@@ -563,30 +614,32 @@ func (h *ProductHandler) mapProductToResponse(product *models.Product) *dto.Prod
 		UpdatedAt:      product.UpdatedAt,
 	}
 
-	// Map units
-	if len(product.Units) > 0 {
-		response.Units = make([]dto.ProductUnitResponse, 0, len(product.Units))
-		for _, unit := range product.Units {
-			response.Units = append(response.Units, *h.mapProductUnitToResponse(&unit))
-		}
+	// Map units - always initialize the array, even if empty
+	response.Units = make([]dto.ProductUnitResponse, 0, len(product.Units))
+	for _, unit := range product.Units {
+		response.Units = append(response.Units, *h.mapProductUnitToResponse(&unit))
 	}
 
 	// Map suppliers (only if preloaded)
 	if len(product.ProductSuppliers) > 0 {
 		response.Suppliers = make([]dto.ProductSupplierResponse, 0, len(product.ProductSuppliers))
 		for _, ps := range product.ProductSuppliers {
-			// Get supplier name if available (preloaded)
+			// Get supplier details from preloaded relation
+			supplierCode := ""
 			supplierName := ""
-			// Supplier might not be preloaded in all cases
-			// Will be empty if not preloaded - frontend should fetch if needed
+			if ps.Supplier.ID != "" {
+				supplierCode = ps.Supplier.Code
+				supplierName = ps.Supplier.Name
+			}
 
 			response.Suppliers = append(response.Suppliers, dto.ProductSupplierResponse{
-				ID:            ps.ID,
-				SupplierID:    ps.SupplierID,
-				SupplierName:  supplierName,
-				SupplierPrice: ps.SupplierPrice.String(),
-				LeadTime:      ps.LeadTime,
-				IsPrimary:     ps.IsPrimary,
+				ID:                ps.ID,
+				SupplierID:        ps.SupplierID,
+				SupplierCode:      supplierCode,
+				SupplierName:      supplierName,
+				SupplierPrice:     ps.SupplierPrice.String(),
+				LeadTimeDays:      ps.LeadTime,
+				IsPrimarySupplier: ps.IsPrimary,
 			})
 		}
 	}

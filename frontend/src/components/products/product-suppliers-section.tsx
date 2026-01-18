@@ -110,14 +110,13 @@ export function ProductSuppliersSection({
   // Get list of suppliers excluding already linked ones
   const linkedSupplierIds = [
     ...existingSupplierIds,
-    ...suppliers
-      .filter((s) => !s.isDeleted)
-      .map((s) => s.supplierId),
+    ...suppliers.filter((s) => !s.isDeleted).map((s) => s.supplierId),
   ];
 
   const availableSuppliers = (suppliersData?.data || []).filter(
-    (s) => !linkedSupplierIds.includes(s.id) ||
-           (editingIndex !== null && suppliers[editingIndex]?.supplierId === s.id)
+    (s) =>
+      !linkedSupplierIds.includes(s.id) ||
+      (editingIndex !== null && suppliers[editingIndex]?.supplierId === s.id)
   );
 
   const resetForm = () => {
@@ -197,7 +196,9 @@ export function ProductSuppliersSection({
       ...formData,
       supplierCode: selectedSupplier?.code,
       supplierName: selectedSupplier?.name,
-      isEdited: suppliers[editingIndex].id ? true : suppliers[editingIndex].isEdited,
+      isEdited: suppliers[editingIndex].id
+        ? true
+        : suppliers[editingIndex].isEdited,
     };
 
     // If this is primary, unset other primaries
@@ -272,7 +273,7 @@ export function ProductSuppliersSection({
 
   return (
     <Card className="border-2">
-      <CardHeader className="pb-4">
+      <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-lg">
             <Building2 className="h-5 w-5" />
@@ -298,7 +299,9 @@ export function ProductSuppliersSection({
           <div className="border rounded-lg p-4 bg-muted/30 space-y-4">
             <div className="flex items-center justify-between">
               <h4 className="font-medium">
-                {editingIndex !== null ? "Edit Supplier" : "Tambah Supplier Baru"}
+                {editingIndex !== null
+                  ? "Edit Supplier"
+                  : "Tambah Supplier Baru"}
               </h4>
               <Button
                 type="button"
@@ -324,7 +327,9 @@ export function ProductSuppliersSection({
                   disabled={editingIndex !== null}
                 >
                   <SelectTrigger
-                    className={`w-full ${errors.supplierId ? "border-destructive" : ""}`}
+                    className={`w-full ${
+                      errors.supplierId ? "border-destructive" : ""
+                    }`}
                   >
                     <SelectValue placeholder="Pilih supplier..." />
                   </SelectTrigger>
@@ -353,7 +358,8 @@ export function ProductSuppliersSection({
               {/* Supplier Price */}
               <div className="space-y-2">
                 <Label>
-                  Harga dari Supplier <span className="text-destructive">*</span>
+                  Harga dari Supplier{" "}
+                  <span className="text-destructive">*</span>
                 </Label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
@@ -370,7 +376,9 @@ export function ProductSuppliersSection({
                         supplierPrice: e.target.value,
                       }))
                     }
-                    className={`pl-10 ${errors.supplierPrice ? "border-destructive" : ""}`}
+                    className={`pl-10 ${
+                      errors.supplierPrice ? "border-destructive" : ""
+                    }`}
                     placeholder="0"
                   />
                 </div>
@@ -380,6 +388,9 @@ export function ProductSuppliersSection({
                     {errors.supplierPrice}
                   </p>
                 )}
+                <p className="text-xs text-muted-foreground">
+                  {formatCurrency(formData.supplierPrice)}
+                </p>
               </div>
 
               {/* Lead Time */}
@@ -473,7 +484,10 @@ export function ProductSuppliersSection({
                     }))
                   }
                 />
-                <Label htmlFor="isPrimary" className="text-sm font-normal cursor-pointer">
+                <Label
+                  htmlFor="isPrimary"
+                  className="text-sm font-normal cursor-pointer"
+                >
                   Jadikan sebagai supplier utama
                 </Label>
               </div>
@@ -486,7 +500,9 @@ export function ProductSuppliersSection({
               </Button>
               <Button
                 type="button"
-                onClick={editingIndex !== null ? handleEditSupplier : handleAddSupplier}
+                onClick={
+                  editingIndex !== null ? handleEditSupplier : handleAddSupplier
+                }
               >
                 <Check className="mr-2 h-4 w-4" />
                 {editingIndex !== null ? "Simpan Perubahan" : "Tambah Supplier"}
@@ -506,12 +522,14 @@ export function ProductSuppliersSection({
                   <TableHead className="text-center">Lead Time</TableHead>
                   <TableHead className="text-center">MOQ</TableHead>
                   <TableHead className="text-center">Status</TableHead>
-                  {!disabled && <TableHead className="w-[100px]"></TableHead>}
+                  {!disabled && <TableHead className="w-25"></TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {visibleSuppliers.map((supplier, index) => {
-                  const actualIndex = suppliers.findIndex((s) => s === supplier);
+                  const actualIndex = suppliers.findIndex(
+                    (s) => s === supplier
+                  );
                   return (
                     <TableRow key={supplier.supplierId + index}>
                       <TableCell>
@@ -562,7 +580,9 @@ export function ProductSuppliersSection({
                               variant="ghost"
                               size="sm"
                               onClick={() => startEdit(actualIndex)}
-                              disabled={editingIndex !== null || isAddingSupplier}
+                              disabled={
+                                editingIndex !== null || isAddingSupplier
+                              }
                             >
                               <Edit2 className="h-4 w-4" />
                             </Button>
@@ -572,7 +592,9 @@ export function ProductSuppliersSection({
                               size="sm"
                               onClick={() => handleRemoveSupplier(actualIndex)}
                               className="text-destructive hover:text-destructive"
-                              disabled={editingIndex !== null || isAddingSupplier}
+                              disabled={
+                                editingIndex !== null || isAddingSupplier
+                              }
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>

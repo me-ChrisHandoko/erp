@@ -26,18 +26,46 @@ type CreateProductRequest struct {
 // UpdateProductRequest represents product update request
 // Reference: 02-MASTER-DATA-MANAGEMENT.md lines 310-325
 type UpdateProductRequest struct {
-	Code           *string `json:"code" binding:"omitempty,min=1,max=100"` // Added: Allow code updates with validation
-	Name           *string `json:"name" binding:"omitempty,min=2,max=255"`
-	Category       *string `json:"category" binding:"omitempty,max=100"`
-	BaseUnit       *string `json:"baseUnit" binding:"omitempty,max=20"` // Added: Allow baseUnit updates
-	BaseCost       *string `json:"baseCost" binding:"omitempty"` // decimal as string
-	BasePrice      *string `json:"basePrice" binding:"omitempty"` // decimal as string
-	MinimumStock   *string `json:"minimumStock" binding:"omitempty"` // decimal as string
-	Description    *string `json:"description" binding:"omitempty"`
-	Barcode        *string `json:"barcode" binding:"omitempty,max=100"`
-	IsBatchTracked *bool   `json:"isBatchTracked" binding:"omitempty"`
-	IsPerishable   *bool   `json:"isPerishable" binding:"omitempty"`
-	IsActive       *bool   `json:"isActive" binding:"omitempty"`
+	Code           *string                         `json:"code" binding:"omitempty,min=1,max=100"` // Added: Allow code updates with validation
+	Name           *string                         `json:"name" binding:"omitempty,min=2,max=255"`
+	Category       *string                         `json:"category" binding:"omitempty,max=100"`
+	BaseUnit       *string                         `json:"baseUnit" binding:"omitempty,max=20"` // Added: Allow baseUnit updates
+	BaseCost       *string                         `json:"baseCost" binding:"omitempty"` // decimal as string
+	BasePrice      *string                         `json:"basePrice" binding:"omitempty"` // decimal as string
+	MinimumStock   *string                         `json:"minimumStock" binding:"omitempty"` // decimal as string
+	Description    *string                         `json:"description" binding:"omitempty"`
+	Barcode        *string                         `json:"barcode" binding:"omitempty,max=100"`
+	IsBatchTracked *bool                           `json:"isBatchTracked" binding:"omitempty"`
+	IsPerishable   *bool                           `json:"isPerishable" binding:"omitempty"`
+	IsActive       *bool                           `json:"isActive" binding:"omitempty"`
+	Suppliers      *UpdateProductSuppliersRequest  `json:"suppliers" binding:"omitempty"` // Optional: supplier changes
+	Units          *UpdateProductUnitsRequest      `json:"units" binding:"omitempty"` // Optional: unit changes
+}
+
+// UpdateProductSuppliersRequest represents supplier changes in product update
+type UpdateProductSuppliersRequest struct {
+	Add    []AddProductSupplierRequest    `json:"add" binding:"omitempty,dive"`
+	Update []UpdateProductSupplierItem    `json:"update" binding:"omitempty,dive"`
+	Delete []string                        `json:"delete" binding:"omitempty"` // ProductSupplier IDs to delete
+}
+
+// UpdateProductSupplierItem represents a supplier update with ID
+type UpdateProductSupplierItem struct {
+	ID            string  `json:"id" binding:"required"` // ProductSupplier ID
+	SupplierPrice *string `json:"supplierPrice" binding:"omitempty"`
+	LeadTime      *int    `json:"leadTime" binding:"omitempty,min=0"`
+	IsPrimary     *bool   `json:"isPrimary" binding:"omitempty"`
+}
+
+// UpdateProductUnitsRequest represents unit changes in product update
+type UpdateProductUnitsRequest struct {
+	Update []UpdateProductUnitItem `json:"update" binding:"omitempty,dive"`
+}
+
+// UpdateProductUnitItem represents a unit update with ID
+type UpdateProductUnitItem struct {
+	ID       string  `json:"id" binding:"required"` // ProductUnit ID
+	UnitName *string `json:"unitName" binding:"omitempty,min=1,max=50"`
 }
 
 // ProductFilters represents product list filters
@@ -149,12 +177,13 @@ type ProductUnitResponse struct {
 
 // ProductSupplierResponse represents product-supplier relationship
 type ProductSupplierResponse struct {
-	ID            string `json:"id"`
-	SupplierID    string `json:"supplierId"`
-	SupplierName  string `json:"supplierName"`
-	SupplierPrice string `json:"supplierPrice"` // decimal as string
-	LeadTime      int    `json:"leadTime"` // days
-	IsPrimary     bool   `json:"isPrimary"`
+	ID                string `json:"id"`
+	SupplierID        string `json:"supplierId"`
+	SupplierCode      string `json:"supplierCode"`
+	SupplierName      string `json:"supplierName"`
+	SupplierPrice     string `json:"supplierPrice"` // decimal as string
+	LeadTimeDays      int    `json:"leadTimeDays"` // days
+	IsPrimarySupplier bool   `json:"isPrimarySupplier"`
 }
 
 // CurrentStockResponse represents aggregated stock information
