@@ -84,6 +84,8 @@ export interface PurchaseOrderItem {
     code: string;
     name: string;
     baseUnit: string;
+    isBatchTracked: boolean;
+    isPerishable: boolean;
   };
   productUnit?: {
     id: string;
@@ -234,6 +236,8 @@ export interface PurchaseOrderItemResponse {
     code: string;
     name: string;
     baseUnit: string;
+    isBatchTracked: boolean; // Indicates if batch number is required for goods receipt
+    isPerishable: boolean; // Indicates if expiry date is required for goods receipt
   };
   productUnit?: {
     id: string;

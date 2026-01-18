@@ -111,6 +111,26 @@ func (s *GoodsReceiptService) CreateGoodsReceipt(ctx context.Context, tenantID, 
 				return pkgerrors.NewBadRequestError("product ID does not match purchase order item")
 			}
 
+			// Load product to check tracking flags
+			var product models.Product
+			if err := tx.Where("id = ?", itemReq.ProductID).First(&product).Error; err != nil {
+				return pkgerrors.NewBadRequestError(fmt.Sprintf("product not found: %s", itemReq.ProductID))
+			}
+
+			// Validate batch number for batch-tracked products
+			if product.IsBatchTracked {
+				if itemReq.BatchNumber == nil || *itemReq.BatchNumber == "" {
+					return pkgerrors.NewBadRequestError(fmt.Sprintf("batch number is required for batch-tracked product: %s", product.Name))
+				}
+			}
+
+			// Validate expiry date for perishable products
+			if product.IsPerishable {
+				if itemReq.ExpiryDate == nil || *itemReq.ExpiryDate == "" {
+					return pkgerrors.NewBadRequestError(fmt.Sprintf("expiry date is required for perishable product: %s", product.Name))
+				}
+			}
+
 			// Parse quantities
 			receivedQty, err := decimal.NewFromString(itemReq.ReceivedQty)
 			if err != nil || receivedQty.LessThan(decimal.Zero) {
@@ -620,6 +640,12 @@ func (s *GoodsReceiptService) AcceptGoods(ctx context.Context, tenantID, company
 		// Update warehouse stock for each accepted item
 		for _, item := range goodsReceipt.Items {
 			if item.AcceptedQty.GreaterThan(decimal.Zero) {
+				// Load product to check tracking flags
+				var product models.Product
+				if err := tx.Where("id = ?", item.ProductID).First(&product).Error; err != nil {
+					return fmt.Errorf("failed to load product: %w", err)
+				}
+
 				var stock models.WarehouseStock
 				err := tx.Where("warehouse_id = ? AND product_id = ?", goodsReceipt.WarehouseID, item.ProductID).
 					First(&stock).Error
@@ -642,6 +668,25 @@ func (s *GoodsReceiptService) AcceptGoods(ctx context.Context, tenantID, company
 					stock.Quantity = stock.Quantity.Add(item.AcceptedQty)
 					if err := tx.Save(&stock).Error; err != nil {
 						return fmt.Errorf("failed to update stock: %w", err)
+					}
+				}
+
+				// Create ProductBatch record for batch-tracked products
+				if product.IsBatchTracked && item.BatchNumber != nil && *item.BatchNumber != "" {
+					batch := models.ProductBatch{
+						ID:               uuid.New().String(),
+						BatchNumber:      *item.BatchNumber,
+						ProductID:        item.ProductID,
+						WarehouseStockID: stock.ID,
+						ManufactureDate:  item.ManufactureDate,
+						ExpiryDate:       item.ExpiryDate,
+						Quantity:         item.AcceptedQty,
+						GoodsReceiptID:   &goodsReceipt.ID,
+						ReceiptDate:      time.Now(),
+						Status:           "AVAILABLE",
+					}
+					if err := tx.Create(&batch).Error; err != nil {
+						return fmt.Errorf("failed to create product batch: %w", err)
 					}
 				}
 
@@ -795,13 +840,15 @@ func (s *GoodsReceiptService) MapToResponse(gr *models.GoodsReceipt, includeItem
 				UpdatedAt:           item.UpdatedAt,
 			}
 
-			// Map product
+			// Map product with tracking flags
 			if item.Product.ID != "" {
 				response.Items[i].Product = &dto.GoodsReceiptProductResponse{
-					ID:       item.Product.ID,
-					Code:     item.Product.Code,
-					Name:     item.Product.Name,
-					BaseUnit: item.Product.BaseUnit,
+					ID:             item.Product.ID,
+					Code:           item.Product.Code,
+					Name:           item.Product.Name,
+					BaseUnit:       item.Product.BaseUnit,
+					IsBatchTracked: item.Product.IsBatchTracked,
+					IsPerishable:   item.Product.IsPerishable,
 				}
 			}
 

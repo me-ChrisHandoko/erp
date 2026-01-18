@@ -479,6 +479,16 @@ func (s *ProductService) UpdateProduct(ctx context.Context, companyID, tenantID,
 		return nil, fmt.Errorf("failed to update product: %w", err)
 	}
 
+	// Sync base_unit change to product_units table
+	if req.BaseUnit != nil {
+		if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+			Model(&models.ProductUnit{}).
+			Where("product_id = ? AND is_base_unit = ?", productID, true).
+			Update("unit_name", *req.BaseUnit).Error; err != nil {
+			return nil, fmt.Errorf("failed to sync base unit to product_units: %w", err)
+		}
+	}
+
 	// Process supplier changes if provided in the request
 	// Note: We do direct GORM operations here instead of calling AddProductSupplier/UpdateProductSupplier
 	// to avoid creating separate audit logs. All changes will be captured in one audit log below.
@@ -573,12 +583,132 @@ func (s *ProductService) UpdateProduct(ctx context.Context, companyID, tenantID,
 	// Process unit changes if provided in the request
 	// Note: We do direct GORM operations here to avoid creating separate audit logs
 	if req.Units != nil {
+		// Delete units (except base unit)
+		for _, unitID := range req.Units.Delete {
+			// First check if it's a base unit
+			var unit models.ProductUnit
+			if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+				Where("id = ? AND product_id = ?", unitID, productID).
+				First(&unit).Error; err != nil {
+				if err == gorm.ErrRecordNotFound {
+					continue // Skip if not found
+				}
+				return nil, fmt.Errorf("failed to find unit: %w", err)
+			}
+			if unit.IsBaseUnit {
+				return nil, pkgerrors.NewBadRequestError("cannot delete base unit")
+			}
+			if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+				Where("id = ? AND product_id = ?", unitID, productID).
+				Delete(&models.ProductUnit{}).Error; err != nil {
+				return nil, fmt.Errorf("failed to delete unit: %w", err)
+			}
+		}
+
+		// Add new units
+		for _, addReq := range req.Units.Add {
+			conversionRate, err := decimal.NewFromString(addReq.ConversionRate)
+			if err != nil {
+				return nil, pkgerrors.NewBadRequestError(fmt.Sprintf("invalid conversionRate for unit %s", addReq.UnitName))
+			}
+			if conversionRate.LessThanOrEqual(decimal.Zero) {
+				return nil, pkgerrors.NewBadRequestError(fmt.Sprintf("conversionRate must be greater than 0 for unit %s", addReq.UnitName))
+			}
+
+			unit := &models.ProductUnit{
+				ProductID:      productID,
+				UnitName:       addReq.UnitName,
+				ConversionRate: conversionRate,
+				IsBaseUnit:     false,
+				Barcode:        addReq.Barcode,
+				SKU:            addReq.SKU,
+				Description:    addReq.Description,
+				IsActive:       true,
+			}
+
+			// Parse optional decimal fields
+			if addReq.BuyPrice != nil {
+				buyPrice, err := decimal.NewFromString(*addReq.BuyPrice)
+				if err != nil {
+					return nil, pkgerrors.NewBadRequestError(fmt.Sprintf("invalid buyPrice for unit %s", addReq.UnitName))
+				}
+				unit.BuyPrice = &buyPrice
+			}
+
+			if addReq.SellPrice != nil {
+				sellPrice, err := decimal.NewFromString(*addReq.SellPrice)
+				if err != nil {
+					return nil, pkgerrors.NewBadRequestError(fmt.Sprintf("invalid sellPrice for unit %s", addReq.UnitName))
+				}
+				unit.SellPrice = &sellPrice
+			}
+
+			if addReq.Weight != nil {
+				weight, err := decimal.NewFromString(*addReq.Weight)
+				if err != nil {
+					return nil, pkgerrors.NewBadRequestError(fmt.Sprintf("invalid weight for unit %s", addReq.UnitName))
+				}
+				unit.Weight = &weight
+			}
+
+			if addReq.Volume != nil {
+				volume, err := decimal.NewFromString(*addReq.Volume)
+				if err != nil {
+					return nil, pkgerrors.NewBadRequestError(fmt.Sprintf("invalid volume for unit %s", addReq.UnitName))
+				}
+				unit.Volume = &volume
+			}
+
+			if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).Create(unit).Error; err != nil {
+				return nil, fmt.Errorf("failed to add unit: %w", err)
+			}
+		}
+
 		// Update existing units
 		for _, updateReq := range req.Units.Update {
+			// First check if it's a base unit (cannot update conversion rate for base unit)
+			var existingUnit models.ProductUnit
+			if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+				Where("id = ? AND product_id = ?", updateReq.ID, productID).
+				First(&existingUnit).Error; err != nil {
+				if err == gorm.ErrRecordNotFound {
+					continue // Skip if not found
+				}
+				return nil, fmt.Errorf("failed to find unit: %w", err)
+			}
+
 			updates := make(map[string]interface{})
 
 			if updateReq.UnitName != nil {
 				updates["unit_name"] = *updateReq.UnitName
+			}
+
+			// Only allow conversion rate update for non-base units
+			if updateReq.ConversionRate != nil && !existingUnit.IsBaseUnit {
+				conversionRate, err := decimal.NewFromString(*updateReq.ConversionRate)
+				if err != nil {
+					return nil, pkgerrors.NewBadRequestError("invalid conversionRate format")
+				}
+				if conversionRate.LessThanOrEqual(decimal.Zero) {
+					return nil, pkgerrors.NewBadRequestError("conversionRate must be greater than 0")
+				}
+				updates["conversion_rate"] = conversionRate
+			}
+
+			if updateReq.BuyPrice != nil {
+				buyPrice, err := decimal.NewFromString(*updateReq.BuyPrice)
+				if err != nil {
+					return nil, pkgerrors.NewBadRequestError("invalid buyPrice format")
+				}
+				updates["buy_price"] = buyPrice
+			}
+
+			if updateReq.SellPrice != nil {
+				sellPrice, err := decimal.NewFromString(*updateReq.SellPrice)
+				if err != nil {
+					return nil, pkgerrors.NewBadRequestError("invalid sellPrice format")
+				}
+				updates["sell_price"] = sellPrice
 			}
 
 			if len(updates) > 0 {

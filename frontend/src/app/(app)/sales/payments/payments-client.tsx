@@ -64,9 +64,9 @@ export function SalesPaymentsClient({ initialData }: SalesPaymentsClientProps) {
   );
 
   // Compute permission checks ONCE at top level
-  const canCreatePayments = permissions.canCreate('payments');
-  const canEditPayments = permissions.canEdit('payments');
-  const canDeletePayments = permissions.canDelete('payments');
+  const canCreatePayments = permissions.canCreate('customer-payments');
+  const canEditPayments = permissions.canEdit('customer-payments');
+  const canDeletePayments = permissions.canDelete('customer-payments');
 
   // Debounce search input (wait 500ms after user stops typing)
   useEffect(() => {

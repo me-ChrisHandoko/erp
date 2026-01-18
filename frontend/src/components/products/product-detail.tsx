@@ -25,6 +25,7 @@ import {
   Scale,
   CheckCircle2,
   XCircle,
+  HelpCircle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +38,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { ProductResponse } from "@/types/product.types";
 
 interface ProductDetailProps {
@@ -236,9 +243,22 @@ export function ProductDetail({ product }: ProductDetailProps) {
 
           {/* Minimum Stock */}
           <div className="space-y-1">
-            <p className="text-sm font-medium text-muted-foreground">
-              Stok Minimum
-            </p>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <p className="text-sm font-medium text-muted-foreground flex items-center gap-1 cursor-help">
+                    Stok Minimum (Default)
+                    <HelpCircle className="h-3 w-3" />
+                  </p>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs">
+                  <p className="text-xs">
+                    <strong>Default Global:</strong> Nilai ini digunakan sebagai default saat menambah produk ke gudang baru.
+                    Setiap gudang dapat memiliki threshold berbeda.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             <p className="text-lg font-semibold">
               {Number(product.minimumStock).toLocaleString("id-ID")}{" "}
               {product.baseUnit}

@@ -7,11 +7,13 @@
  * - Currency formatting
  * - Profit margin calculator
  * - Responsive layout
+ * - Mobile-friendly sticky action bar
+ * - Unsaved changes warning
  */
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   Package,
   DollarSign,
@@ -23,6 +25,7 @@ import {
   PackageCheck,
   Calendar,
   Bell,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,15 +38,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Users, ChevronLeft, ChevronRight, Check, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import {
   useUpdateProductMutation,
   useLinkSupplierMutation,
   useUpdateProductSupplierMutation,
   useRemoveProductSupplierMutation,
+  useListProductsQuery,
 } from "@/store/services/productApi";
 import { toast } from "sonner";
 import {
@@ -53,11 +60,16 @@ import {
   type UpdateProductSuppliersRequest,
   type UpdateProductUnitsRequest,
   type ProductResponse,
+  type CreateProductUnitRequest,
 } from "@/types/product.types";
 import {
   ProductSuppliersSection,
   type SupplierFormData,
 } from "./product-suppliers-section";
+import {
+  ProductUnitsSection,
+  type ProductUnitItem,
+} from "./product-units-section";
 
 interface EditProductFormProps {
   product: ProductResponse;
@@ -65,15 +77,19 @@ interface EditProductFormProps {
   onCancel?: () => void;
 }
 
+// Tab configuration - defined outside component to prevent recreation on each render
+const TABS = ["basic", "pricing", "stock", "suppliers"] as const;
+type TabId = typeof TABS[number];
+
 export function EditProductForm({
   product,
   onSuccess,
   onCancel,
 }: EditProductFormProps) {
   const [updateProduct, { isLoading: isUpdatingProduct }] = useUpdateProductMutation();
-  const [linkSupplier, { isLoading: isLinkingSupplier }] = useLinkSupplierMutation();
-  const [updateProductSupplier, { isLoading: isUpdatingSupplier }] = useUpdateProductSupplierMutation();
-  const [removeProductSupplier, { isLoading: isRemovingSupplier }] = useRemoveProductSupplierMutation();
+  const [, { isLoading: isLinkingSupplier }] = useLinkSupplierMutation();
+  const [, { isLoading: isUpdatingSupplier }] = useUpdateProductSupplierMutation();
+  const [, { isLoading: isRemovingSupplier }] = useRemoveProductSupplierMutation();
 
   const isLoading = isUpdatingProduct || isLinkingSupplier || isUpdatingSupplier || isRemovingSupplier;
 
@@ -96,19 +112,124 @@ export function EditProductForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 
+  // Sync formData with product when product changes (handles RTK Query cache updates)
+  useEffect(() => {
+    setFormData((prev) => ({
+      ...prev,
+      code: product.code,
+      name: product.name,
+      category: product.category || "",
+      description: product.description || "",
+      baseUnit: product.baseUnit,
+      baseCost: product.baseCost,
+      basePrice: product.basePrice,
+      minimumStock: product.minimumStock || "0",
+      barcode: product.barcode || "",
+      isBatchTracked: product.isBatchTracked,
+      isPerishable: product.isPerishable,
+      isActive: product.isActive,
+    }));
+  }, [product]);
+
+  // Real-time code validation - debounced code for API query
+  const [debouncedCode, setDebouncedCode] = useState("");
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Debounced code update (only when code changes from original)
+  useEffect(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    // Determine if we should validate (code changed from original and is valid)
+    const shouldValidate =
+      formData.code !== product.code &&
+      formData.code &&
+      formData.code.length >= 2;
+
+    // Set timer for debounced update (includes reset case)
+    debounceTimerRef.current = setTimeout(() => {
+      if (shouldValidate && formData.code) {
+        setDebouncedCode(formData.code);
+      } else {
+        setDebouncedCode("");
+      }
+    }, shouldValidate ? 500 : 0);
+
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [formData.code, product.code]);
+
+  // Query to check if code exists
+  const { data: existingProducts, isFetching: isCheckingCode } = useListProductsQuery(
+    { search: debouncedCode, pageSize: 5 },
+    { skip: !debouncedCode || debouncedCode.length < 2 || debouncedCode === product.code }
+  );
+
+  // Derive validation status using useMemo
+  const codeValidationStatus = useMemo((): "idle" | "checking" | "available" | "taken" => {
+    // If code is same as original, no need to check
+    if (formData.code === product.code) {
+      return "idle";
+    }
+
+    if (!formData.code || formData.code.length < 2) {
+      return "idle";
+    }
+
+    // If code is different from debounced, we're still waiting for debounce
+    if (formData.code !== debouncedCode) {
+      return "checking";
+    }
+
+    if (isCheckingCode) {
+      return "checking";
+    }
+
+    if (existingProducts?.data) {
+      // Exclude current product from check
+      const codeExists = existingProducts.data.some(
+        (p) => p.code.toLowerCase() === debouncedCode.toLowerCase() && p.id !== product.id
+      );
+      return codeExists ? "taken" : "available";
+    }
+
+    return "idle";
+  }, [formData.code, product.code, product.id, debouncedCode, existingProducts, isCheckingCode]);
+
+  // Tab navigation state
+  const [activeTab, setActiveTab] = useState<TabId>("basic");
+
+  // Track original unit IDs for detecting deletions
+  const originalUnitIds = useMemo(() => {
+    return (product.units || [])
+      .filter((u) => !u.isBaseUnit) // Exclude base unit from deletion tracking
+      .map((u) => u.id);
+  }, [product.units]);
+
   // Units state - initialize from product data
-  const [units, setUnits] = useState(() => {
-    console.log("🔍 Product units from props:", product.units);
+  const [units, setUnits] = useState<ProductUnitItem[]>(() => {
     const mappedUnits = (product.units || []).map((u) => ({
       id: u.id,
       unitName: u.unitName,
       conversionRate: u.conversionRate,
       isBaseUnit: u.isBaseUnit,
+      buyPrice: u.buyPrice || undefined,
+      sellPrice: u.sellPrice || undefined,
       isEdited: false,
+      isNew: false,
     }));
-    console.log("🔍 Mapped units state:", mappedUnits);
     return mappedUnits;
   });
+
+  // Calculate deleted units (original units that are no longer in current state)
+  const deletedUnitIds = useMemo(() => {
+    const currentIds = units.map((u) => u.id);
+    return originalUnitIds.filter((id) => !currentIds.includes(id));
+  }, [units, originalUnitIds]);
 
   // Suppliers state - initialize from product data
   const [suppliers, setSuppliers] = useState<SupplierFormData[]>(() => {
@@ -126,7 +247,82 @@ export function EditProductForm({
     }));
   });
 
-  const handleChange = (field: keyof UpdateProductRequest, value: any) => {
+  // Derive unsaved changes status using useMemo (avoid setState in useEffect)
+  const hasUnsavedChanges = useMemo(() => {
+    return (
+      formData.code !== product.code ||
+      formData.name !== product.name ||
+      formData.category !== (product.category || "") ||
+      formData.description !== (product.description || "") ||
+      formData.barcode !== (product.barcode || "") ||
+      formData.baseCost !== product.baseCost ||
+      formData.basePrice !== product.basePrice ||
+      formData.minimumStock !== (product.minimumStock || "0") ||
+      formData.isBatchTracked !== product.isBatchTracked ||
+      formData.isPerishable !== product.isPerishable ||
+      formData.isActive !== product.isActive ||
+      units.some((u) => u.isEdited || u.isNew) ||
+      deletedUnitIds.length > 0 ||
+      suppliers.some((s) => s.isNew || s.isEdited || s.isDeleted)
+    );
+  }, [formData, units, deletedUnitIds, suppliers, product]);
+
+  // Warn before leaving with unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = "Anda memiliki perubahan yang belum disimpan. Yakin ingin meninggalkan halaman?";
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  // Tab validation status
+  const getTabValidationStatus = useCallback((tab: TabId): "complete" | "error" | "pending" => {
+    switch (tab) {
+      case "basic":
+        const hasBasicData = formData.code?.trim() !== "" && formData.name?.trim() !== "";
+        const hasBasicErrors = !!(errors.code || errors.name);
+        if (hasBasicErrors) return "error";
+        if (hasBasicData) return "complete";
+        return "pending";
+      case "pricing":
+        const hasPricingData = parseFloat(formData.baseCost || "0") > 0 && parseFloat(formData.basePrice || "0") > 0;
+        const hasPricingErrors = !!(errors.baseCost || errors.basePrice || errors.baseUnit);
+        if (hasPricingErrors) return "error";
+        if (hasPricingData) return "complete";
+        return "pending";
+      case "stock":
+        const hasStockErrors = !!errors.minimumStock;
+        if (hasStockErrors) return "error";
+        return "complete";
+      case "suppliers":
+        return suppliers.length > 0 ? "complete" : "pending";
+      default:
+        return "pending";
+    }
+  }, [formData, errors, suppliers]);
+
+  // Tab navigation helpers
+  const goToNextTab = useCallback(() => {
+    const currentIndex = TABS.indexOf(activeTab);
+    if (currentIndex < TABS.length - 1) {
+      setActiveTab(TABS[currentIndex + 1]);
+    }
+  }, [activeTab]);
+
+  const goToPrevTab = useCallback(() => {
+    const currentIndex = TABS.indexOf(activeTab);
+    if (currentIndex > 0) {
+      setActiveTab(TABS[currentIndex - 1]);
+    }
+  }, [activeTab]);
+
+  const handleChange = (field: keyof UpdateProductRequest, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     // Clear error when user types
     if (errors[field]) {
@@ -138,14 +334,6 @@ export function EditProductForm({
     setTouched((prev) => ({ ...prev, [field]: true }));
   };
 
-  const handleUnitChange = (unitId: string, newUnitName: string) => {
-    setUnits((prev) =>
-      prev.map((unit) =>
-        unit.id === unitId ? { ...unit, unitName: newUnitName, isEdited: true } : unit
-      )
-    );
-  };
-
   const formatCurrency = (value: string): string => {
     const num = parseFloat(value || "0");
     if (isNaN(num)) return "Rp 0";
@@ -155,6 +343,28 @@ export function EditProductForm({
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(num);
+  };
+
+  // Format number with thousand separators for display in input
+  const formatNumberInput = (value: string): string => {
+    // Remove non-numeric characters except decimal point
+    const cleanValue = (value || "").replace(/[^\d]/g, "");
+    if (!cleanValue) return "";
+    const num = parseInt(cleanValue, 10);
+    if (isNaN(num)) return "";
+    return new Intl.NumberFormat("id-ID").format(num);
+  };
+
+  // Parse formatted number back to raw value
+  const parseFormattedNumber = (value: string): string => {
+    const cleanValue = value.replace(/[^\d]/g, "");
+    return cleanValue || "0";
+  };
+
+  // Handle currency input change
+  const handleCurrencyChange = (field: "baseCost" | "basePrice", formattedValue: string) => {
+    const rawValue = parseFormattedNumber(formattedValue);
+    handleChange(field, rawValue);
   };
 
   const calculateProfit = () => {
@@ -174,6 +384,8 @@ export function EditProductForm({
       newErrors.code = "Kode produk wajib diisi";
     } else if (formData.code.length < 2) {
       newErrors.code = "Kode produk minimal 2 karakter";
+    } else if (codeValidationStatus === "taken") {
+      newErrors.code = "Kode produk ini sudah digunakan";
     }
 
     if (!formData.name?.trim()) {
@@ -214,9 +426,7 @@ export function EditProductForm({
       minimumStock: true,
     });
 
-    if (Object.keys(newErrors).length > 0) {
-      console.log("❌ Validation errors:", newErrors);
-    }
+    // Validation complete - errors will be displayed in the form
 
     return Object.keys(newErrors).length === 0;
   };
@@ -259,11 +469,28 @@ export function EditProductForm({
 
       // Build unit changes object
       const unitChanges: UpdateProductUnitsRequest = {
+        // Delete units that were removed
+        delete: deletedUnitIds,
+
+        // Add new units
+        add: units
+          .filter((u) => u.isNew && !u.isBaseUnit)
+          .map((u) => ({
+            unitName: u.unitName,
+            conversionRate: u.conversionRate,
+            buyPrice: u.buyPrice || undefined,
+            sellPrice: u.sellPrice || undefined,
+          })),
+
+        // Update existing units
         update: units
-          .filter((u) => u.isEdited && u.id)
+          .filter((u) => u.isEdited && u.id && !u.isNew && !u.isBaseUnit)
           .map((u) => ({
             id: u.id,
             unitName: u.unitName,
+            conversionRate: u.conversionRate,
+            buyPrice: u.buyPrice || undefined,
+            sellPrice: u.sellPrice || undefined,
           })),
       };
 
@@ -296,7 +523,10 @@ export function EditProductForm({
             supplierChanges.update && supplierChanges.update.length > 0
           ) && { suppliers: supplierChanges }),
         // Include unit changes if there are any
-        ...(unitChanges.update && unitChanges.update.length > 0 && { units: unitChanges }),
+        ...((unitChanges.delete && unitChanges.delete.length > 0 ||
+            unitChanges.add && unitChanges.add.length > 0 ||
+            unitChanges.update && unitChanges.update.length > 0
+          ) && { units: unitChanges }),
       };
 
       // Update product with all changes (including suppliers and units) in one request
@@ -313,12 +543,13 @@ export function EditProductForm({
       if (onSuccess) {
         onSuccess();
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { data?: { error?: { message?: string }; message?: string }; message?: string };
       toast.error("Gagal Memperbarui Produk", {
         description:
-          error?.data?.error?.message ||
-          error?.data?.message ||
-          error?.message ||
+          err?.data?.error?.message ||
+          err?.data?.message ||
+          err?.message ||
           "Terjadi kesalahan pada server",
       });
     }
@@ -326,39 +557,125 @@ export function EditProductForm({
 
   const profitData = calculateProfit();
 
+  // Tab configuration
+  const tabConfig = [
+    { id: "basic", label: "Informasi Dasar", icon: FileText },
+    { id: "pricing", label: "Harga & Satuan", icon: DollarSign },
+    { id: "stock", label: "Stok & Pelacakan", icon: Layers },
+    { id: "suppliers", label: "Suppliers", icon: Users },
+  ] as const;
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Basic Information */}
+    <form onSubmit={handleSubmit} className="space-y-6 pb-32 md:pb-0">
+      {/* Tab Navigation */}
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TabId)} className="w-full">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 h-auto gap-1 p-1">
+          {tabConfig.map((tab, index) => {
+            const status = getTabValidationStatus(tab.id as TabId);
+            const Icon = tab.icon;
+            return (
+              <TabsTrigger
+                key={tab.id}
+                value={tab.id}
+                className="flex items-center gap-2 py-2.5 px-3 text-xs md:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground relative"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="hidden md:flex items-center justify-center w-5 h-5 rounded-full bg-muted text-xs font-medium">
+                    {status === "complete" ? (
+                      <Check className="h-3 w-3 text-green-600" />
+                    ) : status === "error" ? (
+                      <AlertCircle className="h-3 w-3 text-destructive" />
+                    ) : (
+                      index + 1
+                    )}
+                  </span>
+                  <Icon className="h-4 w-4 md:hidden" />
+                  <span className="truncate">{tab.label}</span>
+                </div>
+                {status === "error" && (
+                  <Badge variant="destructive" className="absolute -top-1 -right-1 h-4 w-4 p-0 flex items-center justify-center text-[10px] md:hidden">
+                    !
+                  </Badge>
+                )}
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+
+        {/* Tab 1: Basic Information */}
+        <TabsContent value="basic" className="mt-6">
       <Card className="border-2">
-        <CardContent>
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <FileText className="h-5 w-5 text-primary" />
+            Informasi Dasar
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
           <div className="grid gap-6 sm:grid-cols-2">
             {/* Code */}
             <div className="space-y-2">
               <Label htmlFor="code" className="text-sm font-medium">
                 Kode Produk <span className="text-destructive">*</span>
               </Label>
-              <Input
-                id="code"
-                value={formData.code}
-                onChange={(e) =>
-                  handleChange("code", e.target.value.toUpperCase())
-                }
-                onBlur={() => handleBlur("code")}
-                placeholder="Contoh: BRS-001"
-                className={
-                  errors.code && touched.code ? "border-destructive" : ""
-                }
-              />
+              <div className="relative">
+                <Input
+                  id="code"
+                  value={formData.code}
+                  onChange={(e) =>
+                    handleChange("code", e.target.value.toUpperCase())
+                  }
+                  onBlur={() => handleBlur("code")}
+                  placeholder="Contoh: BRS-001"
+                  className={`pr-10 ${
+                    errors.code && touched.code
+                      ? "border-destructive"
+                      : codeValidationStatus === "taken"
+                      ? "border-destructive"
+                      : codeValidationStatus === "available"
+                      ? "border-green-500"
+                      : ""
+                  }`}
+                />
+                {/* Validation Status Icon */}
+                {formData.code !== product.code && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    {codeValidationStatus === "checking" && (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    )}
+                    {codeValidationStatus === "available" && (
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    )}
+                    {codeValidationStatus === "taken" && (
+                      <XCircle className="h-4 w-4 text-destructive" />
+                    )}
+                  </div>
+                )}
+              </div>
               {errors.code && touched.code && (
                 <p className="flex items-center gap-1 text-sm text-destructive">
                   <AlertCircle className="h-3 w-3" />
                   {errors.code}
                 </p>
               )}
-              <p className="text-xs text-muted-foreground">
-                Kode unik untuk identifikasi produk
-              </p>
-              {formData.code !== product.code && (
+              {codeValidationStatus === "taken" && !errors.code && (
+                <p className="flex items-center gap-1 text-sm text-destructive">
+                  <AlertCircle className="h-3 w-3" />
+                  Kode produk ini sudah digunakan
+                </p>
+              )}
+              {codeValidationStatus === "available" && (
+                <p className="flex items-center gap-1 text-sm text-green-600">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Kode produk tersedia
+                </p>
+              )}
+              {codeValidationStatus === "idle" && (
+                <p className="text-xs text-muted-foreground">
+                  Kode unik untuk identifikasi produk
+                </p>
+              )}
+              {formData.code !== product.code && codeValidationStatus !== "taken" && (
                 <Alert className="border-amber-500/50 bg-amber-50 dark:bg-amber-950/20">
                   <Info className="h-4 w-4 text-amber-600 dark:text-amber-500" />
                   <AlertDescription className="text-amber-800 dark:text-amber-400">
@@ -458,69 +775,51 @@ export function EditProductForm({
         </CardContent>
       </Card>
 
-      {/* Pricing & Unit */}
-      <Card className="border-2">
-        <CardContent>
-          <div className="grid gap-6 lg:grid-cols-[240px,180px,1fr,1fr] items-start">
-            {/* Column 1: Product Units List */}
-            {(() => {
-              console.log("🔍 Rendering units, length:", units?.length, units);
-              return null;
-            })()}
-            {units && units.length > 0 && (
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Satuan Produk</Label>
-                <div className="space-y-2">
-                  {units.map((unit) => (
-                    <div key={unit.id} className="space-y-1">
-                      <Select
-                        value={unit.unitName}
-                        onValueChange={(value) => handleUnitChange(unit.id, value)}
-                        disabled={unit.isBaseUnit}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {COMMON_UNITS.map((unitOption) => (
-                            <SelectItem key={unitOption} value={unitOption}>
-                              {unitOption}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {unit.isBaseUnit && (
-                        <p className="text-xs text-muted-foreground">
-                          Satuan dasar
-                        </p>
-                      )}
-                      {!unit.isBaseUnit && (
-                        <p className="text-xs text-muted-foreground">
-                          1 = {unit.conversionRate} {formData.baseUnit}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Satuan yang tersedia untuk produk ini
-                </p>
-              </div>
-            )}
+          {/* Tab Navigation Buttons */}
+          <div className="flex justify-end pt-4">
+            <Button
+              type="button"
+              onClick={goToNextTab}
+              className="gap-2"
+            >
+              Lanjut ke Harga & Satuan
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </TabsContent>
 
-            {/* Column 2: Base Unit */}
+        {/* Tab 2: Pricing & Unit */}
+        <TabsContent value="pricing" className="mt-6">
+      <Card className="border-2">
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <DollarSign className="h-5 w-5 text-primary" />
+            Harga & Satuan
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="grid gap-6 lg:grid-cols-3 items-start">
+            {/* Column 1: Base Unit */}
             <div className="space-y-2">
               <Label htmlFor="baseUnit" className="text-sm font-medium">
                 Satuan Dasar <span className="text-destructive">*</span>
               </Label>
               <Select
-                value={formData.baseUnit}
+                value={formData.baseUnit || ""}
                 onValueChange={(value) => handleChange("baseUnit", value)}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue />
+                  <SelectValue placeholder="Pilih satuan">
+                    {formData.baseUnit || "Pilih satuan"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
+                  {/* Include current baseUnit if not in COMMON_UNITS */}
+                  {formData.baseUnit && !COMMON_UNITS.includes(formData.baseUnit as typeof COMMON_UNITS[number]) && (
+                    <SelectItem key={formData.baseUnit} value={formData.baseUnit}>
+                      {formData.baseUnit}
+                    </SelectItem>
+                  )}
                   {COMMON_UNITS.map((unit) => (
                     <SelectItem key={unit} value={unit}>
                       {unit}
@@ -550,13 +849,13 @@ export function EditProductForm({
                 </span>
                 <Input
                   id="baseCost"
-                  type="number"
-                  step="0.01"
-                  value={formData.baseCost}
-                  onChange={(e) => handleChange("baseCost", e.target.value)}
+                  type="text"
+                  inputMode="numeric"
+                  value={formatNumberInput(formData.baseCost || "")}
+                  onChange={(e) => handleCurrencyChange("baseCost", e.target.value)}
                   onBlur={() => handleBlur("baseCost")}
                   placeholder="0"
-                  className={`pl-10 ${
+                  className={`pl-10 text-right font-mono ${
                     errors.baseCost && touched.baseCost
                       ? "border-destructive"
                       : ""
@@ -570,7 +869,7 @@ export function EditProductForm({
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                {formatCurrency(formData.baseCost || "0")}
+                Harga per {formData.baseUnit || "satuan"}
               </p>
             </div>
 
@@ -585,13 +884,13 @@ export function EditProductForm({
                 </span>
                 <Input
                   id="basePrice"
-                  type="number"
-                  step="0.01"
-                  value={formData.basePrice}
-                  onChange={(e) => handleChange("basePrice", e.target.value)}
+                  type="text"
+                  inputMode="numeric"
+                  value={formatNumberInput(formData.basePrice || "")}
+                  onChange={(e) => handleCurrencyChange("basePrice", e.target.value)}
                   onBlur={() => handleBlur("basePrice")}
                   placeholder="0"
-                  className={`pl-10 ${
+                  className={`pl-10 text-right font-mono ${
                     errors.basePrice && touched.basePrice
                       ? "border-destructive"
                       : ""
@@ -605,13 +904,13 @@ export function EditProductForm({
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                {formatCurrency(formData.basePrice || "0")}
+                Harga per {formData.baseUnit || "satuan"}
               </p>
             </div>
 
             {/* Profit Margin Display - Spans all 4 columns */}
             {profitData && profitData.margin > 0 && (
-              <div className="lg:col-span-4">
+              <div className="lg:col-span-3">
                 <Alert className="bg-green-50 border-green-200 dark:bg-green-900/10 dark:border-green-900">
                   <TrendingUp className="h-4 w-4 text-green-600" />
                   <AlertDescription className="text-green-800 dark:text-green-200">
@@ -639,16 +938,49 @@ export function EditProductForm({
         </CardContent>
       </Card>
 
-      {/* Stock & Tracking */}
-      <Card className="border-2">
-        <CardContent className="pt-6">
-          <div className="space-y-6">
-            {/* Section Title */}
-            <div className="flex items-center gap-2 pb-2 border-b">
-              <Layers className="h-5 w-5 text-primary" />
-              <h3 className="text-lg font-semibold">Stok & Pelacakan</h3>
-            </div>
+          {/* Unit Conversion Section */}
+          <ProductUnitsSection
+            units={units}
+            onUnitsChange={setUnits}
+            baseUnit={formData.baseUnit || "PCS"}
+            baseCost={formData.baseCost}
+            basePrice={formData.basePrice}
+            disabled={isLoading}
+          />
 
+          {/* Tab Navigation Buttons */}
+          <div className="flex justify-between pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={goToPrevTab}
+              className="gap-2"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Kembali
+            </Button>
+            <Button
+              type="button"
+              onClick={goToNextTab}
+              className="gap-2"
+            >
+              Lanjut ke Stok & Pelacakan
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </TabsContent>
+
+        {/* Tab 3: Stock & Tracking */}
+        <TabsContent value="stock" className="mt-6">
+      <Card className="border-2">
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Layers className="h-5 w-5 text-primary" />
+            Stok & Pelacakan
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="space-y-6">
             {/* Minimum Stock */}
             <div className="space-y-3">
               <div className="flex items-center gap-2">
@@ -680,8 +1012,8 @@ export function EditProductForm({
               <Alert className="bg-blue-50 border-blue-200 dark:bg-blue-900/10 dark:border-blue-900">
                 <Info className="h-4 w-4 text-blue-600" />
                 <AlertDescription className="text-blue-800 dark:text-blue-200 text-sm">
-                  Alert otomatis akan muncul ketika stok produk di bawah nilai
-                  ini
+                  <strong>Default Global:</strong> Nilai ini akan digunakan sebagai default stok minimum saat menambah produk ke gudang baru.
+                  Setiap gudang dapat memiliki threshold berbeda sesuai kebutuhannya.
                 </AlertDescription>
               </Alert>
             </div>
@@ -827,44 +1159,113 @@ export function EditProductForm({
         </CardContent>
       </Card>
 
-      {/* Suppliers Section */}
-      <ProductSuppliersSection
-        suppliers={suppliers}
-        onSuppliersChange={setSuppliers}
-        disabled={isLoading}
-      />
+          {/* Tab Navigation Buttons */}
+          <div className="flex justify-between pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={goToPrevTab}
+              className="gap-2"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Kembali
+            </Button>
+            <Button
+              type="button"
+              onClick={goToNextTab}
+              className="gap-2"
+            >
+              Lanjut ke Suppliers
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </TabsContent>
 
-      {/* Form Actions */}
-      <div className="flex justify-end gap-3 pt-2">
-        {onCancel && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onCancel}
+        {/* Tab 4: Suppliers */}
+        <TabsContent value="suppliers" className="mt-6">
+          {/* Suppliers Section */}
+          <ProductSuppliersSection
+            suppliers={suppliers}
+            onSuppliersChange={setSuppliers}
             disabled={isLoading}
-            size="lg"
-          >
-            Batal
-          </Button>
-        )}
-        <Button
-          type="submit"
-          disabled={isLoading}
-          size="lg"
-          className="min-w-[150px]"
-        >
-          {isLoading ? (
-            <>
-              <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-              Menyimpan...
-            </>
-          ) : (
-            <>
-              <Save className="mr-2 h-4 w-4" />
-              Simpan Perubahan
-            </>
+          />
+
+          {/* Tab Navigation Buttons with Submit */}
+          <div className="flex justify-between pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={goToPrevTab}
+              className="gap-2"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Kembali
+            </Button>
+            <div className="flex gap-3">
+              {onCancel && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onCancel}
+                  disabled={isLoading}
+                >
+                  Batal
+                </Button>
+              )}
+              <Button
+                type="submit"
+                disabled={isLoading}
+                className="gap-2"
+              >
+                {isLoading ? (
+                  <>
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    Menyimpan...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4" />
+                    Simpan Perubahan
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      {/* Form Actions - Mobile Sticky Footer */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/95 backdrop-blur-sm border-t shadow-lg md:hidden z-50">
+        <div className="flex gap-3 max-w-lg mx-auto">
+          {onCancel && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onCancel}
+              disabled={isLoading}
+              className="flex-1"
+            >
+              Batal
+            </Button>
           )}
-        </Button>
+          <Button
+            type="submit"
+            disabled={isLoading}
+            className="flex-1"
+          >
+            {isLoading ? (
+              <>
+                <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                Menyimpan...
+              </>
+            ) : (
+              <>
+                <Save className="mr-2 h-4 w-4" />
+                Simpan Perubahan
+              </>
+            )}
+          </Button>
+        </div>
       </div>
     </form>
   );

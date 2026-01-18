@@ -28,6 +28,60 @@ const (
 	StatusPartial = "PARTIAL"
 )
 
+// filterNonEmptyFields extracts only fields that have meaningful values (non-empty, non-nil, non-zero)
+// This ensures audit logs only record fields that were actually inputted by the user
+func filterNonEmptyFields(data map[string]interface{}) []string {
+	fields := []string{}
+	for key, value := range data {
+		if value == nil {
+			continue
+		}
+
+		// Use reflection to handle pointer types
+		v := reflect.ValueOf(value)
+
+		// Dereference pointer if necessary
+		if v.Kind() == reflect.Ptr {
+			if v.IsNil() {
+				continue
+			}
+			v = v.Elem()
+			value = v.Interface()
+		}
+
+		// Check based on underlying type
+		switch val := value.(type) {
+		case string:
+			if val != "" && val != "0" && val != "0.00" {
+				fields = append(fields, key)
+			}
+		case bool:
+			// Only include boolean fields if true (explicitly set)
+			if val {
+				fields = append(fields, key)
+			}
+		case int, int8, int16, int32, int64:
+			if v.Int() != 0 {
+				fields = append(fields, key)
+			}
+		case uint, uint8, uint16, uint32, uint64:
+			if v.Uint() != 0 {
+				fields = append(fields, key)
+			}
+		case float32, float64:
+			if v.Float() != 0 {
+				fields = append(fields, key)
+			}
+		default:
+			// For other types (arrays, structs, etc.), include if not zero value
+			if !v.IsZero() {
+				fields = append(fields, key)
+			}
+		}
+	}
+	return fields
+}
+
 // AuditContext contains contextual information for audit logging
 type AuditContext struct {
 	TenantID  *string
@@ -332,26 +386,8 @@ func (s *AuditService) LogProductCreated(
 	entityType := "PRODUCT"
 
 	// Create human-readable notes with created fields
-	// Filter out empty/default values to show only inputted fields
-	createdFields := []string{}
-	for key, value := range productData {
-		// Skip empty values and defaults
-		switch v := value.(type) {
-		case string:
-			if v != "" && v != "0" && v != "0.00" {
-				createdFields = append(createdFields, key)
-			}
-		case bool:
-			// Only include boolean fields if they are true (explicitly set by user)
-			// false is the default value and might not be intentional input
-			if v {
-				createdFields = append(createdFields, key)
-			}
-		default:
-			// Include other types (numbers, etc.)
-			createdFields = append(createdFields, key)
-		}
-	}
+	// Use helper function to filter only non-empty values (handles pointer types correctly)
+	createdFields := filterNonEmptyFields(productData)
 
 	notes := ""
 	if len(createdFields) > 0 {
@@ -489,30 +525,8 @@ func (s *AuditService) LogCustomerCreated(
 	entityType := "CUSTOMER"
 
 	// Create human-readable notes with created fields
-	// Filter out empty/default values to show only inputted fields
-	createdFields := []string{}
-	for key, value := range customerData {
-		// Skip empty values and defaults
-		switch v := value.(type) {
-		case string:
-			if v != "" && v != "0" && v != "0.00" {
-				createdFields = append(createdFields, key)
-			}
-		case bool:
-			// Only include boolean fields if they are true (explicitly set by user)
-			if v {
-				createdFields = append(createdFields, key)
-			}
-		case int:
-			// Only include integer fields if they are not zero (default value)
-			if v != 0 {
-				createdFields = append(createdFields, key)
-			}
-		default:
-			// Include other types (decimal, etc.)
-			createdFields = append(createdFields, key)
-		}
-	}
+	// Use helper function to filter only non-empty values (handles pointer types correctly)
+	createdFields := filterNonEmptyFields(customerData)
 
 	notes := ""
 	if len(createdFields) > 0 {
@@ -862,25 +876,8 @@ func (s *AuditService) LogSupplierCreated(
 	entityType := "SUPPLIER"
 
 	// Create human-readable notes with created fields
-	createdFields := []string{}
-	for key, value := range supplierData {
-		switch v := value.(type) {
-		case string:
-			if v != "" && v != "0" && v != "0.00" {
-				createdFields = append(createdFields, key)
-			}
-		case bool:
-			if v {
-				createdFields = append(createdFields, key)
-			}
-		case int:
-			if v != 0 {
-				createdFields = append(createdFields, key)
-			}
-		default:
-			createdFields = append(createdFields, key)
-		}
-	}
+	// Use helper function to filter only non-empty values (handles pointer types correctly)
+	createdFields := filterNonEmptyFields(supplierData)
 
 	notes := ""
 	if len(createdFields) > 0 {
@@ -1043,25 +1040,8 @@ func (s *AuditService) LogWarehouseCreated(
 	entityType := "WAREHOUSE"
 
 	// Create human-readable notes with created fields
-	createdFields := []string{}
-	for key, value := range warehouseData {
-		switch v := value.(type) {
-		case string:
-			if v != "" && v != "0" && v != "0.00" {
-				createdFields = append(createdFields, key)
-			}
-		case bool:
-			if v {
-				createdFields = append(createdFields, key)
-			}
-		case int:
-			if v != 0 {
-				createdFields = append(createdFields, key)
-			}
-		default:
-			createdFields = append(createdFields, key)
-		}
-	}
+	// Use helper function to filter only non-empty values (handles pointer types correctly)
+	createdFields := filterNonEmptyFields(warehouseData)
 
 	notes := ""
 	if len(createdFields) > 0 {

@@ -81,10 +81,12 @@ type RejectGoodsRequest struct {
 
 // GoodsReceiptProductResponse - Product info for goods receipt items
 type GoodsReceiptProductResponse struct {
-	ID       string `json:"id"`
-	Code     string `json:"code"`
-	Name     string `json:"name"`
-	BaseUnit string `json:"baseUnit"`
+	ID             string `json:"id"`
+	Code           string `json:"code"`
+	Name           string `json:"name"`
+	BaseUnit       string `json:"baseUnit"`
+	IsBatchTracked bool   `json:"isBatchTracked"` // Indicates if batch number is required
+	IsPerishable   bool   `json:"isPerishable"`   // Indicates if expiry date is required
 }
 
 // GoodsReceiptProductUnitResponse - Product unit info for goods receipt items

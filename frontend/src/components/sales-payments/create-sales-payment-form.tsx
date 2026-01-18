@@ -75,7 +75,7 @@ export function CreateSalesPaymentForm() {
   const { data: invoicesData, isLoading: isLoadingInvoices } = useListInvoicesQuery(
     {
       customerId: selectedCustomerId,
-      status: 'UNPAID', // Only unpaid or partial paid invoices
+      paymentStatus: 'UNPAID', // Only unpaid or partial paid invoices
       page: 1,
       pageSize: 50,
     },
@@ -101,7 +101,7 @@ export function CreateSalesPaymentForm() {
   // Prepare invoice options
   const invoiceOptions = (invoicesData?.data || []).map((invoice) => ({
     value: invoice.id,
-    label: `${invoice.invoiceNumber} - Rp ${Number(invoice.unpaidAmount || 0).toLocaleString('id-ID')}`,
+    label: `${invoice.invoiceNumber} - Rp ${Number(invoice.remainingAmount || 0).toLocaleString('id-ID')}`,
     invoice: invoice,
   }));
 
@@ -109,8 +109,8 @@ export function CreateSalesPaymentForm() {
   useEffect(() => {
     if (selectedInvoiceId && invoicesData?.data) {
       const selectedInvoice = invoicesData.data.find(inv => inv.id === selectedInvoiceId);
-      if (selectedInvoice && selectedInvoice.unpaidAmount) {
-        setValue('amount', selectedInvoice.unpaidAmount);
+      if (selectedInvoice && selectedInvoice.remainingAmount) {
+        setValue('amount', selectedInvoice.remainingAmount);
       }
     }
   }, [selectedInvoiceId, invoicesData, setValue]);
@@ -209,7 +209,7 @@ export function CreateSalesPaymentForm() {
               setValue('amount', ""); // Reset amount
             }}
             placeholder="Cari pelanggan..."
-            emptyText="Pelanggan tidak ditemukan"
+            emptyMessage="Pelanggan tidak ditemukan"
             searchPlaceholder="Cari nama atau kode..."
             disabled={isLoadingCustomers}
           />
@@ -273,7 +273,7 @@ export function CreateSalesPaymentForm() {
                   <div className="col-span-2">
                     <span className="text-muted-foreground">Sisa Belum Dibayar:</span>{" "}
                     <span className="font-semibold text-orange-600">
-                      Rp {Number(selectedInvoice.unpaidAmount || 0).toLocaleString('id-ID')}
+                      Rp {Number(selectedInvoice.remainingAmount || 0).toLocaleString('id-ID')}
                     </span>
                   </div>
                 </div>
@@ -294,7 +294,7 @@ export function CreateSalesPaymentForm() {
             {...register("amount", {
               required: "Jumlah pembayaran wajib diisi",
               validate: (value) => {
-                if (selectedInvoice && Number(value) > Number(selectedInvoice.unpaidAmount)) {
+                if (selectedInvoice && Number(value) > Number(selectedInvoice.remainingAmount)) {
                   return "Jumlah pembayaran melebihi sisa yang belum dibayar";
                 }
                 return true;

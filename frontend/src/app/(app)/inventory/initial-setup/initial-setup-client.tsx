@@ -30,6 +30,7 @@ import {
   Trash2,
   AlertCircle,
   DollarSign,
+  HelpCircle,
 } from "lucide-react";
 import {
   Card,
@@ -59,6 +60,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { useListWarehousesQuery } from "@/store/services/warehouseApi";
 import { useListProductsQuery } from "@/store/services/productApi";
@@ -263,6 +270,8 @@ export function InitialSetupClient({
               productName: product?.name,
               baseUnit: product?.baseUnit,
               costPerUnit: product?.baseCost || "",
+              // Auto-fill from Product.minimumStock as default
+              minimumStock: product?.minimumStock || "",
             };
           }
           return { ...item, [field]: value };
@@ -831,8 +840,42 @@ export function InitialSetupClient({
                   <TableHead className="w-30">Quantity *</TableHead>
                   <TableHead className="w-37.5">Harga Beli *</TableHead>
                   <TableHead className="w-37.5">Lokasi</TableHead>
-                  <TableHead className="w-30">Min. Stok</TableHead>
-                  <TableHead className="w-30">Max. Stok</TableHead>
+                  <TableHead className="w-30">
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="flex items-center gap-1 cursor-help">
+                            Min. Stok
+                            <HelpCircle className="h-3 w-3 text-muted-foreground" />
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs">
+                          <p className="text-xs">
+                            <strong>Stok Minimum Gudang</strong>: Threshold untuk alert stok rendah di gudang ini.
+                            Otomatis terisi dari default produk, dapat diubah sesuai kebutuhan gudang.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </TableHead>
+                  <TableHead className="w-30">
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="flex items-center gap-1 cursor-help">
+                            Max. Stok
+                            <HelpCircle className="h-3 w-3 text-muted-foreground" />
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs">
+                          <p className="text-xs">
+                            <strong>Stok Maksimum Gudang</strong>: Threshold untuk alert stok berlebih di gudang ini.
+                            Opsional, dapat dikosongkan jika tidak diperlukan.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </TableHead>
                   <TableHead className="w-50">Catatan</TableHead>
                   <TableHead className="w-20">Aksi</TableHead>
                 </TableRow>

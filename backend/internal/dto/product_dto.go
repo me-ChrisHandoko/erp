@@ -59,13 +59,18 @@ type UpdateProductSupplierItem struct {
 
 // UpdateProductUnitsRequest represents unit changes in product update
 type UpdateProductUnitsRequest struct {
-	Update []UpdateProductUnitItem `json:"update" binding:"omitempty,dive"`
+	Add    []CreateProductUnitRequest `json:"add" binding:"omitempty,dive"`    // New units to add
+	Update []UpdateProductUnitItem    `json:"update" binding:"omitempty,dive"` // Existing units to update
+	Delete []string                   `json:"delete" binding:"omitempty"`      // ProductUnit IDs to delete
 }
 
 // UpdateProductUnitItem represents a unit update with ID
 type UpdateProductUnitItem struct {
-	ID       string  `json:"id" binding:"required"` // ProductUnit ID
-	UnitName *string `json:"unitName" binding:"omitempty,min=1,max=50"`
+	ID             string  `json:"id" binding:"required"` // ProductUnit ID
+	UnitName       *string `json:"unitName" binding:"omitempty,min=1,max=50"`
+	ConversionRate *string `json:"conversionRate" binding:"omitempty"` // decimal as string
+	BuyPrice       *string `json:"buyPrice" binding:"omitempty"`       // decimal as string
+	SellPrice      *string `json:"sellPrice" binding:"omitempty"`      // decimal as string
 }
 
 // ProductFilters represents product list filters

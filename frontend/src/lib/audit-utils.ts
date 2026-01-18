@@ -144,6 +144,7 @@ export function formatFieldName(fieldName: string): string {
     isBatchTracked: 'Lacak Batch',
     isPerishable: 'Mudah Rusak',
     suppliers: 'Daftar Supplier',
+    units: 'Satuan Konversi',
 
     // Customer/Supplier fields
     type: 'Tipe',
@@ -193,6 +194,25 @@ export function formatFieldValue(value: any, fieldName?: string): string {
         minimumFractionDigits: 0,
       }).format(parseFloat(supplier.supplier_price || 0));
       return `${supplier.supplier_name} (${supplier.supplier_code}) - ${price}, Lead Time: ${supplier.lead_time} hari${supplier.is_primary ? ' [PRIMARY]' : ''}`;
+    }).join('\n');
+  }
+
+  // Special handling for units array
+  if (fieldName === 'units' && Array.isArray(value)) {
+    if (value.length === 0) return 'Tidak ada satuan';
+    return value.map((unit: any) => {
+      const buyPrice = unit.buy_price ? new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        minimumFractionDigits: 0,
+      }).format(parseFloat(unit.buy_price)) : '-';
+      const sellPrice = unit.sell_price ? new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        minimumFractionDigits: 0,
+      }).format(parseFloat(unit.sell_price)) : '-';
+      const baseLabel = unit.is_base_unit ? ' [BASE]' : '';
+      return `${unit.unit_name} (1 = ${unit.conversion_rate})${baseLabel} - Beli: ${buyPrice}, Jual: ${sellPrice}`;
     }).join('\n');
   }
 

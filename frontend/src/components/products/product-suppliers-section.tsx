@@ -511,102 +511,200 @@ export function ProductSuppliersSection({
           </div>
         )}
 
-        {/* Suppliers Table */}
+        {/* Suppliers List */}
         {visibleSuppliers.length > 0 ? (
-          <div className="border rounded-lg overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Supplier</TableHead>
-                  <TableHead className="text-right">Harga</TableHead>
-                  <TableHead className="text-center">Lead Time</TableHead>
-                  <TableHead className="text-center">MOQ</TableHead>
-                  <TableHead className="text-center">Status</TableHead>
-                  {!disabled && <TableHead className="w-25"></TableHead>}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {visibleSuppliers.map((supplier, index) => {
-                  const actualIndex = suppliers.findIndex(
-                    (s) => s === supplier
-                  );
-                  return (
-                    <TableRow key={supplier.supplierId + index}>
-                      <TableCell>
-                        <div>
-                          <div className="font-medium">
-                            {supplier.supplierCode} - {supplier.supplierName}
-                          </div>
-                          {supplier.supplierProductCode && (
-                            <div className="text-xs text-muted-foreground">
-                              Kode: {supplier.supplierProductCode}
+          <>
+            {/* Desktop Table View */}
+            <div className="hidden md:block border rounded-lg overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Supplier</TableHead>
+                    <TableHead className="text-right">Harga</TableHead>
+                    <TableHead className="text-center">Lead Time</TableHead>
+                    <TableHead className="text-center">MOQ</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                    {!disabled && <TableHead className="w-25"></TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visibleSuppliers.map((supplier, index) => {
+                    const actualIndex = suppliers.findIndex(
+                      (s) => s === supplier
+                    );
+                    return (
+                      <TableRow key={supplier.supplierId + index}>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">
+                              {supplier.supplierCode} - {supplier.supplierName}
                             </div>
+                            {supplier.supplierProductCode && (
+                              <div className="text-xs text-muted-foreground">
+                                Kode: {supplier.supplierProductCode}
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {formatCurrency(supplier.supplierPrice)}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {supplier.leadTimeDays || "-"} hari
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {supplier.minimumOrderQty || "-"}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {supplier.isPrimarySupplier ? (
+                            <Badge variant="default" className="gap-1">
+                              <Star className="h-3 w-3" />
+                              Utama
+                            </Badge>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleSetPrimary(actualIndex)}
+                              disabled={disabled}
+                              className="text-xs"
+                            >
+                              Set Utama
+                            </Button>
                           )}
+                        </TableCell>
+                        {!disabled && (
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => startEdit(actualIndex)}
+                                disabled={
+                                  editingIndex !== null || isAddingSupplier
+                                }
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRemoveSupplier(actualIndex)}
+                                className="text-destructive hover:text-destructive"
+                                disabled={
+                                  editingIndex !== null || isAddingSupplier
+                                }
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Mobile Card View */}
+            <div className="md:hidden space-y-3">
+              {visibleSuppliers.map((supplier, index) => {
+                const actualIndex = suppliers.findIndex((s) => s === supplier);
+                return (
+                  <div
+                    key={supplier.supplierId + index}
+                    className="border rounded-lg p-4 space-y-3"
+                  >
+                    {/* Header with name and primary badge */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">
+                          {supplier.supplierCode} - {supplier.supplierName}
                         </div>
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {formatCurrency(supplier.supplierPrice)}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {supplier.leadTimeDays || "-"} hari
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {supplier.minimumOrderQty || "-"}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {supplier.isPrimarySupplier ? (
-                          <Badge variant="default" className="gap-1">
-                            <Star className="h-3 w-3" />
-                            Utama
-                          </Badge>
-                        ) : (
+                        {supplier.supplierProductCode && (
+                          <div className="text-xs text-muted-foreground">
+                            Kode: {supplier.supplierProductCode}
+                          </div>
+                        )}
+                      </div>
+                      {supplier.isPrimarySupplier && (
+                        <Badge variant="default" className="gap-1 shrink-0">
+                          <Star className="h-3 w-3" />
+                          Utama
+                        </Badge>
+                      )}
+                    </div>
+
+                    {/* Details Grid */}
+                    <div className="grid grid-cols-3 gap-2 text-sm">
+                      <div>
+                        <div className="text-muted-foreground text-xs">
+                          Harga
+                        </div>
+                        <div className="font-mono font-medium">
+                          {formatCurrency(supplier.supplierPrice)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground text-xs">
+                          Lead Time
+                        </div>
+                        <div>{supplier.leadTimeDays || "-"} hari</div>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground text-xs">MOQ</div>
+                        <div>{supplier.minimumOrderQty || "-"}</div>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    {!disabled && (
+                      <div className="flex items-center gap-2 pt-2 border-t">
+                        {!supplier.isPrimarySupplier && (
                           <Button
                             type="button"
-                            variant="ghost"
+                            variant="outline"
                             size="sm"
                             onClick={() => handleSetPrimary(actualIndex)}
-                            disabled={disabled}
-                            className="text-xs"
+                            className="text-xs flex-1"
                           >
+                            <Star className="mr-1 h-3 w-3" />
                             Set Utama
                           </Button>
                         )}
-                      </TableCell>
-                      {!disabled && (
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => startEdit(actualIndex)}
-                              disabled={
-                                editingIndex !== null || isAddingSupplier
-                              }
-                            >
-                              <Edit2 className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleRemoveSupplier(actualIndex)}
-                              className="text-destructive hover:text-destructive"
-                              disabled={
-                                editingIndex !== null || isAddingSupplier
-                              }
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      )}
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => startEdit(actualIndex)}
+                          disabled={editingIndex !== null || isAddingSupplier}
+                          className="flex-1"
+                        >
+                          <Edit2 className="mr-1 h-4 w-4" />
+                          Edit
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleRemoveSupplier(actualIndex)}
+                          className="text-destructive hover:text-destructive flex-1"
+                          disabled={editingIndex !== null || isAddingSupplier}
+                        >
+                          <Trash2 className="mr-1 h-4 w-4" />
+                          Hapus
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
         ) : !isAddingSupplier && editingIndex === null ? (
           <div className="text-center py-8 text-muted-foreground border rounded-lg">
             <Building2 className="mx-auto h-12 w-12 mb-4 opacity-50" />

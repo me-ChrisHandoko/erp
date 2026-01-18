@@ -146,6 +146,31 @@ export interface EntityAuditLog<T> extends ParsedAuditLog<T> {
 }
 
 /**
+ * Product unit in audit log
+ */
+export interface ProductUnitAudit {
+  id: string;
+  unit_name: string;
+  conversion_rate: string;
+  is_base_unit: boolean;
+  buy_price?: string;
+  sell_price?: string;
+}
+
+/**
+ * Product supplier in audit log
+ */
+export interface ProductSupplierAudit {
+  id: string;
+  supplier_id: string;
+  supplier_code: string;
+  supplier_name: string;
+  supplier_price: string;
+  lead_time: number;
+  is_primary: boolean;
+}
+
+/**
  * Product-specific audit log
  */
 export interface ProductAuditLog extends EntityAuditLog<{
@@ -155,7 +180,13 @@ export interface ProductAuditLog extends EntityAuditLog<{
   baseUnit?: string;
   baseCost?: string;
   basePrice?: string;
+  minimumStock?: string;
+  barcode?: string;
+  isBatchTracked?: boolean;
+  isPerishable?: boolean;
   isActive?: boolean;
+  units?: ProductUnitAudit[];
+  suppliers?: ProductSupplierAudit[];
   [key: string]: any;
 }> {
   entityType: 'product';

@@ -49,7 +49,7 @@ export function SalesPaymentDetail({ payment }: SalesPaymentDetailProps) {
   const router = useRouter();
   const permissions = usePermissions();
   const { toast } = useToast();
-  const canEdit = permissions.canEdit('payments');
+  const canEdit = permissions.canEdit('customer-payments');
 
   const [updateCheckStatus, { isLoading: isUpdatingStatus }] = useUpdateCheckStatusMutation();
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);

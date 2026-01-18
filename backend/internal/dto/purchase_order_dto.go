@@ -61,10 +61,12 @@ type CancelPurchaseOrderRequest struct {
 
 // PurchaseOrderProductResponse - Product info for purchase order items
 type PurchaseOrderProductResponse struct {
-	ID       string `json:"id"`
-	Code     string `json:"code"`
-	Name     string `json:"name"`
-	BaseUnit string `json:"baseUnit"`
+	ID             string `json:"id"`
+	Code           string `json:"code"`
+	Name           string `json:"name"`
+	BaseUnit       string `json:"baseUnit"`
+	IsBatchTracked bool   `json:"isBatchTracked"` // Indicates if batch number is required for goods receipt
+	IsPerishable   bool   `json:"isPerishable"`   // Indicates if expiry date is required for goods receipt
 }
 
 // PurchaseOrderProductUnitResponse - Product unit info for purchase order items

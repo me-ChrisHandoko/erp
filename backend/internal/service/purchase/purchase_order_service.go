@@ -731,13 +731,15 @@ func (s *PurchaseOrderService) mapPurchaseOrderItemToResponse(item *models.Purch
 		UpdatedAt:   item.UpdatedAt,
 	}
 
-	// Map product if loaded
+	// Map product if loaded (including tracking flags for goods receipt validation)
 	if item.Product.ID != "" {
 		response.Product = &dto.PurchaseOrderProductResponse{
-			ID:       item.Product.ID,
-			Code:     item.Product.Code,
-			Name:     item.Product.Name,
-			BaseUnit: item.Product.BaseUnit,
+			ID:             item.Product.ID,
+			Code:           item.Product.Code,
+			Name:           item.Product.Name,
+			BaseUnit:       item.Product.BaseUnit,
+			IsBatchTracked: item.Product.IsBatchTracked,
+			IsPerishable:   item.Product.IsPerishable,
 		}
 	}
 

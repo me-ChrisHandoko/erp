@@ -26,6 +26,7 @@
  */
 
 import { Fragment } from "react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import {
   Breadcrumb,
@@ -82,8 +83,8 @@ export function PageHeader({
                 )}
                 <BreadcrumbItem className={index > 0 ? "hidden md:block" : ""}>
                   {item.href ? (
-                    <BreadcrumbLink href={item.href}>
-                      {item.label}
+                    <BreadcrumbLink asChild>
+                      <Link href={item.href}>{item.label}</Link>
                     </BreadcrumbLink>
                   ) : (
                     <BreadcrumbPage>{item.label}</BreadcrumbPage>

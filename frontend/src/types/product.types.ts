@@ -183,7 +183,7 @@ export interface UpdateProductRequest {
  * Supplier changes in product update
  */
 export interface UpdateProductSuppliersRequest {
-  add?: AddProductSupplierRequest[];
+  add?: LinkSupplierRequest[];
   update?: UpdateProductSupplierItem[];
   delete?: string[]; // ProductSupplier IDs to delete
 }
@@ -202,7 +202,9 @@ export interface UpdateProductSupplierItem {
  * Unit changes in product update
  */
 export interface UpdateProductUnitsRequest {
-  update?: UpdateProductUnitItem[];
+  add?: CreateProductUnitRequest[];     // New units to add
+  update?: UpdateProductUnitItem[];     // Existing units to update
+  delete?: string[];                    // ProductUnit IDs to delete
 }
 
 /**
@@ -211,6 +213,9 @@ export interface UpdateProductUnitsRequest {
 export interface UpdateProductUnitItem {
   id: string; // ProductUnit ID
   unitName?: string;
+  conversionRate?: string;
+  buyPrice?: string;
+  sellPrice?: string;
 }
 
 /**

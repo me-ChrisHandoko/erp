@@ -260,7 +260,8 @@ export function EditStockSettingsForm({
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                Threshold untuk alert stok rendah
+                <strong>Khusus Gudang Ini:</strong> Threshold untuk alert stok rendah di gudang ini.
+                Dapat berbeda dengan default produk.
               </p>
             </div>
 
@@ -300,7 +301,7 @@ export function EditStockSettingsForm({
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                Threshold untuk alert stok berlebih (opsional)
+                <strong>Khusus Gudang Ini:</strong> Threshold untuk alert stok berlebih (opsional)
               </p>
             </div>
 

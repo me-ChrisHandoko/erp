@@ -19,6 +19,7 @@ import {
   ArrowLeft,
   CheckCircle,
   XCircle,
+  PackageCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
@@ -219,6 +220,17 @@ export default function PurchaseOrderDetailPage() {
               >
                 <CheckCircle className="mr-2 h-4 w-4" />
                 Konfirmasi PO
+              </Button>
+            )}
+
+            {/* Receive Goods - Only for CONFIRMED */}
+            {canEdit && order.status === "CONFIRMED" && (
+              <Button
+                className="shrink-0 bg-green-600 hover:bg-green-700"
+                onClick={() => router.push(`/procurement/orders/${orderId}/receive`)}
+              >
+                <PackageCheck className="mr-2 h-4 w-4" />
+                Terima Barang
               </Button>
             )}
 

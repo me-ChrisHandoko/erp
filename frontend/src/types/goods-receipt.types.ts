@@ -39,6 +39,8 @@ export interface GoodsReceiptProductResponse {
   code: string;
   name: string;
   baseUnit: string;
+  isBatchTracked: boolean; // Indicates if batch number is required
+  isPerishable: boolean; // Indicates if expiry date is required
 }
 
 export interface GoodsReceiptProductUnitResponse {

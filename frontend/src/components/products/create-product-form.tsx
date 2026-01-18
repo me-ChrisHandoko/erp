@@ -6,13 +6,14 @@
  * - Currency formatting
  * - Profit margin calculator
  * - Responsive layout
+ * - Mobile-friendly sticky action bar
+ * - Unsaved changes warning
  */
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
-  Package,
   DollarSign,
   Layers,
   Save,
@@ -22,6 +23,7 @@ import {
   PackageCheck,
   Calendar,
   Bell,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,9 +40,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Users, ChevronLeft, ChevronRight, Check, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import {
   useCreateProductMutation,
   useLinkSupplierMutation,
+  useListProductsQuery,
 } from "@/store/services/productApi";
 import { toast } from "sonner";
 import {
@@ -52,11 +58,19 @@ import {
   ProductSuppliersSection,
   type SupplierFormData,
 } from "./product-suppliers-section";
+import {
+  ProductUnitsSection,
+  type ProductUnitItem,
+} from "./product-units-section";
 
 interface CreateProductFormProps {
   onSuccess?: (productId: string) => void;
   onCancel?: () => void;
 }
+
+// Tab configuration - defined outside component to prevent recreation on each render
+const TABS = ["basic", "pricing", "stock", "suppliers"] as const;
+type TabId = typeof TABS[number];
 
 export function CreateProductForm({
   onSuccess,
@@ -85,10 +99,148 @@ export function CreateProductForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 
+  // Real-time code validation - debounced code for API query
+  const [debouncedCode, setDebouncedCode] = useState("");
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Debounced code update - all state updates happen in setTimeout callback
+  useEffect(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    // Set timer for debounced update (includes reset case)
+    debounceTimerRef.current = setTimeout(() => {
+      if (!formData.code || formData.code.length < 2) {
+        setDebouncedCode("");
+      } else {
+        setDebouncedCode(formData.code);
+      }
+    }, formData.code && formData.code.length >= 2 ? 500 : 0);
+
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [formData.code]);
+
+  // Query to check if code exists
+  const { data: existingProducts, isFetching: isCheckingCode } = useListProductsQuery(
+    { search: debouncedCode, pageSize: 1 },
+    { skip: !debouncedCode || debouncedCode.length < 2 }
+  );
+
+  // Derive validation status using useMemo
+  const codeValidationStatus = useMemo((): "idle" | "checking" | "available" | "taken" => {
+    if (!formData.code || formData.code.length < 2) {
+      return "idle";
+    }
+
+    // If code is different from debounced, we're still waiting for debounce
+    if (formData.code !== debouncedCode) {
+      return "checking";
+    }
+
+    if (isCheckingCode) {
+      return "checking";
+    }
+
+    if (existingProducts?.data) {
+      const codeExists = existingProducts.data.some(
+        (p) => p.code.toLowerCase() === debouncedCode.toLowerCase()
+      );
+      return codeExists ? "taken" : "available";
+    }
+
+    return "idle";
+  }, [formData.code, debouncedCode, existingProducts, isCheckingCode]);
+
+  // Tab navigation state
+  const [activeTab, setActiveTab] = useState<TabId>("basic");
+
   // Suppliers state
   const [suppliers, setSuppliers] = useState<SupplierFormData[]>([]);
 
-  const handleChange = (field: keyof CreateProductRequest, value: any) => {
+  // Units state - start with base unit
+  const [units, setUnits] = useState<ProductUnitItem[]>([]);
+
+  // Derive unsaved changes status using useMemo (avoid setState in useEffect)
+  const hasUnsavedChanges = useMemo(() => {
+    return (
+      formData.code !== "" ||
+      formData.name !== "" ||
+      formData.category !== "" ||
+      formData.description !== "" ||
+      formData.barcode !== "" ||
+      formData.baseCost !== "0" ||
+      formData.basePrice !== "0" ||
+      formData.minimumStock !== "0" ||
+      formData.isBatchTracked !== false ||
+      formData.isPerishable !== false ||
+      suppliers.length > 0 ||
+      units.length > 0
+    );
+  }, [formData, suppliers, units]);
+
+  // Tab validation status
+  const getTabValidationStatus = useCallback((tab: TabId): "complete" | "error" | "pending" => {
+    switch (tab) {
+      case "basic":
+        const hasBasicData = formData.code.trim() !== "" && formData.name.trim() !== "";
+        const hasBasicErrors = !!(errors.code || errors.name);
+        if (hasBasicErrors) return "error";
+        if (hasBasicData) return "complete";
+        return "pending";
+      case "pricing":
+        const hasPricingData = parseFloat(formData.baseCost) > 0 && parseFloat(formData.basePrice) > 0;
+        const hasPricingErrors = !!(errors.baseCost || errors.basePrice || errors.baseUnit);
+        if (hasPricingErrors) return "error";
+        if (hasPricingData) return "complete";
+        return "pending";
+      case "stock":
+        // Stock section is optional, so it's complete if no errors
+        const hasStockErrors = !!errors.minimumStock;
+        if (hasStockErrors) return "error";
+        return "complete";
+      case "suppliers":
+        // Suppliers are optional
+        return suppliers.length > 0 ? "complete" : "pending";
+      default:
+        return "pending";
+    }
+  }, [formData, errors, suppliers]);
+
+  // Tab navigation helpers
+  const goToNextTab = useCallback(() => {
+    const currentIndex = TABS.indexOf(activeTab);
+    if (currentIndex < TABS.length - 1) {
+      setActiveTab(TABS[currentIndex + 1]);
+    }
+  }, [activeTab]);
+
+  const goToPrevTab = useCallback(() => {
+    const currentIndex = TABS.indexOf(activeTab);
+    if (currentIndex > 0) {
+      setActiveTab(TABS[currentIndex - 1]);
+    }
+  }, [activeTab]);
+
+  // Warn before leaving with unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = "Anda memiliki perubahan yang belum disimpan. Yakin ingin meninggalkan halaman?";
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  const handleChange = (field: keyof CreateProductRequest, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     // Clear error when user types
     if (errors[field]) {
@@ -111,6 +263,28 @@ export function CreateProductForm({
     }).format(num);
   };
 
+  // Format number with thousand separators for display in input
+  const formatNumberInput = (value: string): string => {
+    // Remove non-numeric characters except decimal point
+    const cleanValue = value.replace(/[^\d]/g, "");
+    if (!cleanValue) return "";
+    const num = parseInt(cleanValue, 10);
+    if (isNaN(num)) return "";
+    return new Intl.NumberFormat("id-ID").format(num);
+  };
+
+  // Parse formatted number back to raw value
+  const parseFormattedNumber = (value: string): string => {
+    const cleanValue = value.replace(/[^\d]/g, "");
+    return cleanValue || "0";
+  };
+
+  // Handle currency input change
+  const handleCurrencyChange = (field: "baseCost" | "basePrice", formattedValue: string) => {
+    const rawValue = parseFormattedNumber(formattedValue);
+    handleChange(field, rawValue);
+  };
+
   const calculateProfit = () => {
     const cost = parseFloat(formData.baseCost);
     const price = parseFloat(formData.basePrice);
@@ -128,6 +302,8 @@ export function CreateProductForm({
       newErrors.code = "Kode produk wajib diisi";
     } else if (formData.code.length < 2) {
       newErrors.code = "Kode produk minimal 2 karakter";
+    } else if (codeValidationStatus === "taken") {
+      newErrors.code = "Kode produk ini sudah digunakan";
     }
 
     if (!formData.name.trim()) {
@@ -168,10 +344,7 @@ export function CreateProductForm({
       minimumStock: true,
     });
 
-    // Debug log untuk melihat error apa yang terjadi
-    if (Object.keys(newErrors).length > 0) {
-      console.log("❌ Validation errors:", newErrors);
-    }
+    // Validation complete - errors will be displayed in the form
 
     return Object.keys(newErrors).length === 0;
   };
@@ -201,6 +374,15 @@ export function CreateProductForm({
         ...(formData.description && formData.description.trim() !== "" && { description: formData.description }),
         ...(formData.barcode && formData.barcode.trim() !== "" && { barcode: formData.barcode }),
         ...(formData.minimumStock && formData.minimumStock !== "0" && { minimumStock: formData.minimumStock }),
+        // Include additional units if any
+        ...(units.length > 0 && {
+          units: units.map((u) => ({
+            unitName: u.unitName,
+            conversionRate: u.conversionRate,
+            buyPrice: u.buyPrice || undefined,
+            sellPrice: u.sellPrice || undefined,
+          })),
+        }),
       };
 
       // Create the product first
@@ -222,7 +404,7 @@ export function CreateProductForm({
               isPrimarySupplier: supplier.isPrimarySupplier,
             },
           }).unwrap();
-        } catch (error: any) {
+        } catch {
           supplierErrors.push(`Gagal menambahkan supplier ${supplier.supplierName}`);
         }
       }
@@ -243,12 +425,13 @@ export function CreateProductForm({
       if (onSuccess) {
         onSuccess(result.id);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { data?: { error?: { message?: string }; message?: string }; message?: string };
       toast.error("Gagal Membuat Produk", {
         description:
-          error?.data?.error?.message ||
-          error?.data?.message ||
-          error?.message ||
+          err?.data?.error?.message ||
+          err?.data?.message ||
+          err?.message ||
           "Terjadi kesalahan pada server",
       });
     }
@@ -256,38 +439,122 @@ export function CreateProductForm({
 
   const profitData = calculateProfit();
 
+  // Tab configuration
+  const tabConfig = [
+    { id: "basic", label: "Informasi Dasar", icon: FileText },
+    { id: "pricing", label: "Harga & Satuan", icon: DollarSign },
+    { id: "stock", label: "Stok & Pelacakan", icon: Layers },
+    { id: "suppliers", label: "Suppliers", icon: Users },
+  ] as const;
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Basic Information */}
+    <form onSubmit={handleSubmit} className="space-y-6 pb-32 md:pb-0">
+      {/* Tab Navigation */}
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TabId)} className="w-full">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 h-auto gap-1 p-1">
+          {tabConfig.map((tab, index) => {
+            const status = getTabValidationStatus(tab.id as TabId);
+            const Icon = tab.icon;
+            return (
+              <TabsTrigger
+                key={tab.id}
+                value={tab.id}
+                className="flex items-center gap-2 py-2.5 px-3 text-xs md:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground relative"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="hidden md:flex items-center justify-center w-5 h-5 rounded-full bg-muted text-xs font-medium">
+                    {status === "complete" ? (
+                      <Check className="h-3 w-3 text-green-600" />
+                    ) : status === "error" ? (
+                      <AlertCircle className="h-3 w-3 text-destructive" />
+                    ) : (
+                      index + 1
+                    )}
+                  </span>
+                  <Icon className="h-4 w-4 md:hidden" />
+                  <span className="truncate">{tab.label}</span>
+                </div>
+                {status === "error" && (
+                  <Badge variant="destructive" className="absolute -top-1 -right-1 h-4 w-4 p-0 flex items-center justify-center text-[10px] md:hidden">
+                    !
+                  </Badge>
+                )}
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+
+        {/* Tab 1: Basic Information */}
+        <TabsContent value="basic" className="mt-6">
       <Card className="border-2">
-        <CardContent>
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <FileText className="h-5 w-5 text-primary" />
+            Informasi Dasar
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
           <div className="grid gap-6 sm:grid-cols-2">
             {/* Code */}
             <div className="space-y-2">
               <Label htmlFor="code" className="text-sm font-medium">
                 Kode Produk <span className="text-destructive">*</span>
               </Label>
-              <Input
-                id="code"
-                value={formData.code}
-                onChange={(e) =>
-                  handleChange("code", e.target.value.toUpperCase())
-                }
-                onBlur={() => handleBlur("code")}
-                placeholder="Contoh: BRS-001"
-                className={
-                  errors.code && touched.code ? "border-destructive" : ""
-                }
-              />
+              <div className="relative">
+                <Input
+                  id="code"
+                  value={formData.code}
+                  onChange={(e) =>
+                    handleChange("code", e.target.value.toUpperCase())
+                  }
+                  onBlur={() => handleBlur("code")}
+                  placeholder="Contoh: BRS-001"
+                  className={`pr-10 ${
+                    errors.code && touched.code
+                      ? "border-destructive"
+                      : codeValidationStatus === "taken"
+                      ? "border-destructive"
+                      : codeValidationStatus === "available"
+                      ? "border-green-500"
+                      : ""
+                  }`}
+                />
+                {/* Validation Status Icon */}
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  {codeValidationStatus === "checking" && (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  )}
+                  {codeValidationStatus === "available" && (
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  )}
+                  {codeValidationStatus === "taken" && (
+                    <XCircle className="h-4 w-4 text-destructive" />
+                  )}
+                </div>
+              </div>
               {errors.code && touched.code && (
                 <p className="flex items-center gap-1 text-sm text-destructive">
                   <AlertCircle className="h-3 w-3" />
                   {errors.code}
                 </p>
               )}
-              <p className="text-xs text-muted-foreground">
-                Kode unik untuk identifikasi produk
-              </p>
+              {codeValidationStatus === "taken" && !errors.code && (
+                <p className="flex items-center gap-1 text-sm text-destructive">
+                  <AlertCircle className="h-3 w-3" />
+                  Kode produk ini sudah digunakan
+                </p>
+              )}
+              {codeValidationStatus === "available" && (
+                <p className="flex items-center gap-1 text-sm text-green-600">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Kode produk tersedia
+                </p>
+              )}
+              {codeValidationStatus === "idle" && (
+                <p className="text-xs text-muted-foreground">
+                  Kode unik untuk identifikasi produk
+                </p>
+              )}
             </div>
 
             {/* Name */}
@@ -378,9 +645,29 @@ export function CreateProductForm({
         </CardContent>
       </Card>
 
-      {/* Pricing & Unit */}
+          {/* Tab Navigation Buttons */}
+          <div className="flex justify-end pt-4">
+            <Button
+              type="button"
+              onClick={goToNextTab}
+              className="gap-2"
+            >
+              Lanjut ke Harga & Satuan
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </TabsContent>
+
+        {/* Tab 2: Pricing & Unit */}
+        <TabsContent value="pricing" className="mt-6">
       <Card className="border-2">
-        <CardContent>
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <DollarSign className="h-5 w-5 text-primary" />
+            Harga & Satuan
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
           <div className="grid gap-6 sm:grid-cols-3">
             {/* Base Unit */}
             <div className="space-y-2">
@@ -424,13 +711,13 @@ export function CreateProductForm({
                 </span>
                 <Input
                   id="baseCost"
-                  type="number"
-                  step="0.01"
-                  value={formData.baseCost}
-                  onChange={(e) => handleChange("baseCost", e.target.value)}
+                  type="text"
+                  inputMode="numeric"
+                  value={formatNumberInput(formData.baseCost)}
+                  onChange={(e) => handleCurrencyChange("baseCost", e.target.value)}
                   onBlur={() => handleBlur("baseCost")}
                   placeholder="0"
-                  className={`pl-10 ${
+                  className={`pl-10 text-right font-mono ${
                     errors.baseCost && touched.baseCost
                       ? "border-destructive"
                       : ""
@@ -444,7 +731,7 @@ export function CreateProductForm({
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                {formatCurrency(formData.baseCost)}
+                Harga per {formData.baseUnit || "satuan"}
               </p>
             </div>
 
@@ -459,13 +746,13 @@ export function CreateProductForm({
                 </span>
                 <Input
                   id="basePrice"
-                  type="number"
-                  step="0.01"
-                  value={formData.basePrice}
-                  onChange={(e) => handleChange("basePrice", e.target.value)}
+                  type="text"
+                  inputMode="numeric"
+                  value={formatNumberInput(formData.basePrice)}
+                  onChange={(e) => handleCurrencyChange("basePrice", e.target.value)}
                   onBlur={() => handleBlur("basePrice")}
                   placeholder="0"
-                  className={`pl-10 ${
+                  className={`pl-10 text-right font-mono ${
                     errors.basePrice && touched.basePrice
                       ? "border-destructive"
                       : ""
@@ -479,7 +766,7 @@ export function CreateProductForm({
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                {formatCurrency(formData.basePrice)}
+                Harga per {formData.baseUnit || "satuan"}
               </p>
             </div>
 
@@ -513,16 +800,49 @@ export function CreateProductForm({
         </CardContent>
       </Card>
 
-      {/* Stock & Tracking */}
-      <Card className="border-2">
-        <CardContent className="pt-6">
-          <div className="space-y-6">
-            {/* Section Title */}
-            <div className="flex items-center gap-2 pb-2 border-b">
-              <Layers className="h-5 w-5 text-primary" />
-              <h3 className="text-lg font-semibold">Stok & Pelacakan</h3>
-            </div>
+          {/* Unit Conversion Section */}
+          <ProductUnitsSection
+            units={units}
+            onUnitsChange={setUnits}
+            baseUnit={formData.baseUnit}
+            baseCost={formData.baseCost}
+            basePrice={formData.basePrice}
+            disabled={isLoading}
+          />
 
+          {/* Tab Navigation Buttons */}
+          <div className="flex justify-between pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={goToPrevTab}
+              className="gap-2"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Kembali
+            </Button>
+            <Button
+              type="button"
+              onClick={goToNextTab}
+              className="gap-2"
+            >
+              Lanjut ke Stok & Pelacakan
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </TabsContent>
+
+        {/* Tab 3: Stock & Tracking */}
+        <TabsContent value="stock" className="mt-6">
+      <Card className="border-2">
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Layers className="h-5 w-5 text-primary" />
+            Stok & Pelacakan
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="space-y-6">
             {/* Minimum Stock */}
             <div className="space-y-3">
               <div className="flex items-center gap-2">
@@ -554,7 +874,8 @@ export function CreateProductForm({
               <Alert className="bg-blue-50 border-blue-200 dark:bg-blue-900/10 dark:border-blue-900">
                 <Info className="h-4 w-4 text-blue-600" />
                 <AlertDescription className="text-blue-800 dark:text-blue-200 text-sm">
-                  Alert otomatis akan muncul ketika stok produk di bawah nilai ini
+                  <strong>Default Global:</strong> Nilai ini akan digunakan sebagai default stok minimum saat menambah produk ke gudang baru.
+                  Setiap gudang dapat memiliki threshold berbeda sesuai kebutuhannya.
                 </AlertDescription>
               </Alert>
             </div>
@@ -647,44 +968,113 @@ export function CreateProductForm({
         </CardContent>
       </Card>
 
-      {/* Suppliers Section */}
-      <ProductSuppliersSection
-        suppliers={suppliers}
-        onSuppliersChange={setSuppliers}
-        disabled={isLoading}
-      />
+          {/* Tab Navigation Buttons */}
+          <div className="flex justify-between pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={goToPrevTab}
+              className="gap-2"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Kembali
+            </Button>
+            <Button
+              type="button"
+              onClick={goToNextTab}
+              className="gap-2"
+            >
+              Lanjut ke Suppliers
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </TabsContent>
 
-      {/* Form Actions */}
-      <div className="flex justify-end gap-3 pt-2">
-        {onCancel && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onCancel}
+        {/* Tab 4: Suppliers */}
+        <TabsContent value="suppliers" className="mt-6">
+          {/* Suppliers Section */}
+          <ProductSuppliersSection
+            suppliers={suppliers}
+            onSuppliersChange={setSuppliers}
             disabled={isLoading}
-            size="lg"
-          >
-            Batal
-          </Button>
-        )}
-        <Button
-          type="submit"
-          disabled={isLoading}
-          size="lg"
-          className="min-w-[150px]"
-        >
-          {isLoading ? (
-            <>
-              <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-              Menyimpan...
-            </>
-          ) : (
-            <>
-              <Save className="mr-2 h-4 w-4" />
-              Simpan Produk
-            </>
+          />
+
+          {/* Tab Navigation Buttons with Submit */}
+          <div className="flex justify-between pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={goToPrevTab}
+              className="gap-2"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Kembali
+            </Button>
+            <div className="flex gap-3">
+              {onCancel && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onCancel}
+                  disabled={isLoading}
+                >
+                  Batal
+                </Button>
+              )}
+              <Button
+                type="submit"
+                disabled={isLoading}
+                className="gap-2"
+              >
+                {isLoading ? (
+                  <>
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    Menyimpan...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4" />
+                    Simpan Produk
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      {/* Form Actions - Mobile Sticky Footer */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/95 backdrop-blur-sm border-t shadow-lg md:hidden z-50">
+        <div className="flex gap-3 max-w-lg mx-auto">
+          {onCancel && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onCancel}
+              disabled={isLoading}
+              className="flex-1"
+            >
+              Batal
+            </Button>
           )}
-        </Button>
+          <Button
+            type="submit"
+            disabled={isLoading}
+            className="flex-1"
+          >
+            {isLoading ? (
+              <>
+                <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                Menyimpan...
+              </>
+            ) : (
+              <>
+                <Save className="mr-2 h-4 w-4" />
+                Simpan Produk
+              </>
+            )}
+          </Button>
+        </div>
       </div>
     </form>
   );
