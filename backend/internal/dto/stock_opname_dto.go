@@ -40,6 +40,18 @@ type UpdateStockOpnameItemRequest struct {
 	Notes     *string `json:"notes" binding:"omitempty"`
 }
 
+// BatchUpdateStockOpnameItemRequest represents a single item in batch update
+type BatchUpdateStockOpnameItemRequest struct {
+	ItemID    string  `json:"itemId" binding:"required"`
+	ActualQty *string `json:"actualQty" binding:"omitempty"` // decimal as string
+	Notes     *string `json:"notes" binding:"omitempty"`
+}
+
+// BatchUpdateStockOpnameItemsRequest represents batch update for multiple items
+type BatchUpdateStockOpnameItemsRequest struct {
+	Items []BatchUpdateStockOpnameItemRequest `json:"items" binding:"required,min=1,dive"`
+}
+
 // StockOpnameFilters represents stock opname list filters
 type StockOpnameFilters struct {
 	Search      string `form:"search"`

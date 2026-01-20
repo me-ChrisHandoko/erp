@@ -10,10 +10,10 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useSelector } from "react-redux";
 import { useRouter } from "next/navigation";
-import { Plus, Search, Package } from "lucide-react";
+import { Plus, Search, Package, PackageX, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -46,6 +46,7 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
   const [statusFilter, setStatusFilter] = useState<boolean | undefined>(
     undefined
   );
+  const [stockStatusFilter, setStockStatusFilter] = useState<string>("all");
   const [filters, setFilters] = useState<ProductFilters>({
     page: 1,
     pageSize: 20,
@@ -99,7 +100,48 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
   });
 
   // Use initialData as fallback only for first render before query completes
-  const displayData = productsData || initialData;
+  const rawDisplayData = productsData || initialData;
+
+  // Client-side filtering for stock status (since backend doesn't support this filter yet)
+  const displayData = useMemo(() => {
+    if (!rawDisplayData || stockStatusFilter === "all") {
+      return rawDisplayData;
+    }
+
+    const filteredProducts = rawDisplayData.data.filter((product) => {
+      const totalStock = product.currentStock
+        ? parseFloat(product.currentStock.totalStock)
+        : null;
+      const minimumStock = parseFloat(product.minimumStock || "0");
+
+      switch (stockStatusFilter) {
+        case "no-data":
+          // Products without stock data
+          return totalStock === null || !product.currentStock;
+        case "zero":
+          // Products with zero stock
+          return totalStock === 0;
+        case "low":
+          // Products with low stock (below minimum but not zero)
+          return totalStock !== null && totalStock > 0 && totalStock < minimumStock;
+        case "normal":
+          // Products with normal stock (at or above minimum)
+          return totalStock !== null && totalStock >= minimumStock;
+        default:
+          return true;
+      }
+    });
+
+    return {
+      ...rawDisplayData,
+      data: filteredProducts,
+      pagination: {
+        ...rawDisplayData.pagination,
+        totalItems: filteredProducts.length,
+        totalPages: Math.ceil(filteredProducts.length / (filters.pageSize || 20)),
+      },
+    };
+  }, [rawDisplayData, stockStatusFilter, filters.pageSize]);
 
   // 🔑 CRITICAL: Explicit refetch when company changes
   // Cache invalidation alone doesn't trigger refetch for skipped queries
@@ -242,8 +284,50 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
               </SelectContent>
             </Select>
 
+            {/* Stock Status Filter */}
+            <Select
+              value={stockStatusFilter}
+              onValueChange={setStockStatusFilter}
+            >
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <SelectValue placeholder="Semua Stok" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  <span className="flex items-center gap-2">
+                    <Package className="h-3.5 w-3.5" />
+                    Semua Stok
+                  </span>
+                </SelectItem>
+                <SelectItem value="no-data">
+                  <span className="flex items-center gap-2">
+                    <PackageX className="h-3.5 w-3.5 text-gray-500" />
+                    Belum Ada Stok
+                  </span>
+                </SelectItem>
+                <SelectItem value="zero">
+                  <span className="flex items-center gap-2">
+                    <PackageX className="h-3.5 w-3.5 text-red-500" />
+                    Stok Habis
+                  </span>
+                </SelectItem>
+                <SelectItem value="low">
+                  <span className="flex items-center gap-2">
+                    <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                    Stok Menipis
+                  </span>
+                </SelectItem>
+                <SelectItem value="normal">
+                  <span className="flex items-center gap-2">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                    Stok Normal
+                  </span>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+
             {/* Clear Filters Button */}
-            {(categoryFilter || statusFilter !== undefined || search) && (
+            {(categoryFilter || statusFilter !== undefined || stockStatusFilter !== "all" || search) && (
               <Button
                 variant="outline"
                 size="sm"
@@ -252,6 +336,7 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
                   setDebouncedSearch("");
                   setCategoryFilter(undefined);
                   setStatusFilter(undefined);
+                  setStockStatusFilter("all");
                   setFilters((prev) => ({ ...prev, page: 1 }));
                 }}
                 className="w-full sm:w-auto"
@@ -283,7 +368,8 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
               {displayData.data.length === 0 &&
               !search &&
               !categoryFilter &&
-              statusFilter === undefined ? (
+              statusFilter === undefined &&
+              stockStatusFilter === "all" ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <Package className="mb-4 h-12 w-12 text-muted-foreground" />
                   <h3 className="mb-2 text-lg font-semibold">

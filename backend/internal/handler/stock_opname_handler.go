@@ -60,7 +60,7 @@ func (h *StockOpnameHandler) CreateStockOpname(c *gin.Context) {
 	}
 
 	// Call service
-	opnameModel, err := h.stockOpnameService.CreateStockOpname(c.Request.Context(), companyID.(string), tenantID.(string), userIDStr, &req)
+	opnameModel, err := h.stockOpnameService.CreateStockOpname(c.Request.Context(), companyID.(string), tenantID.(string), userIDStr, &req, c.ClientIP(), c.Request.UserAgent())
 	if err != nil {
 		h.handleError(c, err)
 		return
@@ -149,6 +149,20 @@ func (h *StockOpnameHandler) ListStockOpnames(c *gin.Context) {
 	// Calculate pagination
 	totalPages := int(math.Ceil(float64(total) / float64(filters.Limit)))
 
+	// Get status counts for statistics
+	statusCounts, err := h.stockOpnameService.GetStatusCounts(c.Request.Context(), tenantID.(string), companyID.(string))
+	if err != nil {
+		// Log error but don't fail the request - status counts are optional
+		fmt.Printf("⚠️ Failed to get status counts: %v\n", err)
+		statusCounts = map[string]int64{
+			"draft":       0,
+			"in_progress": 0,
+			"completed":   0,
+			"approved":    0,
+			"cancelled":   0,
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    responses,
@@ -158,6 +172,13 @@ func (h *StockOpnameHandler) ListStockOpnames(c *gin.Context) {
 			"totalItems": int(total),
 			"totalPages": totalPages,
 			"hasMore":    filters.Page < totalPages,
+		},
+		"statusCounts": gin.H{
+			"draft":       statusCounts["draft"],
+			"inProgress":  statusCounts["in_progress"],
+			"completed":   statusCounts["completed"],
+			"approved":    statusCounts["approved"],
+			"cancelled":   statusCounts["cancelled"],
 		},
 	})
 }
@@ -177,6 +198,13 @@ func (h *StockOpnameHandler) UpdateStockOpname(c *gin.Context) {
 		return
 	}
 
+	// Get user ID from JWT middleware
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
 	opnameID := c.Param("id")
 	if opnameID == "" {
 		c.JSON(http.StatusBadRequest, errors.NewBadRequestError("Stock Opname ID is required"))
@@ -190,7 +218,7 @@ func (h *StockOpnameHandler) UpdateStockOpname(c *gin.Context) {
 	}
 
 	// Call service
-	opnameModel, err := h.stockOpnameService.UpdateStockOpname(c.Request.Context(), companyID.(string), tenantID.(string), opnameID, &req)
+	opnameModel, err := h.stockOpnameService.UpdateStockOpname(c.Request.Context(), companyID.(string), tenantID.(string), opnameID, userIDStr, &req, c.ClientIP(), c.Request.UserAgent())
 	if err != nil {
 		h.handleError(c, err)
 		return
@@ -221,6 +249,13 @@ func (h *StockOpnameHandler) DeleteStockOpname(c *gin.Context) {
 		return
 	}
 
+	// Get user ID from JWT middleware
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
 	opnameID := c.Param("id")
 	if opnameID == "" {
 		c.JSON(http.StatusBadRequest, errors.NewBadRequestError("Stock Opname ID is required"))
@@ -228,7 +263,7 @@ func (h *StockOpnameHandler) DeleteStockOpname(c *gin.Context) {
 	}
 
 	// Call service
-	err := h.stockOpnameService.DeleteStockOpname(c.Request.Context(), companyID.(string), tenantID.(string), opnameID)
+	err := h.stockOpnameService.DeleteStockOpname(c.Request.Context(), companyID.(string), tenantID.(string), opnameID, userIDStr, c.ClientIP(), c.Request.UserAgent())
 	if err != nil {
 		h.handleError(c, err)
 		return
@@ -275,7 +310,7 @@ func (h *StockOpnameHandler) ApproveStockOpname(c *gin.Context) {
 	}
 
 	// Call service
-	opnameModel, err := h.stockOpnameService.ApproveStockOpname(c.Request.Context(), companyID.(string), tenantID.(string), opnameID, userIDStr, &req)
+	opnameModel, err := h.stockOpnameService.ApproveStockOpname(c.Request.Context(), companyID.(string), tenantID.(string), opnameID, userIDStr, &req, c.ClientIP(), c.Request.UserAgent())
 	if err != nil {
 		h.handleError(c, err)
 		return
@@ -354,6 +389,12 @@ func (h *StockOpnameHandler) UpdateStockOpnameItem(c *gin.Context) {
 		return
 	}
 
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
 	opnameID := c.Param("id")
 	if opnameID == "" {
 		c.JSON(http.StatusBadRequest, errors.NewBadRequestError("Stock Opname ID is required"))
@@ -372,8 +413,12 @@ func (h *StockOpnameHandler) UpdateStockOpnameItem(c *gin.Context) {
 		return
 	}
 
+	// Get IP and User Agent for audit
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	// Call service
-	item, err := h.stockOpnameService.UpdateStockOpnameItem(c.Request.Context(), companyID.(string), tenantID.(string), opnameID, itemID, &req)
+	item, err := h.stockOpnameService.UpdateStockOpnameItem(c.Request.Context(), companyID.(string), tenantID.(string), opnameID, itemID, userIDStr, &req, ipAddress, userAgent)
 	if err != nil {
 		h.handleError(c, err)
 		return
@@ -386,6 +431,63 @@ func (h *StockOpnameHandler) UpdateStockOpnameItem(c *gin.Context) {
 		"success": true,
 		"data":    response,
 		"message": "Stock opname item updated successfully",
+	})
+}
+
+// BatchUpdateStockOpnameItems updates multiple stock opname items
+// PUT /api/v1/stock-opnames/:id/items/batch
+func (h *StockOpnameHandler) BatchUpdateStockOpnameItems(c *gin.Context) {
+	companyID, exists := c.Get("company_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, errors.NewBadRequestError("Company context not found."))
+		return
+	}
+
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, errors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
+	opnameID := c.Param("id")
+	if opnameID == "" {
+		c.JSON(http.StatusBadRequest, errors.NewBadRequestError("Stock Opname ID is required"))
+		return
+	}
+
+	var req dto.BatchUpdateStockOpnameItemsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.handleValidationError(c, err)
+		return
+	}
+
+	// Get IP and User Agent for audit
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
+	// Call service
+	items, err := h.stockOpnameService.BatchUpdateStockOpnameItems(c.Request.Context(), companyID.(string), tenantID.(string), opnameID, userIDStr, &req, ipAddress, userAgent)
+	if err != nil {
+		h.handleError(c, err)
+		return
+	}
+
+	// Map to response
+	var responses []*dto.StockOpnameItemResponse
+	for _, item := range items {
+		responses = append(responses, h.mapStockOpnameItemToResponse(&item))
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    responses,
+		"message": "Stock opname items updated successfully",
 	})
 }
 

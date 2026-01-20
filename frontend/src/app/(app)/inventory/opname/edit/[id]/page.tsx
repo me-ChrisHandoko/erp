@@ -8,8 +8,8 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { ArrowLeft, Save, Trash2 } from "lucide-react";
+import { useEffect, useState, useMemo } from "react";
+import { ArrowLeft, Save, Trash2, Plus, Package, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,6 +30,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { PageHeader } from "@/components/shared/page-header";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { ErrorDisplay } from "@/components/shared/error-display";
@@ -37,8 +48,14 @@ import { useToast } from "@/hooks/use-toast";
 import {
   useGetOpnameQuery,
   useUpdateOpnameMutation,
-  useUpdateOpnameItemMutation,
+  useBatchUpdateOpnameItemsMutation,
+  useAddOpnameItemMutation,
+  useDeleteOpnameItemMutation,
 } from "@/store/services/opnameApi";
+import { useListProductsQuery } from "@/store/services/productApi";
+import { useListStocksQuery } from "@/store/services/stockApi";
+import { useSelector } from "react-redux";
+import type { RootState } from "@/store";
 import type { StockOpnameItem } from "@/types/opname.types";
 
 interface OpnameItemForm extends StockOpnameItem {
@@ -55,10 +72,62 @@ export default function EditOpnamePage() {
   const [notes, setNotes] = useState<string>("");
   const [status, setStatus] = useState<"draft" | "in_progress" | "completed">("draft");
   const [items, setItems] = useState<OpnameItemForm[]>([]);
+  const [selectedProductId, setSelectedProductId] = useState<string>("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<OpnameItemForm | null>(null);
 
-  const { data: opname, isLoading, error } = useGetOpnameQuery(opnameId);
+  const activeCompanyId = useSelector(
+    (state: RootState) => state.company.activeCompany?.id
+  );
+
+  const { data: opname, isLoading, error, refetch } = useGetOpnameQuery(opnameId);
   const [updateOpname, { isLoading: isUpdatingOpname }] = useUpdateOpnameMutation();
-  const [updateItem, { isLoading: isUpdatingItem }] = useUpdateOpnameItemMutation();
+  const [batchUpdateItems, { isLoading: isUpdatingItems }] = useBatchUpdateOpnameItemsMutation();
+  const [addItem, { isLoading: isAddingItem }] = useAddOpnameItemMutation();
+  const [deleteItem, { isLoading: isDeletingItem }] = useDeleteOpnameItemMutation();
+
+  // Fetch products for manual addition
+  const { data: productsData, isLoading: isLoadingProducts } = useListProductsQuery(
+    {
+      page: 1,
+      pageSize: 100,
+      isActive: true,
+      sortBy: "code",
+      sortOrder: "asc",
+    },
+    {
+      skip: !activeCompanyId || !opname?.warehouseId,
+    }
+  );
+
+  // Fetch stocks for the warehouse to get expected qty
+  const { data: stocksData } = useListStocksQuery(
+    {
+      warehouseID: opname?.warehouseId || "",
+      pageSize: 1000,
+      sortBy: "productCode",
+      sortOrder: "asc",
+    },
+    {
+      skip: !opname?.warehouseId,
+    }
+  );
+
+  // Build product options for combobox (exclude already added products)
+  const productOptions: ComboboxOption[] = useMemo(() => {
+    if (!productsData?.data) return [];
+
+    const addedProductIds = new Set(items.map((item) => item.productId));
+
+    return productsData.data
+      .filter((product) => !addedProductIds.has(product.id))
+      .map((product) => ({
+        value: product.id,
+        label: `${product.code} - ${product.name}`,
+        searchLabel: `${product.code} ${product.name}`,
+        code: product.code,
+      }));
+  }, [productsData?.data, items]);
 
   // Populate form when data loads
   useEffect(() => {
@@ -77,25 +146,120 @@ export default function EditOpnamePage() {
       setOpnameDate(opname.opnameDate.split("T")[0]);
       setNotes(opname.notes || "");
       setStatus(opname.status as "draft" | "in_progress" | "completed");
-      setItems(opname.items || []);
+      // Deep copy items to avoid mutating RTK Query cached data
+      setItems((opname.items || []).map(item => ({ ...item })));
     }
   }, [opname, opnameId, router, toast]);
 
   const handleActualQtyChange = (index: number, value: string) => {
-    const newItems = [...items];
-    newItems[index].actualQty = value;
-    newItems[index].difference = (
-      parseFloat(value || "0") - parseFloat(newItems[index].expectedQty || "0")
-    ).toString();
-    newItems[index].isDirty = true;
+    const newItems = items.map((item, i) => {
+      if (i === index) {
+        return {
+          ...item,
+          actualQty: value,
+          difference: (
+            parseFloat(value || "0") - parseFloat(item.expectedQty || "0")
+          ).toString(),
+          isDirty: true,
+        };
+      }
+      return item;
+    });
     setItems(newItems);
   };
 
   const handleNotesChange = (index: number, value: string) => {
-    const newItems = [...items];
-    newItems[index].notes = value || undefined;
-    newItems[index].isDirty = true;
+    const newItems = items.map((item, i) => {
+      if (i === index) {
+        return {
+          ...item,
+          notes: value || undefined,
+          isDirty: true,
+        };
+      }
+      return item;
+    });
     setItems(newItems);
+  };
+
+  // Handle adding product
+  const handleAddProduct = async () => {
+    if (!selectedProductId) {
+      toast({
+        title: "Pilih Produk",
+        description: "Pilih produk terlebih dahulu",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const product = productsData?.data?.find((p) => p.id === selectedProductId);
+    if (!product) return;
+
+    // Get expected qty from stock data if available
+    const stockItem = stocksData?.data?.find((s) => s.productID === selectedProductId);
+    const expectedQty = stockItem?.quantity || "0";
+
+    try {
+      await addItem({
+        opnameId,
+        productId: product.id,
+        expectedQty: expectedQty,
+        actualQty: "0",
+        notes: "",
+      }).unwrap();
+
+      // Refetch to get updated items
+      await refetch();
+      setSelectedProductId("");
+
+      toast({
+        title: "Berhasil",
+        description: `${product.name} ditambahkan ke daftar opname`,
+      });
+    } catch (error) {
+      console.error("Failed to add item:", error);
+      toast({
+        title: "Gagal",
+        description: "Gagal menambahkan produk",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handle delete item confirmation
+  const handleDeleteClick = (item: OpnameItemForm) => {
+    setItemToDelete(item);
+    setShowDeleteConfirm(true);
+  };
+
+  // Confirm delete item
+  const handleConfirmDelete = async () => {
+    if (!itemToDelete) return;
+
+    try {
+      await deleteItem({
+        opnameId,
+        itemId: itemToDelete.id,
+      }).unwrap();
+
+      // Remove from local state
+      setItems(items.filter((item) => item.id !== itemToDelete.id));
+      setShowDeleteConfirm(false);
+      setItemToDelete(null);
+
+      toast({
+        title: "Berhasil",
+        description: `${itemToDelete.productName} dihapus dari daftar opname`,
+      });
+    } catch (error) {
+      console.error("Failed to delete item:", error);
+      toast({
+        title: "Gagal",
+        description: "Gagal menghapus produk",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleSubmit = async () => {
@@ -110,15 +274,17 @@ export default function EditOpnamePage() {
         },
       }).unwrap();
 
-      // Update items that have changed
+      // Update items that have changed using batch update (creates single audit log)
       const dirtyItems = items.filter((item) => item.isDirty);
-      for (const item of dirtyItems) {
-        await updateItem({
+      if (dirtyItems.length > 0) {
+        await batchUpdateItems({
           opnameId,
-          itemId: item.id,
           data: {
-            actualQty: item.actualQty,
-            notes: item.notes || undefined,
+            items: dirtyItems.map((item) => ({
+              itemId: item.id,
+              actualQty: item.actualQty,
+              notes: item.notes || undefined,
+            })),
           },
         }).unwrap();
       }
@@ -187,7 +353,7 @@ export default function EditOpnamePage() {
     );
   }
 
-  const isProcessing = isUpdatingOpname || isUpdatingItem;
+  const isProcessing = isUpdatingOpname || isUpdatingItems || isAddingItem || isDeletingItem;
 
   return (
     <div className="flex flex-col">
@@ -272,13 +438,66 @@ export default function EditOpnamePage() {
                 className="bg-background"
               />
             </div>
+
+            {/* Manual Product Addition */}
+            <div className="space-y-2">
+              <Label>Tambah Produk</Label>
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <Combobox
+                    options={productOptions}
+                    value={selectedProductId}
+                    onValueChange={setSelectedProductId}
+                    placeholder="Cari dan pilih produk..."
+                    searchPlaceholder="Ketik kode atau nama produk..."
+                    emptyMessage={
+                      isLoadingProducts
+                        ? "Memuat produk..."
+                        : "Produk tidak ditemukan"
+                    }
+                    disabled={isLoadingProducts || isAddingItem}
+                    renderOption={(option) => (
+                      <div className="flex items-center gap-2 w-full">
+                        <Package className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <div className="flex flex-col min-w-0 flex-1">
+                          <span className="font-medium truncate">{option.code}</span>
+                          <span className="text-xs text-muted-foreground truncate">
+                            {option.label.split(" - ")[1]}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  onClick={handleAddProduct}
+                  disabled={!selectedProductId || isAddingItem}
+                >
+                  {isAddingItem ? (
+                    <LoadingSpinner size="sm" className="mr-2" />
+                  ) : (
+                    <Plus className="mr-2 h-4 w-4" />
+                  )}
+                  Tambah
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Tambahkan produk yang belum ada dalam daftar opname
+              </p>
+            </div>
           </CardContent>
         </Card>
 
         {/* Items Table */}
         <Card>
           <CardHeader>
-            <CardTitle>Produk ({items.length})</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>Produk ({items.length})</CardTitle>
+              <span className="text-sm text-muted-foreground">
+                Isi actual quantity untuk setiap produk
+              </span>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="rounded-md border">
@@ -293,6 +512,7 @@ export default function EditOpnamePage() {
                     </TableHead>
                     <TableHead className="text-right">Selisih</TableHead>
                     <TableHead className="w-[200px]">Catatan</TableHead>
+                    <TableHead className="w-[50px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -344,6 +564,17 @@ export default function EditOpnamePage() {
                             className="bg-background"
                           />
                         </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteClick(item)}
+                            disabled={isDeletingItem}
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     );
                   })}
@@ -376,6 +607,42 @@ export default function EditOpnamePage() {
             )}
           </Button>
         </div>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-500" />
+                Konfirmasi Hapus Produk
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Apakah Anda yakin ingin menghapus{" "}
+                <strong>{itemToDelete?.productName}</strong> dari daftar opname?
+                <br /><br />
+                Tindakan ini tidak dapat dibatalkan.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setItemToDelete(null)}>
+                Batal
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleConfirmDelete}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                {isDeletingItem ? (
+                  <>
+                    <LoadingSpinner size="sm" className="mr-2" />
+                    Menghapus...
+                  </>
+                ) : (
+                  "Ya, Hapus"
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );

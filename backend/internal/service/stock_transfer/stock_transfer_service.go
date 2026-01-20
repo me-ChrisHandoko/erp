@@ -10,19 +10,22 @@ import (
 	"gorm.io/gorm"
 
 	"backend/internal/dto"
+	"backend/internal/service/audit"
 	"backend/models"
 	pkgerrors "backend/pkg/errors"
 )
 
 // StockTransferService handles business logic for stock transfers
 type StockTransferService struct {
-	db *gorm.DB
+	db           *gorm.DB
+	auditService *audit.AuditService
 }
 
 // NewStockTransferService creates a new stock transfer service instance
-func NewStockTransferService(db *gorm.DB) *StockTransferService {
+func NewStockTransferService(db *gorm.DB, auditService *audit.AuditService) *StockTransferService {
 	return &StockTransferService{
-		db: db,
+		db:           db,
+		auditService: auditService,
 	}
 }
 
@@ -31,6 +34,7 @@ func (s *StockTransferService) CreateStockTransfer(
 	ctx context.Context,
 	tenantID, companyID, userID string,
 	req *dto.CreateStockTransferRequest,
+	ipAddress, userAgent string,
 ) (*models.StockTransfer, error) {
 	fmt.Printf("🔵 [Service.CreateStockTransfer] Called with tenantID=%s, companyID=%s\n", tenantID, companyID)
 	fmt.Printf("🔍 [Service.CreateStockTransfer] Request: %+v\n", req)
@@ -133,6 +137,63 @@ func (s *StockTransferService) CreateStockTransfer(
 		return nil, pkgerrors.NewInternalError(err)
 	}
 
+	// Create audit log
+	requestID := uuid.New().String()
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		RequestID: &requestID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
+	// Prepare transfer data for audit log (including full item details with product names)
+	// First, collect all product IDs to query names
+	productIDs := make([]string, len(req.Items))
+	for i, item := range req.Items {
+		productIDs[i] = item.ProductID
+	}
+
+	// Query product names
+	var products []models.Product
+	productNameMap := make(map[string]string)
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+		Where("id IN ?", productIDs).
+		Select("id", "name").
+		Find(&products).Error; err == nil {
+		for _, p := range products {
+			productNameMap[p.ID] = p.Name
+		}
+	}
+
+	itemsData := make([]map[string]interface{}, len(req.Items))
+	for i, item := range req.Items {
+		itemsData[i] = map[string]interface{}{
+			"product_id":   item.ProductID,
+			"product_name": productNameMap[item.ProductID],
+			"quantity":     item.Quantity,
+			"batch_id":     item.BatchID,
+			"notes":        item.Notes,
+		}
+	}
+
+	transferData := map[string]interface{}{
+		"transfer_number":       transfer.TransferNumber,
+		"transfer_date":         transfer.TransferDate.Format("2006-01-02"),
+		"source_warehouse_id":   transfer.SourceWarehouseID,
+		"source_warehouse_name": sourceWarehouse.Name,
+		"dest_warehouse_id":     transfer.DestWarehouseID,
+		"dest_warehouse_name":   destWarehouse.Name,
+		"status":                string(transfer.Status),
+		"notes":                 transfer.Notes,
+		"items":                 itemsData,
+	}
+
+	if err := s.auditService.LogStockTransferCreated(ctx, auditCtx, transfer.ID, transferData); err != nil {
+		fmt.Printf("WARNING: Failed to create audit log for stock transfer: %v\n", err)
+	}
+
 	// Reload with associations
 	return s.GetStockTransferByID(ctx, tenantID, companyID, transfer.ID)
 }
@@ -213,6 +274,42 @@ func (s *StockTransferService) ListStockTransfers(
 	return transfers, pagination, nil
 }
 
+// GetStatusCounts returns count of transfers for each status
+func (s *StockTransferService) GetStatusCounts(ctx context.Context, tenantID, companyID string) (map[string]int64, error) {
+	statusCounts := make(map[string]int64)
+
+	// Query counts for each status
+	type statusCount struct {
+		Status models.StockTransferStatus
+		Count  int64
+	}
+
+	var results []statusCount
+	err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+		Model(&models.StockTransfer{}).
+		Select("status, COUNT(*) as count").
+		Where("company_id = ?", companyID).
+		Group("status").
+		Scan(&results).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get status counts: %w", err)
+	}
+
+	// Initialize all statuses with 0
+	statusCounts["DRAFT"] = 0
+	statusCounts["SHIPPED"] = 0
+	statusCounts["RECEIVED"] = 0
+	statusCounts["CANCELLED"] = 0
+
+	// Map results to string keys
+	for _, result := range results {
+		statusCounts[string(result.Status)] = result.Count
+	}
+
+	return statusCounts, nil
+}
+
 // GetStockTransferByID retrieves a single stock transfer
 func (s *StockTransferService) GetStockTransferByID(
 	ctx context.Context,
@@ -240,8 +337,9 @@ func (s *StockTransferService) GetStockTransferByID(
 // UpdateStockTransfer updates a DRAFT transfer
 func (s *StockTransferService) UpdateStockTransfer(
 	ctx context.Context,
-	tenantID, companyID, transferID string,
+	tenantID, companyID, transferID, userID string,
 	req *dto.UpdateStockTransferRequest,
+	ipAddress, userAgent string,
 ) (*models.StockTransfer, error) {
 	// Get transfer WITHOUT preloading associations to avoid GORM trying to save them
 	var transfer models.StockTransfer
@@ -257,6 +355,16 @@ func (s *StockTransferService) UpdateStockTransfer(
 	// Only DRAFT can be updated
 	if transfer.Status != models.StockTransferStatusDraft {
 		return nil, pkgerrors.NewBadRequestError("Only DRAFT transfers can be updated")
+	}
+
+	// Capture old values for audit log
+	oldValues := map[string]interface{}{
+		"transfer_number":     transfer.TransferNumber,
+		"transfer_date":       transfer.TransferDate.Format("2006-01-02"),
+		"source_warehouse_id": transfer.SourceWarehouseID,
+		"dest_warehouse_id":   transfer.DestWarehouseID,
+		"status":              string(transfer.Status),
+		"notes":               transfer.Notes,
 	}
 
 	tx := s.db.WithContext(ctx).Set("tenant_id", tenantID).Begin()
@@ -367,13 +475,39 @@ func (s *StockTransferService) UpdateStockTransfer(
 		return nil, pkgerrors.NewInternalError(err)
 	}
 
+	// Create audit log for update
+	requestID := uuid.New().String()
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		RequestID: &requestID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
+	// Prepare new values for audit log
+	newValues := map[string]interface{}{
+		"transfer_number":     transfer.TransferNumber,
+		"transfer_date":       transfer.TransferDate.Format("2006-01-02"),
+		"source_warehouse_id": transfer.SourceWarehouseID,
+		"dest_warehouse_id":   transfer.DestWarehouseID,
+		"status":              string(transfer.Status),
+		"notes":               transfer.Notes,
+	}
+
+	if err := s.auditService.LogStockTransferUpdated(ctx, auditCtx, transferID, oldValues, newValues); err != nil {
+		fmt.Printf("WARNING: Failed to create audit log for stock transfer update: %v\n", err)
+	}
+
 	return s.GetStockTransferByID(ctx, tenantID, companyID, transferID)
 }
 
 // DeleteStockTransfer deletes a DRAFT transfer
 func (s *StockTransferService) DeleteStockTransfer(
 	ctx context.Context,
-	tenantID, companyID, transferID string,
+	tenantID, companyID, transferID, userID string,
+	ipAddress, userAgent string,
 ) error {
 	transfer, err := s.GetStockTransferByID(ctx, tenantID, companyID, transferID)
 	if err != nil {
@@ -383,6 +517,16 @@ func (s *StockTransferService) DeleteStockTransfer(
 	// Only DRAFT can be deleted
 	if transfer.Status != models.StockTransferStatusDraft {
 		return pkgerrors.NewBadRequestError("Only DRAFT transfers can be deleted")
+	}
+
+	// Capture transfer data for audit log before deletion
+	transferData := map[string]interface{}{
+		"transfer_number":     transfer.TransferNumber,
+		"transfer_date":       transfer.TransferDate.Format("2006-01-02"),
+		"source_warehouse_id": transfer.SourceWarehouseID,
+		"dest_warehouse_id":   transfer.DestWarehouseID,
+		"status":              string(transfer.Status),
+		"notes":               transfer.Notes,
 	}
 
 	tx := s.db.WithContext(ctx).Set("tenant_id", tenantID).Begin()
@@ -399,7 +543,26 @@ func (s *StockTransferService) DeleteStockTransfer(
 		return pkgerrors.NewInternalError(err)
 	}
 
-	return tx.Commit().Error
+	if err := tx.Commit().Error; err != nil {
+		return pkgerrors.NewInternalError(err)
+	}
+
+	// Create audit log for delete
+	requestID := uuid.New().String()
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		RequestID: &requestID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
+	if err := s.auditService.LogStockTransferDeleted(ctx, auditCtx, transferID, transferData); err != nil {
+		fmt.Printf("WARNING: Failed to create audit log for stock transfer delete: %v\n", err)
+	}
+
+	return nil
 }
 
 // ShipStockTransfer ships a transfer (DRAFT → SHIPPED)
@@ -407,6 +570,7 @@ func (s *StockTransferService) ShipStockTransfer(
 	ctx context.Context,
 	tenantID, companyID, transferID, userID string,
 	req *dto.ShipTransferRequest,
+	ipAddress, userAgent string,
 ) (*models.StockTransfer, error) {
 	// Get transfer WITHOUT preloading associations to avoid GORM trying to save them
 	var transfer models.StockTransfer
@@ -422,6 +586,16 @@ func (s *StockTransferService) ShipStockTransfer(
 	// Only DRAFT can be shipped
 	if transfer.Status != models.StockTransferStatusDraft {
 		return nil, pkgerrors.NewBadRequestError("Only DRAFT transfers can be shipped")
+	}
+
+	// Capture old values for audit log
+	oldValues := map[string]interface{}{
+		"transfer_number":     transfer.TransferNumber,
+		"transfer_date":       transfer.TransferDate.Format("2006-01-02"),
+		"source_warehouse_id": transfer.SourceWarehouseID,
+		"dest_warehouse_id":   transfer.DestWarehouseID,
+		"status":              string(transfer.Status),
+		"notes":               transfer.Notes,
 	}
 
 	// Load transfer items to process inventory movements
@@ -493,6 +667,37 @@ func (s *StockTransferService) ShipStockTransfer(
 		return nil, pkgerrors.NewInternalError(err)
 	}
 
+	// Create audit log for ship
+	requestID := uuid.New().String()
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		RequestID: &requestID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
+	newNotes := transfer.Notes
+	if req.Notes != nil {
+		newNotes = req.Notes
+	}
+
+	newValues := map[string]interface{}{
+		"transfer_number":     transfer.TransferNumber,
+		"transfer_date":       transfer.TransferDate.Format("2006-01-02"),
+		"source_warehouse_id": transfer.SourceWarehouseID,
+		"dest_warehouse_id":   transfer.DestWarehouseID,
+		"status":              string(models.StockTransferStatusShipped),
+		"notes":               newNotes,
+		"shipped_by":          userID,
+		"shipped_at":          now.Format(time.RFC3339),
+	}
+
+	if err := s.auditService.LogStockTransferShipped(ctx, auditCtx, transferID, oldValues, newValues); err != nil {
+		fmt.Printf("WARNING: Failed to create audit log for stock transfer ship: %v\n", err)
+	}
+
 	return s.GetStockTransferByID(ctx, tenantID, companyID, transferID)
 }
 
@@ -501,6 +706,7 @@ func (s *StockTransferService) ReceiveStockTransfer(
 	ctx context.Context,
 	tenantID, companyID, transferID, userID string,
 	req *dto.ReceiveTransferRequest,
+	ipAddress, userAgent string,
 ) (*models.StockTransfer, error) {
 	// Get transfer WITHOUT preloading associations to avoid GORM trying to save them
 	var transfer models.StockTransfer
@@ -516,6 +722,16 @@ func (s *StockTransferService) ReceiveStockTransfer(
 	// Only SHIPPED can be received
 	if transfer.Status != models.StockTransferStatusShipped {
 		return nil, pkgerrors.NewBadRequestError("Only SHIPPED transfers can be received")
+	}
+
+	// Capture old values for audit log
+	oldValues := map[string]interface{}{
+		"transfer_number":     transfer.TransferNumber,
+		"transfer_date":       transfer.TransferDate.Format("2006-01-02"),
+		"source_warehouse_id": transfer.SourceWarehouseID,
+		"dest_warehouse_id":   transfer.DestWarehouseID,
+		"status":              string(transfer.Status),
+		"notes":               transfer.Notes,
 	}
 
 	// Load transfer items to process inventory movements
@@ -586,14 +802,46 @@ func (s *StockTransferService) ReceiveStockTransfer(
 		return nil, pkgerrors.NewInternalError(err)
 	}
 
+	// Create audit log for receive
+	requestID := uuid.New().String()
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		RequestID: &requestID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
+	newNotes := transfer.Notes
+	if req.Notes != nil {
+		newNotes = req.Notes
+	}
+
+	newValues := map[string]interface{}{
+		"transfer_number":     transfer.TransferNumber,
+		"transfer_date":       transfer.TransferDate.Format("2006-01-02"),
+		"source_warehouse_id": transfer.SourceWarehouseID,
+		"dest_warehouse_id":   transfer.DestWarehouseID,
+		"status":              string(models.StockTransferStatusReceived),
+		"notes":               newNotes,
+		"received_by":         userID,
+		"received_at":         now.Format(time.RFC3339),
+	}
+
+	if err := s.auditService.LogStockTransferReceived(ctx, auditCtx, transferID, oldValues, newValues); err != nil {
+		fmt.Printf("WARNING: Failed to create audit log for stock transfer receive: %v\n", err)
+	}
+
 	return s.GetStockTransferByID(ctx, tenantID, companyID, transferID)
 }
 
 // CancelStockTransfer cancels a transfer (SHIPPED → CANCELLED)
 func (s *StockTransferService) CancelStockTransfer(
 	ctx context.Context,
-	tenantID, companyID, transferID string,
+	tenantID, companyID, transferID, userID string,
 	req *dto.CancelTransferRequest,
+	ipAddress, userAgent string,
 ) (*models.StockTransfer, error) {
 	// Get transfer WITHOUT preloading associations to avoid GORM trying to save them
 	var transfer models.StockTransfer
@@ -609,6 +857,16 @@ func (s *StockTransferService) CancelStockTransfer(
 	// Only SHIPPED can be cancelled
 	if transfer.Status != models.StockTransferStatusShipped {
 		return nil, pkgerrors.NewBadRequestError("Only SHIPPED transfers can be cancelled")
+	}
+
+	// Capture old values for audit log
+	oldValues := map[string]interface{}{
+		"transfer_number":     transfer.TransferNumber,
+		"transfer_date":       transfer.TransferDate.Format("2006-01-02"),
+		"source_warehouse_id": transfer.SourceWarehouseID,
+		"dest_warehouse_id":   transfer.DestWarehouseID,
+		"status":              string(transfer.Status),
+		"notes":               transfer.Notes,
 	}
 
 	tx := s.db.WithContext(ctx).Set("tenant_id", tenantID).Begin()
@@ -630,6 +888,30 @@ func (s *StockTransferService) CancelStockTransfer(
 
 	if err := tx.Commit().Error; err != nil {
 		return nil, pkgerrors.NewInternalError(err)
+	}
+
+	// Create audit log for cancel
+	requestID := uuid.New().String()
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		RequestID: &requestID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
+	newValues := map[string]interface{}{
+		"transfer_number":     transfer.TransferNumber,
+		"transfer_date":       transfer.TransferDate.Format("2006-01-02"),
+		"source_warehouse_id": transfer.SourceWarehouseID,
+		"dest_warehouse_id":   transfer.DestWarehouseID,
+		"status":              string(models.StockTransferStatusCancelled),
+		"notes":               cancelNote,
+	}
+
+	if err := s.auditService.LogStockTransferCancelled(ctx, auditCtx, transferID, oldValues, newValues, req.Reason); err != nil {
+		fmt.Printf("WARNING: Failed to create audit log for stock transfer cancel: %v\n", err)
 	}
 
 	return s.GetStockTransferByID(ctx, tenantID, companyID, transferID)

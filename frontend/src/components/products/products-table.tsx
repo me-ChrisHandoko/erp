@@ -38,9 +38,144 @@ import {
   Pencil,
   Package,
   MoreHorizontal,
+  PackageX,
+  AlertTriangle,
+  CheckCircle2,
 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/shared/empty-state";
 import type { ProductResponse } from "@/types/product.types";
+
+/**
+ * Stock Status Indicator Component
+ * Shows stock level with icon and tooltip
+ */
+function StockStatusIndicator({ product }: { product: ProductResponse }) {
+  const totalStock = product.currentStock
+    ? parseFloat(product.currentStock.totalStock)
+    : null;
+  const minimumStock = parseFloat(product.minimumStock || "0");
+
+  // No stock data available (no warehouse_stock records)
+  if (totalStock === null || !product.currentStock) {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center justify-center">
+              <Badge
+                variant="outline"
+                className="border-gray-300 text-gray-500 gap-1"
+              >
+                <PackageX className="h-3 w-3" />
+                N/A
+              </Badge>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Belum ada data stok</p>
+            <p className="text-xs text-muted-foreground">
+              Setup stok awal di menu Inventory
+            </p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  // Zero stock
+  if (totalStock === 0) {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center justify-center">
+              <Badge className="bg-red-500 text-white hover:bg-red-600 gap-1">
+                <PackageX className="h-3 w-3" />
+                0
+              </Badge>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Stok habis</p>
+            {product.currentStock.warehouses.length > 0 && (
+              <div className="text-xs mt-1">
+                {product.currentStock.warehouses.map((wh) => (
+                  <div key={wh.warehouseId}>
+                    {wh.warehouseName}: {wh.quantity} {product.baseUnit}
+                  </div>
+                ))}
+              </div>
+            )}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  // Low stock (below minimum)
+  if (totalStock > 0 && totalStock < minimumStock) {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center justify-center">
+              <Badge className="bg-amber-500 text-white hover:bg-amber-600 gap-1">
+                <AlertTriangle className="h-3 w-3" />
+                {totalStock.toLocaleString("id-ID")}
+              </Badge>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Stok menipis (min: {minimumStock})</p>
+            {product.currentStock.warehouses.length > 0 && (
+              <div className="text-xs mt-1">
+                {product.currentStock.warehouses.map((wh) => (
+                  <div key={wh.warehouseId}>
+                    {wh.warehouseName}: {parseFloat(wh.quantity).toLocaleString("id-ID")} {product.baseUnit}
+                  </div>
+                ))}
+              </div>
+            )}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  // Normal stock (above minimum)
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="flex items-center justify-center">
+            <Badge className="bg-green-500 text-white hover:bg-green-600 gap-1">
+              <CheckCircle2 className="h-3 w-3" />
+              {totalStock.toLocaleString("id-ID")}
+            </Badge>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>Stok tersedia</p>
+          {product.currentStock.warehouses.length > 0 && (
+            <div className="text-xs mt-1">
+              {product.currentStock.warehouses.map((wh) => (
+                <div key={wh.warehouseId}>
+                  {wh.warehouseName}: {parseFloat(wh.quantity).toLocaleString("id-ID")} {product.baseUnit}
+                </div>
+              ))}
+            </div>
+          )}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 interface ProductsTableProps {
   products: ProductResponse[];
@@ -113,6 +248,7 @@ export function ProductsTable({
               <TableHead className="text-right">Harga Beli</TableHead>
               <TableHead className="text-center">Status</TableHead>
               <TableHead className="text-center">Unit</TableHead>
+              <TableHead className="text-center">Stok</TableHead>
               <TableHead className="w-[70px]">
                 <span className="sr-only">Aksi</span>
               </TableHead>
@@ -121,7 +257,7 @@ export function ProductsTable({
           <TableBody>
             {products.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8}>
+                <TableCell colSpan={9}>
                   <EmptyState
                     icon={Package}
                     title="Produk tidak ditemukan"
@@ -198,6 +334,11 @@ export function ProductsTable({
                         1 unit
                       </span>
                     )}
+                  </TableCell>
+
+                  {/* Stock Status */}
+                  <TableCell className="text-center">
+                    <StockStatusIndicator product={product} />
                   </TableCell>
 
                   {/* Actions */}

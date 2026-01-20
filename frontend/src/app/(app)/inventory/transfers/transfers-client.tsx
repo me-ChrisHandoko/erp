@@ -13,7 +13,17 @@
 import { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
 import { useRouter } from "next/navigation";
-import { Plus, Search, PackageOpen } from "lucide-react";
+import { type DateRange } from "react-day-picker";
+import { format } from "date-fns";
+import {
+  Plus,
+  Search,
+  PackageOpen,
+  FileEdit,
+  Send,
+  CheckCircle2,
+  XCircle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,6 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { ErrorDisplay } from "@/components/shared/error-display";
 import { useListTransfersQuery } from "@/store/services/transferApi";
@@ -34,7 +45,12 @@ import { ShipTransferDialog } from "@/components/transfers/ship-transfer-dialog"
 import { ReceiveTransferDialog } from "@/components/transfers/receive-transfer-dialog";
 import { CancelTransferDialog } from "@/components/transfers/cancel-transfer-dialog";
 import { DeleteTransferDialog } from "@/components/transfers/delete-transfer-dialog";
-import type { TransferFilters, TransferListResponse, StockTransferStatus, StockTransfer } from "@/types/transfer.types";
+import type {
+  TransferFilters,
+  TransferListResponse,
+  StockTransferStatus,
+  StockTransfer,
+} from "@/types/transfer.types";
 import type { RootState } from "@/store";
 
 interface TransfersClientProps {
@@ -46,24 +62,30 @@ export function TransfersClient({ initialData }: TransfersClientProps) {
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StockTransferStatus | undefined>(
-    undefined
-  );
-  const [sourceWarehouseFilter, setSourceWarehouseFilter] = useState<string | undefined>(
-    undefined
-  );
-  const [destWarehouseFilter, setDestWarehouseFilter] = useState<string | undefined>(
-    undefined
-  );
+  const [statusFilter, setStatusFilter] = useState<
+    StockTransferStatus | undefined
+  >(undefined);
+  const [sourceWarehouseFilter, setSourceWarehouseFilter] = useState<
+    string | undefined
+  >(undefined);
+  const [destWarehouseFilter, setDestWarehouseFilter] = useState<
+    string | undefined
+  >(undefined);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
 
   // Action dialogs state
-  const [transferToShip, setTransferToShip] = useState<StockTransfer | null>(null);
+  const [transferToShip, setTransferToShip] = useState<StockTransfer | null>(
+    null
+  );
   const [isShipDialogOpen, setIsShipDialogOpen] = useState(false);
-  const [transferToReceive, setTransferToReceive] = useState<StockTransfer | null>(null);
+  const [transferToReceive, setTransferToReceive] =
+    useState<StockTransfer | null>(null);
   const [isReceiveDialogOpen, setIsReceiveDialogOpen] = useState(false);
-  const [transferToCancel, setTransferToCancel] = useState<StockTransfer | null>(null);
+  const [transferToCancel, setTransferToCancel] =
+    useState<StockTransfer | null>(null);
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
-  const [transferToDelete, setTransferToDelete] = useState<StockTransfer | null>(null);
+  const [transferToDelete, setTransferToDelete] =
+    useState<StockTransfer | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const [filters, setFilters] = useState<TransferFilters>({
@@ -83,10 +105,10 @@ export function TransfersClient({ initialData }: TransfersClientProps) {
   );
 
   // Compute permission checks ONCE at top level
-  const canCreateTransfers = permissions.canCreate('stock-transfers');
-  const canEditTransfers = permissions.canEdit('stock-transfers');
-  const canDeleteTransfers = permissions.canDelete('stock-transfers');
-  const canApproveTransfers = permissions.can('approve', 'stock-transfers');
+  const canCreateTransfers = permissions.canCreate("stock-transfers");
+  const canEditTransfers = permissions.canEdit("stock-transfers");
+  const canDeleteTransfers = permissions.canDelete("stock-transfers");
+  const canApproveTransfers = permissions.can("approve", "stock-transfers");
 
   // Fetch warehouses for filters
   const { data: warehousesData } = useListWarehousesQuery(
@@ -113,6 +135,8 @@ export function TransfersClient({ initialData }: TransfersClientProps) {
     status: statusFilter,
     sourceWarehouseId: sourceWarehouseFilter,
     destWarehouseId: destWarehouseFilter,
+    dateFrom: dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
+    dateTo: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined,
   };
 
   const {
@@ -128,6 +152,16 @@ export function TransfersClient({ initialData }: TransfersClientProps) {
 
   // Use initialData as fallback only for first render before query completes
   const displayData = transfersData || initialData;
+
+  // Use server-provided status counts (total counts, not per-page)
+  const statusStats = displayData?.statusCounts
+    ? {
+        draft: displayData.statusCounts.draft,
+        shipped: displayData.statusCounts.shipped,
+        received: displayData.statusCounts.received,
+        cancelled: displayData.statusCounts.cancelled,
+      }
+    : { draft: 0, shipped: 0, received: 0, cancelled: 0 };
 
   // 🔑 CRITICAL: Explicit refetch when company changes
   // Cache invalidation alone doesn't trigger refetch for skipped queries
@@ -168,7 +202,9 @@ export function TransfersClient({ initialData }: TransfersClientProps) {
   };
 
   const handleStatusFilterChange = (status: string) => {
-    setStatusFilter(status === "all" ? undefined : (status as StockTransferStatus));
+    setStatusFilter(
+      status === "all" ? undefined : (status as StockTransferStatus)
+    );
     setFilters((prev) => ({ ...prev, page: 1 }));
   };
 
@@ -220,13 +256,11 @@ export function TransfersClient({ initialData }: TransfersClientProps) {
   };
 
   return (
-    <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+    <div className="flex flex-1 flex-col gap-0 p-4 pt-0">
       {/* Page title and actions */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-0 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
-          <h1 className="text-3xl font-bold tracking-tight">
-            Transfer Gudang
-          </h1>
+          <h1 className="text-3xl font-bold tracking-tight">Transfer Gudang</h1>
           <p className="text-muted-foreground">
             Kelola transfer stok antar gudang
           </p>
@@ -238,6 +272,103 @@ export function TransfersClient({ initialData }: TransfersClientProps) {
           </Button>
         )}
       </div>
+
+      {/* Status Statistics Cards */}
+      {displayData && displayData.data && (
+        <div className="grid gap-1 md:grid-cols-4">
+          {/* Draft Card */}
+          <Card className="overflow-hidden border-none shadow-none hover:shadow-sm transition-shadow duration-300 rounded-xl">
+            <CardContent className="p-0">
+              <div className="relative bg-gradient-to-br from-gray-500 to-gray-600 p-4 rounded-xl">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-gray-100">Draft</p>
+                    <p className="text-2xl font-bold text-white">
+                      {statusStats.draft}
+                    </p>
+                    <div className="flex items-center gap-1 text-xs text-gray-100">
+                      <span>Belum dikirim</span>
+                    </div>
+                  </div>
+                  <div className="rounded-full bg-white/20 p-2 backdrop-blur-sm">
+                    <FileEdit className="h-5 w-5 text-white" />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Shipped Card */}
+          <Card className="overflow-hidden border-none shadow-none hover:shadow-sm transition-shadow duration-300 rounded-xl">
+            <CardContent className="p-0">
+              <div className="relative bg-gradient-to-br from-blue-500 to-blue-600 p-4 rounded-xl">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-blue-100">Dikirim</p>
+                    <p className="text-2xl font-bold text-white">
+                      {statusStats.shipped}
+                    </p>
+                    <div className="flex items-center gap-1 text-xs text-blue-100">
+                      <span>Dalam perjalanan</span>
+                    </div>
+                  </div>
+                  <div className="rounded-full bg-white/20 p-2 backdrop-blur-sm">
+                    <Send className="h-5 w-5 text-white" />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Received Card */}
+          <Card className="overflow-hidden border-none shadow-none hover:shadow-sm transition-shadow duration-300 rounded-xl">
+            <CardContent className="p-0">
+              <div className="relative bg-gradient-to-br from-green-500 to-green-600 p-4 rounded-xl">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-green-100">
+                      Diterima
+                    </p>
+                    <p className="text-2xl font-bold text-white">
+                      {statusStats.received}
+                    </p>
+                    <div className="flex items-center gap-1 text-xs text-green-100">
+                      <span>Transfer selesai</span>
+                    </div>
+                  </div>
+                  <div className="rounded-full bg-white/20 p-2 backdrop-blur-sm">
+                    <CheckCircle2 className="h-5 w-5 text-white" />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Cancelled Card */}
+          <Card className="overflow-hidden border-none shadow-none hover:shadow-sm transition-shadow duration-300 rounded-xl">
+            <CardContent className="p-0">
+              <div className="relative bg-gradient-to-br from-red-500 to-red-600 p-4 rounded-xl">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-red-100">
+                      Dibatalkan
+                    </p>
+                    <p className="text-2xl font-bold text-white">
+                      {statusStats.cancelled}
+                    </p>
+                    <div className="flex items-center gap-1 text-xs text-red-100">
+                      <span>Transfer dibatalkan</span>
+                    </div>
+                  </div>
+                  <div className="rounded-full bg-white/20 p-2 backdrop-blur-sm">
+                    <XCircle className="h-5 w-5 text-white" />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Transfers table with search and filters */}
       <Card className="shadow-sm">
@@ -277,7 +408,7 @@ export function TransfersClient({ initialData }: TransfersClientProps) {
               value={sourceWarehouseFilter || "all"}
               onValueChange={handleSourceWarehouseFilterChange}
             >
-              <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectTrigger className="w-full sm:w-[150px]">
                 <SelectValue placeholder="Dari Gudang" />
               </SelectTrigger>
               <SelectContent>
@@ -295,7 +426,7 @@ export function TransfersClient({ initialData }: TransfersClientProps) {
               value={destWarehouseFilter || "all"}
               onValueChange={handleDestWarehouseFilterChange}
             >
-              <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectTrigger className="w-full sm:w-[150px]">
                 <SelectValue placeholder="Ke Gudang" />
               </SelectTrigger>
               <SelectContent>
@@ -308,8 +439,23 @@ export function TransfersClient({ initialData }: TransfersClientProps) {
               </SelectContent>
             </Select>
 
+            {/* Date Range Filter */}
+            <DateRangePicker
+              value={dateRange}
+              onChange={(range) => {
+                setDateRange(range);
+                setFilters((prev) => ({ ...prev, page: 1 }));
+              }}
+              placeholder="Pilih tanggal"
+              className="w-full sm:w-[220px]"
+            />
+
             {/* Clear Filters Button */}
-            {(search || statusFilter || sourceWarehouseFilter || destWarehouseFilter) && (
+            {(search ||
+              statusFilter ||
+              sourceWarehouseFilter ||
+              destWarehouseFilter ||
+              dateRange) && (
               <Button
                 variant="outline"
                 size="sm"
@@ -319,6 +465,7 @@ export function TransfersClient({ initialData }: TransfersClientProps) {
                   setStatusFilter(undefined);
                   setSourceWarehouseFilter(undefined);
                   setDestWarehouseFilter(undefined);
+                  setDateRange(undefined);
                   setFilters((prev) => ({ ...prev, page: 1 }));
                 }}
                 className="w-full sm:w-auto"

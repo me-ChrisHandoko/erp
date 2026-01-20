@@ -28,7 +28,8 @@ export type AuditEntityType =
   | 'sales_order'
   | 'inventory'
   | 'adjustment'
-  | 'stock_opname';
+  | 'stock_opname'
+  | 'stock_transfer';
 
 /**
  * Audit action types
@@ -42,7 +43,10 @@ export type AuditAction =
   | 'LOGIN'
   | 'LOGOUT'
   | 'ASSIGN'
-  | 'REVOKE';
+  | 'REVOKE'
+  | 'SHIP'
+  | 'RECEIVE'
+  | 'CANCEL';
 
 /**
  * Main Audit Log interface matching backend AuditLog model
@@ -232,4 +236,39 @@ export interface WarehouseAuditLog extends EntityAuditLog<{
   [key: string]: any;
 }> {
   entityType: 'warehouse';
+}
+
+/**
+ * Stock transfer item in audit log
+ */
+export interface StockTransferItemAudit {
+  id: string;
+  product_id: string;
+  product_code?: string;
+  product_name?: string;
+  quantity: string;
+  batch_id?: string;
+  notes?: string;
+}
+
+/**
+ * Stock transfer-specific audit log
+ */
+export interface StockTransferAuditLog extends EntityAuditLog<{
+  transfer_number?: string;
+  transfer_date?: string;
+  source_warehouse_id?: string;
+  source_warehouse_name?: string;
+  dest_warehouse_id?: string;
+  dest_warehouse_name?: string;
+  status?: string;
+  shipped_by?: string;
+  shipped_at?: string;
+  received_by?: string;
+  received_at?: string;
+  notes?: string;
+  items?: StockTransferItemAudit[];
+  [key: string]: any;
+}> {
+  entityType: 'stock_transfer';
 }

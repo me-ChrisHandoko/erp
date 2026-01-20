@@ -56,6 +56,7 @@ import {
   ShoppingCart,
   ClipboardCheck,
 } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
 import { useListWarehousesQuery } from "@/store/services/warehouseApi";
 import { useListProductsQuery } from "@/store/services/productApi";
 import { useListStocksQuery } from "@/store/services/stockApi";
@@ -633,22 +634,386 @@ export function EditTransferForm({
             </div>
           )}
 
-          {/* Step 2 and Step 3 are similar to CreateTransferForm - truncated for brevity */}
-          {/* For full implementation, copy from CreateTransferForm */}
-
+          {/* Step 2: Product Selection */}
           {currentStep === 2 && (
             <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Step 2 content (product selection) - similar to create form
-              </p>
+              {/* Product Selection Form */}
+              <div className="rounded-lg border p-4 space-y-4 bg-muted/30">
+                <h3 className="font-semibold text-sm">Tambah Produk</h3>
+
+                {/* Product Combobox */}
+                <div className="space-y-2">
+                  <Label htmlFor="product">
+                    Produk <span className="text-destructive">*</span>
+                  </Label>
+                  <Combobox
+                    options={productOptions}
+                    value={selectedProductId}
+                    onValueChange={(value) => {
+                      setSelectedProductId(value);
+                      setErrors({});
+                    }}
+                    placeholder="Pilih produk..."
+                    searchPlaceholder="Cari produk..."
+                    emptyMessage={
+                      loadingProducts || loadingStocks
+                        ? "Memuat..."
+                        : !sourceWarehouseId
+                        ? "Pilih gudang asal terlebih dahulu"
+                        : availableProductIds.size === 0
+                        ? "Tidak ada produk dengan stok di gudang ini"
+                        : "Produk tidak ditemukan"
+                    }
+                    disabled={loadingProducts || loadingStocks || !sourceWarehouseId}
+                    className={cn(errors.product && "border-destructive")}
+                    renderOption={(option, selected) => {
+                      const product = productsData?.data.find(
+                        (p) => p.id === option.value
+                      );
+                      if (!product) return null;
+
+                      const stock = stocksData?.data.find(
+                        (s) => s.productID === product.id
+                      );
+
+                      return (
+                        <>
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              selected ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          <div className="flex items-center justify-between flex-1 gap-2">
+                            <div className="flex items-center gap-2">
+                              <Package className="h-4 w-4 text-muted-foreground" />
+                              <span className="font-mono text-xs">
+                                {product.code}
+                              </span>
+                              {" - "}
+                              <span>{product.name}</span>
+                            </div>
+                            {stock && (
+                              <span className="text-xs text-muted-foreground ml-auto">
+                                Stok: {parseFloat(stock.quantity).toLocaleString("id-ID", {
+                                  minimumFractionDigits: 0,
+                                  maximumFractionDigits: 3,
+                                })}
+                              </span>
+                            )}
+                          </div>
+                        </>
+                      );
+                    }}
+                    renderTrigger={(selectedOption) => {
+                      if (!selectedOption) return "Pilih produk...";
+
+                      const product = productsData?.data.find(
+                        (p) => p.id === selectedOption.value
+                      );
+                      if (!product) return "Pilih produk...";
+
+                      const stock = stocksData?.data.find(
+                        (s) => s.productID === product.id
+                      );
+
+                      return (
+                        <div className="flex items-center justify-between flex-1 gap-2">
+                          <div className="flex items-center gap-2">
+                            <Package className="h-4 w-4" />
+                            <span className="font-mono text-xs">
+                              {product.code}
+                            </span>
+                            {" - "}
+                            <span>{product.name}</span>
+                          </div>
+                          {stock && (
+                            <span className="text-xs text-muted-foreground">
+                              Stok: {parseFloat(stock.quantity).toLocaleString("id-ID", {
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 3,
+                              })}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    }}
+                  />
+                  {errors.product && (
+                    <p className="text-sm text-destructive flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" />
+                      {errors.product}
+                    </p>
+                  )}
+                </div>
+
+                {/* Quantity */}
+                <div className="space-y-2">
+                  <Label htmlFor="quantity">
+                    Jumlah <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="quantity"
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    placeholder="0.000"
+                    value={quantity}
+                    onChange={(e) => {
+                      setQuantity(e.target.value);
+                      setErrors({});
+                    }}
+                    className={cn("bg-background", errors.quantity && "border-destructive")}
+                  />
+                  {selectedProductId && (() => {
+                    const stock = stocksData?.data.find((s) => s.productID === selectedProductId);
+                    return stock ? (
+                      <p className="text-xs text-muted-foreground">
+                        Stok tersedia: {parseFloat(stock.quantity).toLocaleString("id-ID", {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 3,
+                        })}
+                      </p>
+                    ) : null;
+                  })()}
+                  {errors.quantity && (
+                    <p className="text-sm text-destructive flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" />
+                      {errors.quantity}
+                    </p>
+                  )}
+                </div>
+
+                {/* Item Notes */}
+                <div className="space-y-2">
+                  <Label htmlFor="itemNotes">Catatan Item (Opsional)</Label>
+                  <Input
+                    id="itemNotes"
+                    placeholder="Catatan untuk item ini..."
+                    value={itemNotes}
+                    onChange={(e) => setItemNotes(e.target.value)}
+                    className="bg-background"
+                  />
+                </div>
+
+                {/* Add Button */}
+                <Button
+                  type="button"
+                  onClick={handleAddProduct}
+                  className="w-full"
+                  variant="secondary"
+                >
+                  <Package className="mr-2 h-4 w-4" />
+                  Tambah Produk
+                </Button>
+              </div>
+
+              {/* Items List */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-sm">
+                    Daftar Produk ({items.length})
+                  </h3>
+                  {items.length > 0 && (
+                    <Badge variant="secondary">
+                      Total: {totalQuantity.toLocaleString("id-ID", {
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 3,
+                      })}
+                    </Badge>
+                  )}
+                </div>
+
+                {items.length === 0 ? (
+                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                    <Package className="mx-auto h-8 w-8 mb-2 opacity-50" />
+                    Belum ada produk ditambahkan
+                  </div>
+                ) : (
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Kode</TableHead>
+                          <TableHead>Nama Produk</TableHead>
+                          <TableHead className="text-right">Jumlah</TableHead>
+                          <TableHead>Catatan</TableHead>
+                          <TableHead className="w-[50px]"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {items.map((item, index) => (
+                          <TableRow key={index}>
+                            <TableCell className="font-mono text-sm">
+                              {item.productCode}
+                            </TableCell>
+                            <TableCell className="font-medium">
+                              {item.productName}
+                            </TableCell>
+                            <TableCell className="text-right font-medium">
+                              {parseFloat(item.quantity).toLocaleString("id-ID", {
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 3,
+                              })}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {item.notes || "-"}
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRemoveProduct(index)}
+                                className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+
+                {errors.items && (
+                  <p className="text-sm text-destructive flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    {errors.items}
+                  </p>
+                )}
+              </div>
             </div>
           )}
 
+          {/* Step 3: Review & Submit */}
           {currentStep === 3 && (
-            <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Step 3 content (review) - similar to create form
-              </p>
+            <div className="space-y-6">
+              {/* Transfer Summary */}
+              <div className="rounded-lg border p-4 space-y-4 bg-muted/30">
+                <h3 className="font-semibold">Ringkasan Transfer</h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Dari Gudang</p>
+                    <div className="flex items-center gap-2">
+                      <Warehouse className="h-4 w-4 text-muted-foreground" />
+                      <p className="font-medium">{getWarehouseName(sourceWarehouseId)}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Ke Gudang</p>
+                    <div className="flex items-center gap-2">
+                      <Warehouse className="h-4 w-4 text-muted-foreground" />
+                      <p className="font-medium">{getWarehouseName(destWarehouseId)}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Tanggal Transfer</p>
+                    <div className="flex items-center gap-2">
+                      <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+                      <p className="font-medium">
+                        {format(transferDate, "dd MMMM yyyy", { locale: localeId })}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Total Produk</p>
+                    <div className="flex items-center gap-2">
+                      <Package className="h-4 w-4 text-muted-foreground" />
+                      <p className="font-medium">{items.length} produk</p>
+                    </div>
+                  </div>
+                </div>
+
+                {notes && (
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Catatan</p>
+                    <p className="text-sm bg-background p-3 rounded-md border">
+                      {notes}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Items Review */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold">Daftar Produk ({items.length})</h3>
+                  <Badge>
+                    Total Qty: {totalQuantity.toLocaleString("id-ID", {
+                      minimumFractionDigits: 0,
+                      maximumFractionDigits: 3,
+                    })}
+                  </Badge>
+                </div>
+
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Kode</TableHead>
+                        <TableHead>Nama Produk</TableHead>
+                        <TableHead className="text-right">Jumlah</TableHead>
+                        <TableHead>Catatan</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {items.map((item, index) => (
+                        <TableRow key={index}>
+                          <TableCell className="font-mono text-sm">
+                            {item.productCode}
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {item.productName}
+                          </TableCell>
+                          <TableCell className="text-right font-medium">
+                            {parseFloat(item.quantity).toLocaleString("id-ID", {
+                              minimumFractionDigits: 0,
+                              maximumFractionDigits: 3,
+                            })}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {item.notes || "-"}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="bg-muted/50 font-semibold">
+                        <TableCell colSpan={2} className="text-right">
+                          Total
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {totalQuantity.toLocaleString("id-ID", {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 3,
+                          })}
+                        </TableCell>
+                        <TableCell></TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+
+              {/* Confirmation Note */}
+              <div className="rounded-md bg-blue-50 dark:bg-blue-950 p-4 text-sm">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                  <div className="space-y-1">
+                    <p className="font-medium text-blue-900 dark:text-blue-100">
+                      Konfirmasi Perubahan
+                    </p>
+                    <p className="text-blue-700 dark:text-blue-300">
+                      Transfer akan diperbarui dengan status <strong>DRAFT</strong>. Anda
+                      dapat mengedit atau menghapus transfer sebelum dikirim.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 

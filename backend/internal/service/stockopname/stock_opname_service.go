@@ -3,23 +3,57 @@ package stockopname
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
 	"backend/internal/dto"
+	"backend/internal/service/audit"
 	"backend/models"
 	pkgerrors "backend/pkg/errors"
 )
 
 type StockOpnameService struct {
-	db *gorm.DB
+	db           *gorm.DB
+	auditService *audit.AuditService
 }
 
-func NewStockOpnameService(db *gorm.DB) *StockOpnameService {
+// Audit log structs for ordered JSON serialization
+type opnameAuditData struct {
+	WarehouseID   string                `json:"warehouse_id"`
+	OpnameNumber  string                `json:"opname_number"`
+	WarehouseName string                `json:"warehouse_name"`
+	Notes         string                `json:"notes"`
+	OpnameDate    string                `json:"opname_date"`
+	Status        string                `json:"status"`
+	Items         []opnameAuditItemData `json:"items"`
+}
+
+type opnameAuditItemData struct {
+	ProductID   string `json:"product_id"`
+	ProductName string `json:"product_name"`
+	ExpectedQty string `json:"expected_qty"`
+	ActualQty   string `json:"actual_qty"`
+	Notes       string `json:"notes"`
+}
+
+// Audit data struct for delete (without items)
+type opnameDeleteAuditData struct {
+	WarehouseID   string `json:"warehouse_id"`
+	OpnameNumber  string `json:"opname_number"`
+	WarehouseName string `json:"warehouse_name"`
+	Notes         string `json:"notes"`
+	OpnameDate    string `json:"opname_date"`
+	Status        string `json:"status"`
+}
+
+func NewStockOpnameService(db *gorm.DB, auditService *audit.AuditService) *StockOpnameService {
 	return &StockOpnameService{
-		db: db,
+		db:           db,
+		auditService: auditService,
 	}
 }
 
@@ -28,7 +62,7 @@ func NewStockOpnameService(db *gorm.DB) *StockOpnameService {
 // ============================================================================
 
 // CreateStockOpname creates a new stock opname with items
-func (s *StockOpnameService) CreateStockOpname(ctx context.Context, companyID string, tenantID string, userID string, req *dto.CreateStockOpnameRequest) (*models.StockOpname, error) {
+func (s *StockOpnameService) CreateStockOpname(ctx context.Context, companyID string, tenantID string, userID string, req *dto.CreateStockOpnameRequest, ipAddress, userAgent string) (*models.StockOpname, error) {
 	// Parse opname date
 	opnameDate, err := time.Parse("2006-01-02", req.OpnameDate)
 	if err != nil {
@@ -120,6 +154,70 @@ func (s *StockOpnameService) CreateStockOpname(ctx context.Context, companyID st
 
 	if err != nil {
 		return nil, err
+	}
+
+	// Log audit for creation
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		// Prepare items data with product names (query product names)
+		productIDs := make([]string, len(req.Items))
+		for i, item := range req.Items {
+			productIDs[i] = item.ProductID
+		}
+
+		productNameMap := make(map[string]string)
+		var products []models.Product
+		if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+			Where("id IN ?", productIDs).
+			Select("id", "name", "code").
+			Find(&products).Error; err == nil {
+			for _, p := range products {
+				productNameMap[p.ID] = p.Name
+			}
+		}
+
+		itemsData := make([]opnameAuditItemData, len(req.Items))
+		for i, item := range req.Items {
+			itemNotes := ""
+			if item.Notes != nil {
+				itemNotes = *item.Notes
+			}
+			itemsData[i] = opnameAuditItemData{
+				ExpectedQty: item.ExpectedQty,
+				ActualQty:   item.ActualQty,
+				Notes:       itemNotes,
+				ProductID:   item.ProductID,
+				ProductName: productNameMap[item.ProductID],
+			}
+		}
+
+		opnameNotes := ""
+		if opname.Notes != nil {
+			opnameNotes = *opname.Notes
+		}
+
+		opnameData := opnameAuditData{
+			WarehouseID:   opname.WarehouseID,
+			OpnameNumber:  opname.OpnameNumber,
+			WarehouseName: warehouse.Name,
+			Notes:         opnameNotes,
+			OpnameDate:    opname.OpnameDate.Format("2006-01-02"),
+			Status:        strings.ToUpper(string(opname.Status)),
+			Items:         itemsData,
+		}
+
+		if err := s.auditService.LogStockOpnameCreated(ctx, auditCtx, opname.ID, opnameData); err != nil {
+			fmt.Printf("WARNING: Failed to create audit log for stock opname: %v\n", err)
+		}
 	}
 
 	// Reload opname with relations
@@ -244,13 +342,69 @@ func (s *StockOpnameService) ListStockOpnames(ctx context.Context, tenantID, com
 	return opnames, total, nil
 }
 
+// GetStatusCounts returns count of opnames for each status
+func (s *StockOpnameService) GetStatusCounts(ctx context.Context, tenantID, companyID string) (map[string]int64, error) {
+	statusCounts := make(map[string]int64)
+
+	// Query counts for each status
+	type statusCount struct {
+		Status models.StockOpnameStatus
+		Count  int64
+	}
+
+	var results []statusCount
+	err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+		Model(&models.StockOpname{}).
+		Select("status, COUNT(*) as count").
+		Where("company_id = ?", companyID).
+		Group("status").
+		Scan(&results).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get status counts: %w", err)
+	}
+
+	// Initialize all statuses with 0
+	statusCounts["draft"] = 0
+	statusCounts["in_progress"] = 0
+	statusCounts["completed"] = 0
+	statusCounts["approved"] = 0
+	statusCounts["cancelled"] = 0
+
+	// Map results to string keys
+	for _, result := range results {
+		switch result.Status {
+		case models.StockOpnameStatusDraft:
+			statusCounts["draft"] = result.Count
+		case models.StockOpnameStatusInProgress:
+			statusCounts["in_progress"] = result.Count
+		case models.StockOpnameStatusCompleted:
+			statusCounts["completed"] = result.Count
+		case models.StockOpnameStatusApproved:
+			statusCounts["approved"] = result.Count
+		case models.StockOpnameStatusCancelled:
+			statusCounts["cancelled"] = result.Count
+		}
+	}
+
+	return statusCounts, nil
+}
+
 // UpdateStockOpname updates a stock opname
-func (s *StockOpnameService) UpdateStockOpname(ctx context.Context, companyID, tenantID, opnameID string, req *dto.UpdateStockOpnameRequest) (*models.StockOpname, error) {
+func (s *StockOpnameService) UpdateStockOpname(ctx context.Context, companyID, tenantID, opnameID, userID string, req *dto.UpdateStockOpnameRequest, ipAddress, userAgent string) (*models.StockOpname, error) {
 	// Get existing opname
 	opname, err := s.GetStockOpname(ctx, companyID, tenantID, opnameID)
 	if err != nil {
 		return nil, err
 	}
+
+	// Capture old values for audit logging (header fields only, items are updated separately)
+	oldNotes := ""
+	if opname.Notes != nil {
+		oldNotes = *opname.Notes
+	}
+	oldOpnameDate := opname.OpnameDate.Format("2006-01-02")
+	oldStatus := strings.ToUpper(string(opname.Status))
 
 	// Validate status transition
 	if opname.Status == models.StockOpnameStatusApproved {
@@ -261,20 +415,28 @@ func (s *StockOpnameService) UpdateStockOpname(ctx context.Context, companyID, t
 		return nil, pkgerrors.NewBadRequestError("cannot update cancelled stock opname")
 	}
 
-	// Update fields
+	// Update fields and track actual changes
 	updates := make(map[string]interface{})
+	oldValues := make(map[string]interface{})
+	newValues := make(map[string]interface{})
 
 	if req.OpnameDate != nil {
 		opnameDate, err := time.Parse("2006-01-02", *req.OpnameDate)
 		if err != nil {
 			return nil, pkgerrors.NewBadRequestError("invalid opnameDate format")
 		}
-		updates["opname_date"] = opnameDate
+		newDateStr := *req.OpnameDate
+		if newDateStr != oldOpnameDate {
+			updates["opname_date"] = opnameDate
+			oldValues["opname_date"] = oldOpnameDate
+			newValues["opname_date"] = newDateStr
+		}
 	}
 
 	if req.Status != nil {
 		// Map frontend status to backend enum
 		var status models.StockOpnameStatus
+		newStatusUpper := strings.ToUpper(*req.Status)
 		switch *req.Status {
 		case "draft":
 			status = models.StockOpnameStatusDraft
@@ -285,27 +447,60 @@ func (s *StockOpnameService) UpdateStockOpname(ctx context.Context, companyID, t
 		default:
 			return nil, pkgerrors.NewBadRequestError("invalid status value")
 		}
-		updates["status"] = status
+		if newStatusUpper != oldStatus {
+			updates["status"] = status
+			oldValues["status"] = oldStatus
+			newValues["status"] = newStatusUpper
+		}
 	}
 
 	if req.Notes != nil {
-		updates["notes"] = req.Notes
+		newNotes := *req.Notes
+		if newNotes != oldNotes {
+			updates["notes"] = req.Notes
+			oldValues["notes"] = oldNotes
+			newValues["notes"] = newNotes
+		}
 	}
 
-	// Update in database
-	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
-		Model(&models.StockOpname{}).
-		Where("id = ? AND company_id = ?", opnameID, companyID).
-		Updates(updates).Error; err != nil {
-		return nil, fmt.Errorf("failed to update stock opname: %w", err)
+	// Only update if there are actual changes
+	if len(updates) > 0 {
+		if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+			Model(&models.StockOpname{}).
+			Where("id = ? AND company_id = ?", opnameID, companyID).
+			Updates(updates).Error; err != nil {
+			return nil, fmt.Errorf("failed to update stock opname: %w", err)
+		}
 	}
 
-	// Reload and return
-	return s.GetStockOpname(ctx, companyID, tenantID, opnameID)
+	// Reload and get updated opname
+	updatedOpname, err := s.GetStockOpname(ctx, companyID, tenantID, opnameID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Log audit for update (only if there are actual changes)
+	if s.auditService != nil && len(newValues) > 0 {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		if err := s.auditService.LogStockOpnameUpdated(ctx, auditCtx, opnameID, oldValues, newValues); err != nil {
+			fmt.Printf("WARNING: Failed to create audit log for stock opname update: %v\n", err)
+		}
+	}
+
+	return updatedOpname, nil
 }
 
 // DeleteStockOpname deletes a stock opname (only draft can be deleted)
-func (s *StockOpnameService) DeleteStockOpname(ctx context.Context, companyID, tenantID, opnameID string) error {
+func (s *StockOpnameService) DeleteStockOpname(ctx context.Context, companyID, tenantID, opnameID, userID string, ipAddress, userAgent string) error {
 	// Get existing opname
 	opname, err := s.GetStockOpname(ctx, companyID, tenantID, opnameID)
 	if err != nil {
@@ -315,6 +510,26 @@ func (s *StockOpnameService) DeleteStockOpname(ctx context.Context, companyID, t
 	// Only allow deleting draft opnames
 	if opname.Status != models.StockOpnameStatusDraft {
 		return pkgerrors.NewBadRequestError("only draft stock opnames can be deleted")
+	}
+
+	// Capture opname data for audit logging (without items)
+	warehouseName := ""
+	if opname.Warehouse.Name != "" {
+		warehouseName = opname.Warehouse.Name
+	}
+
+	opnameNotes := ""
+	if opname.Notes != nil {
+		opnameNotes = *opname.Notes
+	}
+
+	opnameData := opnameDeleteAuditData{
+		WarehouseID:   opname.WarehouseID,
+		OpnameNumber:  opname.OpnameNumber,
+		WarehouseName: warehouseName,
+		Notes:         opnameNotes,
+		OpnameDate:    opname.OpnameDate.Format("2006-01-02"),
+		Status:        strings.ToUpper(string(opname.Status)),
 	}
 
 	// Delete in transaction (cascade will delete items)
@@ -336,15 +551,40 @@ func (s *StockOpnameService) DeleteStockOpname(ctx context.Context, companyID, t
 		return err
 	}
 
+	// Log audit for deletion
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		if err := s.auditService.LogStockOpnameDeleted(ctx, auditCtx, opnameID, opnameData); err != nil {
+			fmt.Printf("WARNING: Failed to create audit log for stock opname delete: %v\n", err)
+		}
+	}
+
 	return nil
 }
 
 // ApproveStockOpname approves a stock opname and posts stock adjustments
-func (s *StockOpnameService) ApproveStockOpname(ctx context.Context, companyID, tenantID, opnameID, userID string, req *dto.ApproveStockOpnameRequest) (*models.StockOpname, error) {
+func (s *StockOpnameService) ApproveStockOpname(ctx context.Context, companyID, tenantID, opnameID, userID string, req *dto.ApproveStockOpnameRequest, ipAddress, userAgent string) (*models.StockOpname, error) {
 	// Get existing opname
 	opname, err := s.GetStockOpname(ctx, companyID, tenantID, opnameID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Capture old values for audit logging
+	oldValues := map[string]interface{}{
+		"opname_number": opname.OpnameNumber,
+		"status":        string(opname.Status),
+		"approved_by":   opname.ApprovedBy,
+		"approved_at":   opname.ApprovedAt,
 	}
 
 	// Validate status
@@ -425,6 +665,63 @@ func (s *StockOpnameService) ApproveStockOpname(ctx context.Context, companyID, 
 		return nil, err
 	}
 
+	// Log audit for approval
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		// Prepare items data for audit log
+		itemsData := make([]opnameAuditItemData, len(opname.Items))
+		for i, item := range opname.Items {
+			productName := ""
+			if item.Product.Name != "" {
+				productName = item.Product.Name
+			}
+			itemNotes := ""
+			if item.Notes != nil {
+				itemNotes = *item.Notes
+			}
+			itemsData[i] = opnameAuditItemData{
+				ActualQty:   item.PhysicalQty.String(),
+				ExpectedQty: item.SystemQty.String(),
+				Notes:       itemNotes,
+				ProductID:   item.ProductID,
+				ProductName: productName,
+			}
+		}
+
+		warehouseName := ""
+		if opname.Warehouse.Name != "" {
+			warehouseName = opname.Warehouse.Name
+		}
+
+		opnameNotes := ""
+		if opname.Notes != nil {
+			opnameNotes = *opname.Notes
+		}
+
+		newValues := opnameAuditData{
+			WarehouseID:   opname.WarehouseID,
+			OpnameNumber:  opname.OpnameNumber,
+			WarehouseName: warehouseName,
+			Notes:         opnameNotes,
+			OpnameDate:    opname.OpnameDate.Format("2006-01-02"),
+			Status:        strings.ToUpper(string(models.StockOpnameStatusApproved)),
+			Items:         itemsData,
+		}
+
+		if err := s.auditService.LogStockOpnameApproved(ctx, auditCtx, opnameID, oldValues, newValues); err != nil {
+			fmt.Printf("WARNING: Failed to create audit log for stock opname approve: %v\n", err)
+		}
+	}
+
 	// Reload and return
 	return s.GetStockOpname(ctx, companyID, tenantID, opnameID)
 }
@@ -489,7 +786,7 @@ func (s *StockOpnameService) AddStockOpnameItem(ctx context.Context, companyID, 
 }
 
 // UpdateStockOpnameItem updates a stock opname item
-func (s *StockOpnameService) UpdateStockOpnameItem(ctx context.Context, companyID, tenantID, opnameID, itemID string, req *dto.UpdateStockOpnameItemRequest) (*models.StockOpnameItem, error) {
+func (s *StockOpnameService) UpdateStockOpnameItem(ctx context.Context, companyID, tenantID, opnameID, itemID, userID string, req *dto.UpdateStockOpnameItemRequest, ipAddress, userAgent string) (*models.StockOpnameItem, error) {
 	// Get existing opname
 	opname, err := s.GetStockOpname(ctx, companyID, tenantID, opnameID)
 	if err != nil {
@@ -505,9 +802,10 @@ func (s *StockOpnameService) UpdateStockOpnameItem(ctx context.Context, companyI
 		return nil, pkgerrors.NewBadRequestError("cannot update items in cancelled stock opname")
 	}
 
-	// Get existing item
+	// Get existing item with product info
 	var item models.StockOpnameItem
 	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+		Preload("Product").
 		Where("id = ? AND stock_opname_id = ?", itemID, opnameID).
 		First(&item).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -516,8 +814,19 @@ func (s *StockOpnameService) UpdateStockOpnameItem(ctx context.Context, companyI
 		return nil, fmt.Errorf("failed to get stock opname item: %w", err)
 	}
 
-	// Update fields
+	// Capture old values for audit
+	oldActualQty := item.PhysicalQty.String()
+	oldNotes := ""
+	if item.Notes != nil {
+		oldNotes = *item.Notes
+	}
+
+	// Update fields and track changes
 	updates := make(map[string]interface{})
+	hasActualQtyChange := false
+	hasNotesChange := false
+	newActualQtyStr := oldActualQty
+	newNotesStr := oldNotes
 
 	if req.ActualQty != nil {
 		actualQty, err := decimal.NewFromString(*req.ActualQty)
@@ -525,22 +834,32 @@ func (s *StockOpnameService) UpdateStockOpnameItem(ctx context.Context, companyI
 			return nil, pkgerrors.NewBadRequestError("invalid actualQty format")
 		}
 
-		// Recalculate difference
-		difference := actualQty.Sub(item.SystemQty)
+		newActualQtyStr = actualQty.String()
+		if newActualQtyStr != oldActualQty {
+			// Recalculate difference
+			difference := actualQty.Sub(item.SystemQty)
 
-		updates["physical_qty"] = actualQty
-		updates["difference_qty"] = difference
+			updates["physical_qty"] = actualQty
+			updates["difference_qty"] = difference
+			hasActualQtyChange = true
+		}
 	}
 
 	if req.Notes != nil {
-		updates["notes"] = req.Notes
+		newNotesStr = *req.Notes
+		if newNotesStr != oldNotes {
+			updates["notes"] = req.Notes
+			hasNotesChange = true
+		}
 	}
 
-	// Update in database
-	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
-		Model(&item).
-		Updates(updates).Error; err != nil {
-		return nil, fmt.Errorf("failed to update stock opname item: %w", err)
+	// Only update if there are actual changes
+	if len(updates) > 0 {
+		if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+			Model(&item).
+			Updates(updates).Error; err != nil {
+			return nil, fmt.Errorf("failed to update stock opname item: %w", err)
+		}
 	}
 
 	// Reload with product info
@@ -550,7 +869,204 @@ func (s *StockOpnameService) UpdateStockOpnameItem(ctx context.Context, companyI
 		return nil, fmt.Errorf("failed to reload stock opname item: %w", err)
 	}
 
+	// Log audit for item update (only if there are actual changes)
+	if s.auditService != nil && (hasActualQtyChange || hasNotesChange) {
+		// Use struct to control JSON field order: product_id, product_name, expected_qty, actual_qty, notes
+		type opnameItemAuditData struct {
+			ProductID   string `json:"product_id"`
+			ProductName string `json:"product_name"`
+			ExpectedQty string `json:"expected_qty"`
+			ActualQty   string `json:"actual_qty"`
+			Notes       string `json:"notes,omitempty"`
+		}
+
+		oldValues := opnameItemAuditData{
+			ProductID:   item.ProductID,
+			ProductName: item.Product.Name,
+			ExpectedQty: item.SystemQty.String(),
+			ActualQty:   oldActualQty,
+			Notes:       oldNotes,
+		}
+
+		newValues := opnameItemAuditData{
+			ProductID:   item.ProductID,
+			ProductName: item.Product.Name,
+			ExpectedQty: item.SystemQty.String(),
+			ActualQty:   newActualQtyStr,
+			Notes:       newNotesStr,
+		}
+
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		if err := s.auditService.LogStockOpnameItemUpdated(ctx, auditCtx, opnameID, itemID, oldValues, newValues); err != nil {
+			fmt.Printf("WARNING: Failed to create audit log for stock opname item update: %v\n", err)
+		}
+	}
+
 	return &item, nil
+}
+
+// BatchUpdateStockOpnameItems updates multiple stock opname items and creates a single audit log
+func (s *StockOpnameService) BatchUpdateStockOpnameItems(ctx context.Context, companyID, tenantID, opnameID, userID string, req *dto.BatchUpdateStockOpnameItemsRequest, ipAddress, userAgent string) ([]models.StockOpnameItem, error) {
+	// Get existing opname
+	opname, err := s.GetStockOpname(ctx, companyID, tenantID, opnameID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Validate status
+	if opname.Status == models.StockOpnameStatusApproved {
+		return nil, pkgerrors.NewBadRequestError("cannot update items in approved stock opname")
+	}
+
+	if opname.Status == models.StockOpnameStatusCancelled {
+		return nil, pkgerrors.NewBadRequestError("cannot update items in cancelled stock opname")
+	}
+
+	// Struct for audit data with controlled field order
+	type opnameItemAuditData struct {
+		ProductID   string `json:"product_id"`
+		ProductName string `json:"product_name"`
+		ExpectedQty string `json:"expected_qty"`
+		ActualQty   string `json:"actual_qty"`
+		Notes       string `json:"notes,omitempty"`
+	}
+
+	// Track all changes for audit
+	var oldItemsData []opnameItemAuditData
+	var newItemsData []opnameItemAuditData
+	var updatedItems []models.StockOpnameItem
+
+	// Process each item in a transaction
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, itemReq := range req.Items {
+			// Get existing item with product info
+			var item models.StockOpnameItem
+			if err := tx.Set("tenant_id", tenantID).
+				Preload("Product").
+				Where("id = ? AND stock_opname_id = ?", itemReq.ItemID, opnameID).
+				First(&item).Error; err != nil {
+				if err == gorm.ErrRecordNotFound {
+					return pkgerrors.NewNotFoundError(fmt.Sprintf("stock opname item %s not found", itemReq.ItemID))
+				}
+				return fmt.Errorf("failed to get stock opname item: %w", err)
+			}
+
+			// Capture old values
+			oldActualQty := item.PhysicalQty.String()
+			oldNotes := ""
+			if item.Notes != nil {
+				oldNotes = *item.Notes
+			}
+
+			// Track changes
+			updates := make(map[string]any)
+			hasChanges := false
+			newActualQtyStr := oldActualQty
+			newNotesStr := oldNotes
+
+			if itemReq.ActualQty != nil {
+				actualQty, err := decimal.NewFromString(*itemReq.ActualQty)
+				if err != nil {
+					return pkgerrors.NewBadRequestError(fmt.Sprintf("invalid actualQty format for item %s", itemReq.ItemID))
+				}
+
+				newActualQtyStr = actualQty.String()
+				if newActualQtyStr != oldActualQty {
+					difference := actualQty.Sub(item.SystemQty)
+					updates["physical_qty"] = actualQty
+					updates["difference_qty"] = difference
+					hasChanges = true
+				}
+			}
+
+			if itemReq.Notes != nil {
+				newNotesStr = *itemReq.Notes
+				if newNotesStr != oldNotes {
+					updates["notes"] = itemReq.Notes
+					hasChanges = true
+				}
+			}
+
+			// Update item if there are changes
+			if len(updates) > 0 {
+				if err := tx.Set("tenant_id", tenantID).
+					Model(&item).
+					Updates(updates).Error; err != nil {
+					return fmt.Errorf("failed to update stock opname item: %w", err)
+				}
+			}
+
+			// Track for audit (only if there are changes)
+			if hasChanges {
+				oldItemsData = append(oldItemsData, opnameItemAuditData{
+					ProductID:   item.ProductID,
+					ProductName: item.Product.Name,
+					ExpectedQty: item.SystemQty.String(),
+					ActualQty:   oldActualQty,
+					Notes:       oldNotes,
+				})
+
+				newItemsData = append(newItemsData, opnameItemAuditData{
+					ProductID:   item.ProductID,
+					ProductName: item.Product.Name,
+					ExpectedQty: item.SystemQty.String(),
+					ActualQty:   newActualQtyStr,
+					Notes:       newNotesStr,
+				})
+			}
+
+			// Reload item with product info
+			if err := tx.Set("tenant_id", tenantID).
+				Preload("Product").
+				First(&item, "id = ?", itemReq.ItemID).Error; err != nil {
+				return fmt.Errorf("failed to reload stock opname item: %w", err)
+			}
+
+			updatedItems = append(updatedItems, item)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Log single audit for all item updates (only if there are actual changes)
+	if s.auditService != nil && len(oldItemsData) > 0 {
+		// Struct for batch audit with items array
+		type batchAuditData struct {
+			Items []opnameItemAuditData `json:"items"`
+		}
+
+		oldValues := batchAuditData{Items: oldItemsData}
+		newValues := batchAuditData{Items: newItemsData}
+
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		if err := s.auditService.LogStockOpnameBatchUpdated(ctx, auditCtx, opnameID, oldValues, newValues, len(oldItemsData)); err != nil {
+			fmt.Printf("WARNING: Failed to create audit log for stock opname batch update: %v\n", err)
+		}
+	}
+
+	return updatedItems, nil
 }
 
 // DeleteStockOpnameItem deletes a stock opname item

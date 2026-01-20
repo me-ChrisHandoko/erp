@@ -38,6 +38,9 @@ export function getActionLabel(action: AuditAction): string {
     LOGOUT: 'Logout',
     ASSIGN: 'Diberikan',
     REVOKE: 'Dicabut',
+    SHIP: 'Dikirim',
+    RECEIVE: 'Diterima',
+    CANCEL: 'Dibatalkan',
   };
   return labels[action] || action;
 }
@@ -61,6 +64,7 @@ export function getEntityTypeLabel(entityType: AuditEntityType): string {
     inventory: 'Inventori',
     adjustment: 'Adjustment',
     stock_opname: 'Stok Opname',
+    stock_transfer: 'Transfer Stok',
   };
   return labels[entityType] || entityType;
 }
@@ -172,6 +176,26 @@ export function formatFieldName(fieldName: string): string {
     accountName: 'Nama Rekening',
     bankName: 'Nama Bank',
     branch: 'Cabang',
+
+    // Stock transfer fields
+    transfer_number: 'Nomor Transfer',
+    transfer_date: 'Tanggal Transfer',
+    source_warehouse_id: 'ID Gudang Asal',
+    source_warehouse_name: 'Gudang Asal',
+    dest_warehouse_id: 'ID Gudang Tujuan',
+    dest_warehouse_name: 'Gudang Tujuan',
+    status: 'Status',
+    shipped_by: 'Dikirim Oleh',
+    shipped_at: 'Waktu Kirim',
+    received_by: 'Diterima Oleh',
+    received_at: 'Waktu Terima',
+    cancel_reason: 'Alasan Pembatalan',
+    items: 'Daftar Item',
+    product_id: 'ID Produk',
+    product_name: 'Nama Produk',
+    quantity: 'Jumlah',
+    batch_id: 'Batch ID',
+    notes: 'Catatan',
   };
 
   return fieldLabels[fieldName] || fieldName;
@@ -213,6 +237,21 @@ export function formatFieldValue(value: any, fieldName?: string): string {
       }).format(parseFloat(unit.sell_price)) : '-';
       const baseLabel = unit.is_base_unit ? ' [BASE]' : '';
       return `${unit.unit_name} (1 = ${unit.conversion_rate})${baseLabel} - Beli: ${buyPrice}, Jual: ${sellPrice}`;
+    }).join('\n');
+  }
+
+  // Special handling for stock transfer items array
+  if (fieldName === 'items' && Array.isArray(value)) {
+    if (value.length === 0) return 'Tidak ada item';
+    return value.map((item: any, index: number) => {
+      const qty = parseFloat(item.quantity || 0).toLocaleString('id-ID', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 3,
+      });
+      const productDisplay = item.product_name || item.product_id;
+      const batchInfo = item.batch_id ? ` [Batch: ${item.batch_id}]` : '';
+      const notesInfo = item.notes ? ` - ${item.notes}` : '';
+      return `${index + 1}. ${productDisplay} - Qty: ${qty}${batchInfo}${notesInfo}`;
     }).join('\n');
   }
 

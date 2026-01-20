@@ -300,10 +300,23 @@ func setupProtectedRoutes(
 		}
 
 		// ============================================================================
+		// AUDIT LOG MANAGEMENT ROUTES
+		// Reference: Audit trail for all entity operations
+		// ============================================================================
+		auditService := audit.NewAuditService(db)
+		auditHandler := handler.NewAuditHandler(auditService)
+
+		auditGroup := businessProtected.Group("/audit-logs")
+		auditGroup.Use(middleware.CompanyContextMiddleware(db))
+		{
+			// GET endpoints - all authenticated users can view audit logs
+			auditGroup.GET("/:entityType/:entityId", auditHandler.GetAuditLogsByEntityID)
+		}
+
+		// ============================================================================
 		// PRODUCT MANAGEMENT ROUTES (PHASE 2 - Master Data Management)
 		// Reference: 02-MASTER-DATA-MANAGEMENT.md Module 1: Product Management
 		// ============================================================================
-		auditService := audit.NewAuditService(db)
 		productService := product.NewProductService(db, auditService)
 		productHandler := handler.NewProductHandler(productService)
 
@@ -408,7 +421,7 @@ func setupProtectedRoutes(
 		// STOCK TRANSFER MANAGEMENT ROUTES (PHASE 2 - Inventory Management)
 		// Reference: Inter-warehouse stock transfer operations
 		// ============================================================================
-		stockTransferService := stock_transfer.NewStockTransferService(db)
+		stockTransferService := stock_transfer.NewStockTransferService(db, auditService)
 		stockTransferHandler := handler.NewStockTransferHandler(stockTransferService)
 
 		stockTransferGroup := businessProtected.Group("/stock-transfers")
@@ -433,7 +446,7 @@ func setupProtectedRoutes(
 		// STOCK OPNAME MANAGEMENT ROUTES (PHASE 2 - Inventory Management)
 		// Reference: Physical inventory count and stock adjustment operations
 		// ============================================================================
-		stockOpnameService := stockopname.NewStockOpnameService(db)
+		stockOpnameService := stockopname.NewStockOpnameService(db, auditService)
 		stockOpnameHandler := handler.NewStockOpnameHandler(stockOpnameService)
 
 		stockOpnameGroup := businessProtected.Group("/stock-opnames")
@@ -453,6 +466,7 @@ func setupProtectedRoutes(
 
 			// Item management endpoints - OWNER/ADMIN only
 			stockOpnameGroup.POST("/:id/items", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockOpnameHandler.AddStockOpnameItem)
+			stockOpnameGroup.PUT("/:id/items/batch", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockOpnameHandler.BatchUpdateStockOpnameItems)
 			stockOpnameGroup.PUT("/:id/items/:itemId", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockOpnameHandler.UpdateStockOpnameItem)
 			stockOpnameGroup.DELETE("/:id/items/:itemId", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), stockOpnameHandler.DeleteStockOpnameItem)
 

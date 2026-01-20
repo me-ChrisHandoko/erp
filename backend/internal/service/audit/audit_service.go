@@ -82,6 +82,80 @@ func filterNonEmptyFields(data map[string]interface{}) []string {
 	return fields
 }
 
+// getFieldValue extracts a field value from either a map or struct by trying both struct field name and json tag
+func getFieldValue(data interface{}, structFieldName, mapKey string) string {
+	if data == nil {
+		return ""
+	}
+
+	// If it's a map, try the mapKey
+	if m, ok := data.(map[string]interface{}); ok {
+		if val, ok := m[mapKey].(string); ok {
+			return val
+		}
+		return ""
+	}
+
+	// If it's a struct, use reflection to get the field
+	v := reflect.ValueOf(data)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+
+	if v.Kind() != reflect.Struct {
+		return ""
+	}
+
+	field := v.FieldByName(structFieldName)
+	if !field.IsValid() {
+		return ""
+	}
+
+	if field.Kind() == reflect.String {
+		return field.String()
+	}
+
+	return ""
+}
+
+// extractFieldNames extracts field names from either a map or struct for audit logging
+func extractFieldNames(data interface{}) []string {
+	if data == nil {
+		return []string{}
+	}
+
+	// If it's a map, use filterNonEmptyFields
+	if m, ok := data.(map[string]interface{}); ok {
+		return filterNonEmptyFields(m)
+	}
+
+	// If it's a struct, extract field names using reflection
+	v := reflect.ValueOf(data)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+
+	if v.Kind() != reflect.Struct {
+		return []string{}
+	}
+
+	t := v.Type()
+	fields := []string{}
+	for i := 0; i < v.NumField(); i++ {
+		field := t.Field(i)
+		jsonTag := field.Tag.Get("json")
+		if jsonTag == "" || jsonTag == "-" {
+			continue
+		}
+		// Extract just the field name from json tag (before any comma)
+		if idx := strings.Index(jsonTag, ","); idx != -1 {
+			jsonTag = jsonTag[:idx]
+		}
+		fields = append(fields, jsonTag)
+	}
+	return fields
+}
+
 // AuditContext contains contextual information for audit logging
 type AuditContext struct {
 	TenantID  *string
@@ -1178,6 +1252,668 @@ func (s *AuditService) LogWarehouseOperationFailed(
 		EntityType: &entityType,
 		EntityID:   &warehouseID,
 		Status:     StatusFailed,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// ==================== Stock Transfer Audit Methods ====================
+
+// LogStockTransferCreated logs when a stock transfer is created
+func (s *AuditService) LogStockTransferCreated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	transferID string,
+	transferData map[string]interface{},
+) error {
+	newValuesJSON, _ := json.Marshal(transferData)
+	newValuesStr := string(newValuesJSON)
+	entityType := "STOCK_TRANSFER"
+
+	// Create human-readable notes with created fields
+	createdFields := filterNonEmptyFields(transferData)
+
+	notes := ""
+	if len(createdFields) > 0 {
+		notes = fmt.Sprintf("Created fields: [%s]", strings.Join(createdFields, ", "))
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "STOCK_TRANSFER_CREATED",
+		EntityType: &entityType,
+		EntityID:   &transferID,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogStockTransferUpdated logs when a stock transfer is updated
+func (s *AuditService) LogStockTransferUpdated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	transferID string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "STOCK_TRANSFER"
+
+	// Create human-readable notes
+	changedFields := []string{}
+	for key := range newValues {
+		if oldValues[key] != newValues[key] {
+			changedFields = append(changedFields, key)
+		}
+	}
+
+	notes := ""
+	if len(changedFields) > 0 {
+		notes = fmt.Sprintf("Updated fields: [%s]", strings.Join(changedFields, ", "))
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "STOCK_TRANSFER_UPDATED",
+		EntityType: &entityType,
+		EntityID:   &transferID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogStockTransferDeleted logs when a stock transfer is deleted
+func (s *AuditService) LogStockTransferDeleted(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	transferID string,
+	transferData map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(transferData)
+	oldValuesStr := string(oldValuesJSON)
+	entityType := "STOCK_TRANSFER"
+
+	notes := fmt.Sprintf("Stock transfer deleted: %s", transferID)
+	if number, ok := transferData["transfer_number"].(string); ok {
+		notes = fmt.Sprintf("Stock transfer deleted: %s (ID: %s)", number, transferID)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "STOCK_TRANSFER_DELETED",
+		EntityType: &entityType,
+		EntityID:   &transferID,
+		OldValues:  &oldValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogStockTransferShipped logs when a stock transfer is shipped
+func (s *AuditService) LogStockTransferShipped(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	transferID string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "STOCK_TRANSFER"
+
+	notes := "Stock transfer shipped (DRAFT → SHIPPED)"
+	if number, ok := newValues["transfer_number"].(string); ok {
+		notes = fmt.Sprintf("Stock transfer %s shipped (DRAFT → SHIPPED)", number)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "STOCK_TRANSFER_SHIPPED",
+		EntityType: &entityType,
+		EntityID:   &transferID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogStockTransferReceived logs when a stock transfer is received
+func (s *AuditService) LogStockTransferReceived(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	transferID string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "STOCK_TRANSFER"
+
+	notes := "Stock transfer received (SHIPPED → RECEIVED)"
+	if number, ok := newValues["transfer_number"].(string); ok {
+		notes = fmt.Sprintf("Stock transfer %s received (SHIPPED → RECEIVED)", number)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "STOCK_TRANSFER_RECEIVED",
+		EntityType: &entityType,
+		EntityID:   &transferID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogStockTransferCancelled logs when a stock transfer is cancelled
+func (s *AuditService) LogStockTransferCancelled(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	transferID string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+	reason string,
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "STOCK_TRANSFER"
+
+	notes := fmt.Sprintf("Stock transfer cancelled (SHIPPED → CANCELLED). Reason: %s", reason)
+	if number, ok := newValues["transfer_number"].(string); ok {
+		notes = fmt.Sprintf("Stock transfer %s cancelled (SHIPPED → CANCELLED). Reason: %s", number, reason)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "STOCK_TRANSFER_CANCELLED",
+		EntityType: &entityType,
+		EntityID:   &transferID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogStockTransferOperationFailed logs when a stock transfer operation fails
+func (s *AuditService) LogStockTransferOperationFailed(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	action string,
+	transferID string,
+	errorMsg string,
+) error {
+	entityType := "STOCK_TRANSFER"
+	notes := fmt.Sprintf("Operation failed: %s", errorMsg)
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     action,
+		EntityType: &entityType,
+		EntityID:   &transferID,
+		Status:     StatusFailed,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// GetAuditLogsByEntityID retrieves audit logs for a specific entity
+func (s *AuditService) GetAuditLogsByEntityID(
+	ctx context.Context,
+	tenantID string,
+	entityType string,
+	entityID string,
+	limit int,
+	offset int,
+) ([]models.AuditLog, int64, error) {
+	var logs []models.AuditLog
+	var total int64
+
+	// Set tenant context for GORM tenant isolation
+	db := s.db.WithContext(ctx)
+	if tenantID != "" {
+		db = db.Set("tenant_id", tenantID)
+	}
+
+	query := db.Model(&models.AuditLog{}).
+		Where("tenant_id = ? AND entity_type = ? AND entity_id = ?", tenantID, entityType, entityID)
+
+	// Count total
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to count audit logs: %w", err)
+	}
+
+	// Get paginated results
+	err := query.
+		Order("created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&logs).Error
+
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get audit logs: %w", err)
+	}
+
+	return logs, total, nil
+}
+
+// ==================== Stock Opname Audit Methods ====================
+
+// LogStockOpnameCreated logs when a stock opname is created
+func (s *AuditService) LogStockOpnameCreated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	opnameID string,
+	opnameData interface{},
+) error {
+	newValuesJSON, _ := json.Marshal(opnameData)
+	newValuesStr := string(newValuesJSON)
+	entityType := "STOCK_OPNAME"
+
+	// Create human-readable notes with created fields
+	createdFields := extractFieldNames(opnameData)
+
+	notes := ""
+	if len(createdFields) > 0 {
+		notes = fmt.Sprintf("Created fields: [%s]", strings.Join(createdFields, ", "))
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "STOCK_OPNAME_CREATED",
+		EntityType: &entityType,
+		EntityID:   &opnameID,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogStockOpnameUpdated logs when a stock opname is updated
+func (s *AuditService) LogStockOpnameUpdated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	opnameID string,
+	oldValues interface{},
+	newValues interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "STOCK_OPNAME"
+
+	notes := "Stock opname updated"
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "STOCK_OPNAME_UPDATED",
+		EntityType: &entityType,
+		EntityID:   &opnameID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogStockOpnameDeleted logs when a stock opname is deleted
+func (s *AuditService) LogStockOpnameDeleted(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	opnameID string,
+	opnameData interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(opnameData)
+	oldValuesStr := string(oldValuesJSON)
+	entityType := "STOCK_OPNAME"
+
+	notes := fmt.Sprintf("Stock opname deleted: %s", opnameID)
+	// Extract opname_number from struct or map
+	opnameNumber := getFieldValue(opnameData, "OpnameNumber", "opname_number")
+	if opnameNumber != "" {
+		notes = fmt.Sprintf("Stock opname deleted: %s (ID: %s)", opnameNumber, opnameID)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "STOCK_OPNAME_DELETED",
+		EntityType: &entityType,
+		EntityID:   &opnameID,
+		OldValues:  &oldValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogStockOpnameApproved logs when a stock opname is approved
+func (s *AuditService) LogStockOpnameApproved(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	opnameID string,
+	oldValues map[string]interface{},
+	newValues interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "STOCK_OPNAME"
+
+	notes := "Stock opname approved (COMPLETED → APPROVED)"
+	opnameNumber := getFieldValue(newValues, "OpnameNumber", "opname_number")
+	if opnameNumber != "" {
+		notes = fmt.Sprintf("Stock opname %s approved (COMPLETED → APPROVED)", opnameNumber)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "STOCK_OPNAME_APPROVED",
+		EntityType: &entityType,
+		EntityID:   &opnameID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogStockOpnameBatchUpdated logs when multiple stock opname items are updated in a batch
+func (s *AuditService) LogStockOpnameBatchUpdated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	opnameID string,
+	oldValues interface{},
+	newValues interface{},
+	itemCount int,
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "STOCK_OPNAME"
+
+	// Create human-readable notes
+	notes := fmt.Sprintf("Stock opname items updated (%d items)", itemCount)
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "STOCK_OPNAME_UPDATED",
+		EntityType: &entityType,
+		EntityID:   &opnameID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogStockOpnameItemUpdated logs when a stock opname item is updated
+func (s *AuditService) LogStockOpnameItemUpdated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	opnameID string,
+	itemID string,
+	oldValues interface{},
+	newValues interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "STOCK_OPNAME"
+
+	// Create human-readable notes
+	notes := fmt.Sprintf("Stock opname item updated (item: %s)", itemID)
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "STOCK_OPNAME_UPDATED",
+		EntityType: &entityType,
+		EntityID:   &opnameID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogStockOpnameOperationFailed logs when a stock opname operation fails
+func (s *AuditService) LogStockOpnameOperationFailed(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	action string,
+	opnameID string,
+	errorMsg string,
+) error {
+	entityType := "STOCK_OPNAME"
+	notes := fmt.Sprintf("Operation failed: %s", errorMsg)
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     action,
+		EntityType: &entityType,
+		EntityID:   &opnameID,
+		Status:     StatusFailed,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// ==================== Warehouse Stock Audit Methods ====================
+
+// LogWarehouseStockUpdated logs when warehouse stock settings are updated
+func (s *AuditService) LogWarehouseStockUpdated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	stockID string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "WAREHOUSE_STOCK"
+
+	// Create human-readable notes with changed fields
+	changedFields := []string{}
+	for key, newValue := range newValues {
+		oldValue, exists := oldValues[key]
+		if !exists || !reflect.DeepEqual(oldValue, newValue) {
+			changedFields = append(changedFields, key)
+		}
+	}
+
+	notes := ""
+	if len(changedFields) > 0 {
+		notes = fmt.Sprintf("Updated fields: [%s]", strings.Join(changedFields, ", "))
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "WAREHOUSE_STOCK_UPDATED",
+		EntityType: &entityType,
+		EntityID:   &stockID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
 		IPAddress:  auditCtx.IPAddress,
 		UserAgent:  auditCtx.UserAgent,
 		Notes:      &notes,

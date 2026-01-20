@@ -22,11 +22,23 @@ import type {
   TransferFilters,
 } from "@/types/transfer.types";
 import type { ApiSuccessResponse } from "@/types/api";
+import type { AuditLog } from "@/types/audit";
+
+// Audit log response for entity-specific queries
+interface AuditLogsByEntityResponse {
+  success: boolean;
+  data: AuditLog[];
+  pagination: {
+    limit: number;
+    offset: number;
+    total: number;
+  };
+}
 
 export const transferApi = createApi({
   reducerPath: "transferApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["Transfer", "TransferList", "Stock", "StockList"],
+  tagTypes: ["Transfer", "TransferList", "Stock", "StockList", "TransferAuditLog"],
   endpoints: (builder) => ({
     // ==================== Transfer Listing ====================
 
@@ -108,7 +120,10 @@ export const transferApi = createApi({
       }),
       transformResponse: (response: ApiSuccessResponse<TransferResponse>) =>
         response.data,
-      invalidatesTags: [{ type: "TransferList", id: "LIST" }],
+      invalidatesTags: (result) => [
+        { type: "TransferList", id: "LIST" },
+        ...(result ? [{ type: "TransferAuditLog" as const, id: result.id }] : []),
+      ],
     }),
 
     /**
@@ -129,6 +144,7 @@ export const transferApi = createApi({
       invalidatesTags: (result, error, { id }) => [
         { type: "Transfer", id },
         { type: "TransferList", id: "LIST" },
+        { type: "TransferAuditLog", id },
       ],
     }),
 
@@ -144,6 +160,7 @@ export const transferApi = createApi({
       invalidatesTags: (result, error, id) => [
         { type: "Transfer", id },
         { type: "TransferList", id: "LIST" },
+        { type: "TransferAuditLog", id },
       ],
     }),
 
@@ -167,6 +184,7 @@ export const transferApi = createApi({
       invalidatesTags: (result, error, { id }) => [
         { type: "Transfer", id },
         { type: "TransferList", id: "LIST" },
+        { type: "TransferAuditLog", id },
       ],
     }),
 
@@ -190,6 +208,7 @@ export const transferApi = createApi({
       invalidatesTags: (result, error, { id }) => [
         { type: "Transfer", id },
         { type: "TransferList", id: "LIST" },
+        { type: "TransferAuditLog", id },
         // Invalidate stock data since inventory changed
         { type: "Stock", id: "LIST" },
         { type: "StockList", id: "LIST" },
@@ -214,6 +233,27 @@ export const transferApi = createApi({
       invalidatesTags: (result, error, { id }) => [
         { type: "Transfer", id },
         { type: "TransferList", id: "LIST" },
+        { type: "TransferAuditLog", id },
+      ],
+    }),
+
+    // ==================== Audit Logs ====================
+
+    /**
+     * Get Transfer Audit Logs
+     * GET /api/v1/audit-logs/stock_transfer/:id
+     */
+    getTransferAuditLogs: builder.query<
+      AuditLog[],
+      { transferId: string; limit?: number; offset?: number }
+    >({
+      query: ({ transferId, limit = 20, offset = 0 }) => ({
+        url: `/audit-logs/stock_transfer/${transferId}`,
+        params: { limit, offset },
+      }),
+      transformResponse: (response: AuditLogsByEntityResponse) => response.data,
+      providesTags: (result, error, { transferId }) => [
+        { type: "TransferAuditLog", id: transferId },
       ],
     }),
   }),
@@ -229,4 +269,5 @@ export const {
   useShipTransferMutation,
   useReceiveTransferMutation,
   useCancelTransferMutation,
+  useGetTransferAuditLogsQuery,
 } = transferApi;

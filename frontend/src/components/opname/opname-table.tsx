@@ -11,7 +11,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Eye, Edit, Trash2, CheckCircle, MoreHorizontal } from "lucide-react";
+import { Eye, Edit, Trash2, CheckCircle, MoreHorizontal, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -45,6 +45,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { StockOpname } from "@/types/opname.types";
 import { OPNAME_STATUS_CONFIG } from "@/types/opname.types";
 import { useState } from "react";
+import { cn } from "@/lib/utils";
 
 interface OpnameTableProps {
   opnames: StockOpname[];
@@ -148,20 +149,55 @@ export function OpnameTable({
     setApproveDialogOpen(true);
   };
 
+  // Render sortable header with indicator
+  const SortableHeader = ({
+    column,
+    label,
+    className,
+  }: {
+    column: string;
+    label: string;
+    className?: string;
+  }) => {
+    const isSorted = sortBy === column;
+    const isAsc = sortOrder === "asc";
+
+    return (
+      <TableHead className={cn("cursor-pointer select-none", className)}>
+        <button
+          type="button"
+          onClick={() => onSortChange?.(column)}
+          className="flex items-center gap-1 hover:text-foreground transition-colors w-full"
+        >
+          <span>{label}</span>
+          {isSorted ? (
+            isAsc ? (
+              <ChevronUp className="h-4 w-4 text-primary" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-primary" />
+            )
+          ) : (
+            <ChevronsUpDown className="h-4 w-4 text-muted-foreground/50" />
+          )}
+        </button>
+      </TableHead>
+    );
+  };
+
   return (
     <>
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Nomor Opname</TableHead>
-              <TableHead>Tanggal</TableHead>
-              <TableHead>Gudang</TableHead>
+              <SortableHeader column="opnameNumber" label="Nomor Opname" />
+              <SortableHeader column="opnameDate" label="Tanggal" />
+              <SortableHeader column="warehouse" label="Gudang" />
               <TableHead className="text-right">Total Item</TableHead>
               <TableHead className="text-right">Expected Qty</TableHead>
               <TableHead className="text-right">Actual Qty</TableHead>
               <TableHead className="text-right">Selisih</TableHead>
-              <TableHead>Status</TableHead>
+              <SortableHeader column="status" label="Status" />
               <TableHead className="w-[70px]">
                 <span className="sr-only">Aksi</span>
               </TableHead>

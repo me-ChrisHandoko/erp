@@ -445,6 +445,13 @@ func (h *WarehouseHandler) UpdateWarehouseStock(c *gin.Context) {
 		return
 	}
 
+	// Get user ID from context (for audit logging)
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("User context not found."))
+		return
+	}
+
 	// Get stock ID from path
 	stockID := c.Param("id")
 	if stockID == "" {
@@ -459,8 +466,12 @@ func (h *WarehouseHandler) UpdateWarehouseStock(c *gin.Context) {
 		return
 	}
 
+	// Get IP address and User-Agent for audit logging
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	// Update warehouse stock
-	stockModel, err := h.warehouseService.UpdateWarehouseStock(c.Request.Context(), tenantID.(string), companyID.(string), stockID, &req)
+	stockModel, err := h.warehouseService.UpdateWarehouseStock(c.Request.Context(), tenantID.(string), companyID.(string), stockID, userID.(string), ipAddress, userAgent, &req)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)

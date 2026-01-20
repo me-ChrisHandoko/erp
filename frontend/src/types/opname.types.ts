@@ -128,6 +128,24 @@ export interface UpdateStockOpnameItemRequest {
 }
 
 /**
+ * Batch Update Stock Opname Item Request
+ * Body item for batch update
+ */
+export interface BatchUpdateStockOpnameItemRequest {
+  itemId: string;
+  actualQty?: string; // decimal as string
+  notes?: string;
+}
+
+/**
+ * Batch Update Stock Opname Items Request
+ * Body for PUT /api/v1/stock-opnames/:opnameId/items/batch
+ */
+export interface BatchUpdateStockOpnameItemsRequest {
+  items: BatchUpdateStockOpnameItemRequest[];
+}
+
+/**
  * Approve Stock Opname Request
  * Body for POST /api/v1/stock-opnames/:id/approve
  */
@@ -144,6 +162,17 @@ export interface ApproveStockOpnameRequest {
 export type StockOpnameResponse = StockOpname;
 
 /**
+ * Status Counts for statistics cards
+ */
+export interface StockOpnameStatusCounts {
+  draft: number;
+  inProgress: number;
+  completed: number;
+  approved: number;
+  cancelled: number;
+}
+
+/**
  * Stock Opname List Response
  * Paginated list of opnames
  */
@@ -157,6 +186,7 @@ export interface StockOpnameListResponse {
     totalPages: number;
     hasMore: boolean;
   };
+  statusCounts?: StockOpnameStatusCounts;
 }
 
 // ==================== Filter & Query Types ====================

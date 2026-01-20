@@ -536,7 +536,7 @@ func (s *WarehouseService) ListWarehouseStocks(ctx context.Context, tenantID, co
 }
 
 // UpdateWarehouseStock updates warehouse stock settings (not quantity)
-func (s *WarehouseService) UpdateWarehouseStock(ctx context.Context, tenantID, companyID, stockID string, req *dto.UpdateWarehouseStockRequest) (*models.WarehouseStock, error) {
+func (s *WarehouseService) UpdateWarehouseStock(ctx context.Context, tenantID, companyID, stockID, userID, ipAddress, userAgent string, req *dto.UpdateWarehouseStockRequest) (*models.WarehouseStock, error) {
 	// Get existing warehouse stock
 	var stock models.WarehouseStock
 	err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
@@ -550,6 +550,13 @@ func (s *WarehouseService) UpdateWarehouseStock(ctx context.Context, tenantID, c
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get warehouse stock: %w", err)
+	}
+
+	// Capture old values for audit logging
+	oldValues := map[string]interface{}{
+		"minimum_stock": stock.MinimumStock.String(),
+		"maximum_stock": stock.MaximumStock.String(),
+		"location":      stock.Location,
 	}
 
 	// Update fields
@@ -582,6 +589,27 @@ func (s *WarehouseService) UpdateWarehouseStock(ctx context.Context, tenantID, c
 	// Save updates
 	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).Save(&stock).Error; err != nil {
 		return nil, fmt.Errorf("failed to update warehouse stock: %w", err)
+	}
+
+	// Audit logging - Log successful warehouse stock update
+	requestID := uuid.New().String()
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		RequestID: &requestID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
+	newValues := map[string]interface{}{
+		"minimum_stock": stock.MinimumStock.String(),
+		"maximum_stock": stock.MaximumStock.String(),
+		"location":      stock.Location,
+	}
+
+	if err := s.auditService.LogWarehouseStockUpdated(ctx, auditCtx, stock.ID, oldValues, newValues); err != nil {
+		fmt.Printf("WARNING: Failed to create audit log for warehouse stock: %v\n", err)
 	}
 
 	// Reload with Product relation

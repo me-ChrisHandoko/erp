@@ -75,6 +75,8 @@ func (h *StockTransferHandler) CreateStockTransfer(c *gin.Context) {
 		companyID.(string),
 		userIDStr,
 		&req,
+		c.ClientIP(),
+		c.Request.UserAgent(),
 	)
 	if err != nil {
 		log.Printf("❌ [CreateStockTransfer] Service error: %v\n", err)
@@ -151,10 +153,29 @@ func (h *StockTransferHandler) ListStockTransfers(c *gin.Context) {
 		responses[i] = mapStockTransferToResponse(&transfer)
 	}
 
+	// Get status counts for statistics
+	statusCounts, err := h.stockTransferService.GetStatusCounts(c.Request.Context(), tenantID.(string), companyID.(string))
+	if err != nil {
+		// Log error but don't fail the request - status counts are optional
+		println("⚠️ Failed to get status counts:", err.Error())
+		statusCounts = map[string]int64{
+			"DRAFT":     0,
+			"SHIPPED":   0,
+			"RECEIVED":  0,
+			"CANCELLED": 0,
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success":    true,
 		"data":       responses,
 		"pagination": pagination,
+		"statusCounts": gin.H{
+			"draft":     statusCounts["DRAFT"],
+			"shipped":   statusCounts["SHIPPED"],
+			"received":  statusCounts["RECEIVED"],
+			"cancelled": statusCounts["CANCELLED"],
+		},
 	})
 }
 
@@ -214,6 +235,12 @@ func (h *StockTransferHandler) UpdateStockTransfer(c *gin.Context) {
 		return
 	}
 
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
 	transferID := c.Param("id")
 	if transferID == "" {
 		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Transfer ID is required"))
@@ -231,7 +258,10 @@ func (h *StockTransferHandler) UpdateStockTransfer(c *gin.Context) {
 		tenantID.(string),
 		companyID.(string),
 		transferID,
+		userIDStr,
 		&req,
+		c.ClientIP(),
+		c.Request.UserAgent(),
 	)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
@@ -263,6 +293,12 @@ func (h *StockTransferHandler) DeleteStockTransfer(c *gin.Context) {
 		return
 	}
 
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
 	transferID := c.Param("id")
 	if transferID == "" {
 		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Transfer ID is required"))
@@ -274,6 +310,9 @@ func (h *StockTransferHandler) DeleteStockTransfer(c *gin.Context) {
 		tenantID.(string),
 		companyID.(string),
 		transferID,
+		userIDStr,
+		c.ClientIP(),
+		c.Request.UserAgent(),
 	)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
@@ -331,6 +370,8 @@ func (h *StockTransferHandler) ShipStockTransfer(c *gin.Context) {
 		transferID,
 		userIDStr,
 		&req,
+		c.ClientIP(),
+		c.Request.UserAgent(),
 	)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
@@ -384,6 +425,8 @@ func (h *StockTransferHandler) ReceiveStockTransfer(c *gin.Context) {
 		transferID,
 		userIDStr,
 		&req,
+		c.ClientIP(),
+		c.Request.UserAgent(),
 	)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
@@ -415,6 +458,12 @@ func (h *StockTransferHandler) CancelStockTransfer(c *gin.Context) {
 		return
 	}
 
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
 	transferID := c.Param("id")
 	if transferID == "" {
 		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Transfer ID is required"))
@@ -432,7 +481,10 @@ func (h *StockTransferHandler) CancelStockTransfer(c *gin.Context) {
 		tenantID.(string),
 		companyID.(string),
 		transferID,
+		userIDStr,
 		&req,
+		c.ClientIP(),
+		c.Request.UserAgent(),
 	)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {

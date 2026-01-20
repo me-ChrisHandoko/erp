@@ -63,12 +63,23 @@ export interface StockTransfer {
 }
 
 /**
+ * Status Counts for statistics cards
+ */
+export interface TransferStatusCounts {
+  draft: number;
+  shipped: number;
+  received: number;
+  cancelled: number;
+}
+
+/**
  * Transfer List Response (matches backend pagination structure)
  */
 export interface TransferListResponse {
   success: boolean;
   data: StockTransfer[];
   pagination: PaginationInfo;
+  statusCounts?: TransferStatusCounts;
 }
 
 /**

@@ -191,8 +191,8 @@ export function StockClient({ initialData }: StockClientProps) {
         {displayData && displayData.data.length > 0 && (
           <div className="grid gap-4 md:grid-cols-3">
             {/* Total Item Card */}
-            <div className="overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-300 rounded-xl">
-              <div className="relative bg-linear-to-br from-blue-500 to-blue-600 p-6">
+            <div className="overflow-hidden shadow-none hover:shadow-sm transition-shadow duration-300 rounded-xl">
+              <div className="relative bg-gradient-to-br from-blue-500 to-blue-600 p-6">
                 <div className="flex items-start justify-between">
                   <div className="space-y-2">
                     <p className="text-sm font-medium text-blue-100">
@@ -216,8 +216,8 @@ export function StockClient({ initialData }: StockClientProps) {
             </div>
 
             {/* Stok Rendah Card */}
-            <div className="overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-300 rounded-xl">
-              <div className="relative bg-linear-to-br from-amber-500 to-orange-600 p-6">
+            <div className="overflow-hidden shadow-none hover:shadow-sm transition-shadow duration-300 rounded-xl">
+              <div className="relative bg-gradient-to-br from-amber-500 to-orange-600 p-6">
                 <div className="flex items-start justify-between">
                   <div className="space-y-2">
                     <p className="text-sm font-medium text-amber-100">
@@ -246,8 +246,8 @@ export function StockClient({ initialData }: StockClientProps) {
             </div>
 
             {/* Stok Habis Card */}
-            <div className="overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-300 rounded-xl">
-              <div className="relative bg-linear-to-br from-red-500 to-red-600 p-6">
+            <div className="overflow-hidden shadow-none hover:shadow-sm transition-shadow duration-300 rounded-xl">
+              <div className="relative bg-gradient-to-br from-red-500 to-red-600 p-6">
                 <div className="flex items-start justify-between">
                   <div className="space-y-2">
                     <p className="text-sm font-medium text-red-100">

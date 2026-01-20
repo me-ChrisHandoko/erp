@@ -12,7 +12,7 @@
 
 import { use } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Edit, Trash2, CheckCircle, FileText } from "lucide-react";
+import { ArrowLeft, Edit, Trash2, CheckCircle, FileText, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +41,7 @@ import { useGetOpnameQuery, useDeleteOpnameMutation, useApproveOpnameMutation } 
 import { usePermissions } from "@/hooks/use-permissions";
 import { useToast } from "@/hooks/use-toast";
 import { OPNAME_STATUS_CONFIG } from "@/types/opname.types";
+import { OpnameAuditLog } from "@/components/opname/opname-audit-log";
 import { useState } from "react";
 
 export default function OpnameDetailPage() {
@@ -407,6 +408,19 @@ export default function OpnameDetailPage() {
                   <p className="text-sm whitespace-pre-wrap">{opname.notes}</p>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Audit Log History */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-5 w-5" />
+                Riwayat Perubahan
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <OpnameAuditLog opnameId={opnameId} />
             </CardContent>
           </Card>
         </div>

@@ -28,11 +28,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { TransferStatusBadge } from "./transfer-status-badge";
+import { TransferAuditLog } from "./transfer-audit-log";
 import {
   Package,
   Warehouse,
   Calendar,
-  User,
   Clock,
   ArrowRight,
 } from "lucide-react";
@@ -59,17 +59,6 @@ export function TransferDetailDialog({
     return format(new Date(timestamp), "dd MMM yyyy, HH:mm", {
       locale: localeId,
     });
-  };
-
-  // Format user ID for display (extract readable part)
-  const formatUserId = (userId?: string) => {
-    if (!userId) return "-";
-    // Extract email username or first part before @ or UUID
-    const emailMatch = userId.match(/^([^@]+)@/);
-    if (emailMatch) return emailMatch[1];
-    // For UUIDs or long IDs, show first 8 chars
-    if (userId.length > 20) return userId.substring(0, 8);
-    return userId;
   };
 
   // Calculate total quantity
@@ -224,72 +213,9 @@ export function TransferDetailDialog({
             </div>
           </div>
 
-          {/* Audit Trail - only for shipped/received transfers */}
-          {(transfer.status === "SHIPPED" ||
-            transfer.status === "RECEIVED") && (
-            <>
-              <Separator />
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                  <Clock className="h-4 w-4" />
-                  Riwayat
-                </div>
-                <div className="space-y-2">
-                  {transfer.shippedAt && (
-                    <div className="flex items-start gap-3 p-3 rounded-md border bg-muted/30">
-                      <div className="flex-1 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <Badge
-                            variant="secondary"
-                            className="text-xs font-normal"
-                          >
-                            Dikirim
-                          </Badge>
-                          <span className="text-xs text-muted-foreground">
-                            {formatTimestamp(transfer.shippedAt)}
-                          </span>
-                        </div>
-                        {transfer.shippedBy && (
-                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                            <User className="h-3 w-3" />
-                            <span className="truncate">
-                              {formatUserId(transfer.shippedBy)}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {transfer.receivedAt && (
-                    <div className="flex items-start gap-3 p-3 rounded-md border bg-muted/30">
-                      <div className="flex-1 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <Badge
-                            variant="secondary"
-                            className="text-xs font-normal"
-                          >
-                            Diterima
-                          </Badge>
-                          <span className="text-xs text-muted-foreground">
-                            {formatTimestamp(transfer.receivedAt)}
-                          </span>
-                        </div>
-                        {transfer.receivedBy && (
-                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                            <User className="h-3 w-3" />
-                            <span className="truncate">
-                              {formatUserId(transfer.receivedBy)}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
+          {/* Audit Trail */}
+          <Separator />
+          <TransferAuditLog transferId={transfer.id} />
 
           {/* Notes */}
           {transfer.notes && (

@@ -22,13 +22,26 @@ import type {
   ApproveStockOpnameRequest,
   StockOpnameItem,
   UpdateStockOpnameItemRequest,
+  BatchUpdateStockOpnameItemsRequest,
 } from "@/types/opname.types";
 import type { ApiSuccessResponse } from "@/types/api";
+import type { AuditLog } from "@/types/audit";
+
+// Response type for audit logs by entity
+interface AuditLogsByEntityResponse {
+  success: boolean;
+  data: AuditLog[];
+  pagination: {
+    limit: number;
+    offset: number;
+    total: number;
+  };
+}
 
 export const opnameApi = createApi({
   reducerPath: "opnameApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["StockOpname", "StockOpnameList", "StockOpnameItem"],
+  tagTypes: ["StockOpname", "StockOpnameList", "StockOpnameItem", "OpnameAuditLog"],
   endpoints: (builder) => ({
     // ==================== Stock Opname CRUD ====================
 
@@ -210,6 +223,29 @@ export const opnameApi = createApi({
     }),
 
     /**
+     * Batch Update Opname Items
+     * PUT /api/v1/stock-opnames/:opnameId/items/batch
+     * Updates multiple items in a single request with merged audit log
+     */
+    batchUpdateOpnameItems: builder.mutation<
+      StockOpnameItem[],
+      { opnameId: string; data: BatchUpdateStockOpnameItemsRequest }
+    >({
+      query: ({ opnameId, data }) => ({
+        url: `/stock-opnames/${opnameId}/items/batch`,
+        method: "PUT",
+        body: data,
+      }),
+      transformResponse: (response: ApiSuccessResponse<StockOpnameItem[]>) =>
+        response.data,
+      invalidatesTags: (result, error, { opnameId }) => [
+        { type: "StockOpname", id: opnameId },
+        { type: "StockOpnameItem", id: "LIST" },
+        { type: "OpnameAuditLog", id: opnameId },
+      ],
+    }),
+
+    /**
      * Delete Opname Item
      * DELETE /api/v1/stock-opnames/:opnameId/items/:itemId
      */
@@ -245,6 +281,27 @@ export const opnameApi = createApi({
         { type: "StockOpnameItem", id: "LIST" },
       ],
     }),
+
+    // ==================== Audit Logs ====================
+
+    /**
+     * Get Opname Audit Logs
+     * GET /api/v1/audit-logs/stock_opname/:opnameId
+     * Returns audit trail for a specific stock opname
+     */
+    getOpnameAuditLogs: builder.query<
+      AuditLog[],
+      { opnameId: string; limit?: number; offset?: number }
+    >({
+      query: ({ opnameId, limit = 50, offset = 0 }) => ({
+        url: `/audit-logs/stock_opname/${opnameId}`,
+        params: { limit, offset },
+      }),
+      transformResponse: (response: AuditLogsByEntityResponse) => response.data,
+      providesTags: (result, error, { opnameId }) => [
+        { type: "OpnameAuditLog", id: opnameId },
+      ],
+    }),
   }),
 });
 
@@ -258,6 +315,8 @@ export const {
   useApproveOpnameMutation,
   useAddOpnameItemMutation,
   useUpdateOpnameItemMutation,
+  useBatchUpdateOpnameItemsMutation,
   useDeleteOpnameItemMutation,
   useImportWarehouseProductsMutation,
+  useGetOpnameAuditLogsQuery,
 } = opnameApi;

@@ -7,10 +7,10 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useSelector } from "react-redux";
-import { ArrowLeft, Save, Download, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Save, Download, Plus, Trash2, Package, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,10 +31,22 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { useToast } from "@/hooks/use-toast";
 import { useListWarehousesQuery } from "@/store/services/warehouseApi";
 import { useListStocksQuery } from "@/store/services/stockApi";
+import { useListProductsQuery } from "@/store/services/productApi";
 import { useCreateOpnameMutation } from "@/store/services/opnameApi";
 import type { RootState } from "@/store";
 import type { CreateStockOpnameItemRequest } from "@/types/opname.types";
@@ -58,6 +70,8 @@ export function CreateOpnameClient() {
   const [notes, setNotes] = useState<string>("");
   const [items, setItems] = useState<OpnameItemForm[]>([]);
   const [isImporting, setIsImporting] = useState(false);
+  const [selectedProductId, setSelectedProductId] = useState<string>("");
+  const [showImportConfirm, setShowImportConfirm] = useState(false);
 
   const activeCompanyId = useSelector(
     (state: RootState) => state.company.activeCompany?.id
@@ -90,7 +104,73 @@ export function CreateOpnameClient() {
     }
   );
 
+  // Fetch products for manual addition
+  const { data: productsData, isLoading: isLoadingProducts } = useListProductsQuery(
+    {
+      page: 1,
+      pageSize: 100,
+      isActive: true,
+      sortBy: "code",
+      sortOrder: "asc",
+    },
+    {
+      skip: !activeCompanyId || !warehouseId,
+    }
+  );
+
   const [createOpname, { isLoading: isCreating }] = useCreateOpnameMutation();
+
+  // Build product options for combobox (exclude already added products)
+  const productOptions: ComboboxOption[] = useMemo(() => {
+    if (!productsData?.data) return [];
+
+    const addedProductIds = new Set(items.map((item) => item.productId));
+
+    return productsData.data
+      .filter((product) => !addedProductIds.has(product.id))
+      .map((product) => ({
+        value: product.id,
+        label: `${product.code} - ${product.name}`,
+        searchLabel: `${product.code} ${product.name}`,
+        code: product.code,
+      }));
+  }, [productsData?.data, items]);
+
+  // Handle adding product manually
+  const handleAddProduct = () => {
+    if (!selectedProductId) {
+      toast({
+        title: "Pilih Produk",
+        description: "Pilih produk terlebih dahulu",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const product = productsData?.data?.find((p) => p.id === selectedProductId);
+    if (!product) return;
+
+    // Get expected qty from stock data if available
+    const stockItem = stocksData?.data?.find((s) => s.productID === selectedProductId);
+    const expectedQty = stockItem?.quantity || "0";
+
+    const newItem: OpnameItemForm = {
+      productId: product.id,
+      productCode: product.code,
+      productName: product.name,
+      expectedQty: expectedQty,
+      actualQty: "",
+      notes: "",
+    };
+
+    setItems([...items, newItem]);
+    setSelectedProductId("");
+
+    toast({
+      title: "Berhasil",
+      description: `${product.name} ditambahkan ke daftar opname`,
+    });
+  };
 
   const handleImportProducts = () => {
     if (!stocksData?.data) {
@@ -101,6 +181,18 @@ export function CreateOpnameClient() {
       });
       return;
     }
+
+    // Show confirmation if there are existing items
+    if (items.length > 0) {
+      setShowImportConfirm(true);
+      return;
+    }
+
+    doImportProducts();
+  };
+
+  const doImportProducts = () => {
+    if (!stocksData?.data) return;
 
     setIsImporting(true);
     const importedItems: OpnameItemForm[] = stocksData.data.map((stock) => ({
@@ -114,6 +206,7 @@ export function CreateOpnameClient() {
 
     setItems(importedItems);
     setIsImporting(false);
+    setShowImportConfirm(false);
 
     toast({
       title: "Berhasil",
@@ -315,6 +408,50 @@ export function CreateOpnameClient() {
               </span>
             )}
           </div>
+
+          {/* Manual Product Addition */}
+          <div className="space-y-2">
+            <Label>Tambah Produk Manual</Label>
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <Combobox
+                  options={productOptions}
+                  value={selectedProductId}
+                  onValueChange={setSelectedProductId}
+                  placeholder="Cari dan pilih produk..."
+                  searchPlaceholder="Ketik kode atau nama produk..."
+                  emptyMessage={
+                    isLoadingProducts
+                      ? "Memuat produk..."
+                      : "Produk tidak ditemukan"
+                  }
+                  disabled={!warehouseId || isLoadingProducts}
+                  renderOption={(option, selected) => (
+                    <div className="flex items-center gap-2 w-full">
+                      <Package className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <span className="font-medium truncate">{option.code}</span>
+                        <span className="text-xs text-muted-foreground truncate">
+                          {option.label.split(" - ")[1]}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                />
+              </div>
+              <Button
+                type="button"
+                onClick={handleAddProduct}
+                disabled={!selectedProductId || !warehouseId}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Tambah
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Pilih produk satu per satu atau gunakan tombol &quot;Import Produk dari Gudang&quot; untuk mengimport semua produk sekaligus
+            </p>
+          </div>
         </CardContent>
       </Card>
 
@@ -443,6 +580,33 @@ export function CreateOpnameClient() {
           )}
         </Button>
       </div>
+
+      {/* Import Confirmation Dialog */}
+      <AlertDialog open={showImportConfirm} onOpenChange={setShowImportConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Konfirmasi Import
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Anda sudah memiliki <strong>{items.length} produk</strong> dalam daftar.
+              Import dari gudang akan <strong>menimpa semua data</strong> yang sudah ada.
+              <br /><br />
+              Apakah Anda yakin ingin melanjutkan?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={doImportProducts}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              Ya, Timpa Data
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
