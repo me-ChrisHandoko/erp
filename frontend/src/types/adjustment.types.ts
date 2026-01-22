@@ -107,12 +107,22 @@ export interface InventoryAdjustment {
 }
 
 /**
+ * Adjustment Status Counts (for statistics cards)
+ */
+export interface AdjustmentStatusCounts {
+  draft: number;
+  approved: number;
+  cancelled: number;
+}
+
+/**
  * Adjustment List Response (matches backend pagination structure)
  */
 export interface AdjustmentListResponse {
   success: boolean;
   data: InventoryAdjustment[];
   pagination: PaginationInfo;
+  statusCounts?: AdjustmentStatusCounts; // Optional: provided by backend for statistics cards
 }
 
 /**

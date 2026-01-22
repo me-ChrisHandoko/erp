@@ -42,9 +42,9 @@ interface ReceiptsClientProps {
 export function ReceiptsClient({ initialData }: ReceiptsClientProps) {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<GoodsReceiptStatus | undefined>(
-    undefined
-  );
+  const [statusFilter, setStatusFilter] = useState<
+    GoodsReceiptStatus | undefined
+  >(undefined);
   const [filters, setFilters] = useState<GoodsReceiptFilters>({
     page: 1,
     pageSize: 20,
@@ -119,7 +119,8 @@ export function ReceiptsClient({ initialData }: ReceiptsClientProps) {
       return {
         ...prev,
         sortBy: sortBy as GoodsReceiptFilters["sortBy"],
-        sortOrder: sortBy === "createdAt" || sortBy === "grnDate" ? "desc" : "asc",
+        sortOrder:
+          sortBy === "createdAt" || sortBy === "grnDate" ? "desc" : "asc",
       } as GoodsReceiptFilters;
     });
   };
@@ -202,7 +203,10 @@ export function ReceiptsClient({ initialData }: ReceiptsClientProps) {
           {/* Loading State */}
           {isLoading && !displayData && (
             <div className="py-12">
-              <LoadingSpinner size="lg" text="Memuat data penerimaan barang..." />
+              <LoadingSpinner
+                size="lg"
+                text="Memuat data penerimaan barang..."
+              />
             </div>
           )}
 
@@ -225,7 +229,8 @@ export function ReceiptsClient({ initialData }: ReceiptsClientProps) {
                     Belum ada penerimaan barang
                   </h3>
                   <p className="mb-4 text-sm text-muted-foreground">
-                    Penerimaan barang akan muncul setelah ada Purchase Order yang diproses
+                    Penerimaan barang akan muncul setelah ada Purchase Order
+                    yang diproses
                   </p>
                 </div>
               ) : (
@@ -247,7 +252,7 @@ export function ReceiptsClient({ initialData }: ReceiptsClientProps) {
 
                   {/* Pagination */}
                   {displayData?.pagination && (
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t pt-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ">
                       {/* 1. Summary - Record Data */}
                       <div className="text-sm text-muted-foreground text-center sm:text-left">
                         {(() => {

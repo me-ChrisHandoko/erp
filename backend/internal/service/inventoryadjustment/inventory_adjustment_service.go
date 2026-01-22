@@ -3,6 +3,7 @@ package inventoryadjustment
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -10,20 +11,53 @@ import (
 	"gorm.io/gorm"
 
 	"backend/internal/dto"
+	"backend/internal/service/audit"
 	"backend/models"
 	pkgerrors "backend/pkg/errors"
 )
 
 // InventoryAdjustmentService handles business logic for inventory adjustments
 type InventoryAdjustmentService struct {
-	db *gorm.DB
+	db           *gorm.DB
+	auditService *audit.AuditService
 }
 
 // NewInventoryAdjustmentService creates a new inventory adjustment service instance
-func NewInventoryAdjustmentService(db *gorm.DB) *InventoryAdjustmentService {
+func NewInventoryAdjustmentService(db *gorm.DB, auditService *audit.AuditService) *InventoryAdjustmentService {
 	return &InventoryAdjustmentService{
-		db: db,
+		db:           db,
+		auditService: auditService,
 	}
+}
+
+// ==================== Audit Data Structures ====================
+
+// adjustmentAuditData represents the main adjustment data for audit logging
+type adjustmentAuditData struct {
+	WarehouseID      string                    `json:"warehouse_id"`
+	WarehouseName    string                    `json:"warehouse_name"`
+	AdjustmentNumber string                    `json:"adjustment_number"`
+	AdjustmentDate   string                    `json:"adjustment_date"`
+	AdjustmentType   string                    `json:"adjustment_type"`
+	Reason           string                    `json:"reason"`
+	Status           string                    `json:"status"`
+	Notes            string                    `json:"notes"`
+	TotalItems       int                       `json:"total_items"`
+	TotalValue       string                    `json:"total_value"`
+	Items            []adjustmentAuditItemData `json:"items"`
+}
+
+// adjustmentAuditItemData represents item-level data for audit logging
+type adjustmentAuditItemData struct {
+	ProductID        string `json:"product_id"`
+	ProductName      string `json:"product_name"`
+	ProductCode      string `json:"product_code"`
+	QuantityBefore   string `json:"quantity_before"`
+	QuantityAdjusted string `json:"quantity_adjusted"`
+	QuantityAfter    string `json:"quantity_after"`
+	UnitCost         string `json:"unit_cost"`
+	TotalValue       string `json:"total_value"`
+	Notes            string `json:"notes"`
 }
 
 // CreateInventoryAdjustment creates a new inventory adjustment (DRAFT status)
@@ -31,6 +65,7 @@ func (s *InventoryAdjustmentService) CreateInventoryAdjustment(
 	ctx context.Context,
 	tenantID, companyID, userID string,
 	req *dto.CreateInventoryAdjustmentRequest,
+	ipAddress, userAgent string,
 ) (*models.InventoryAdjustment, error) {
 	// Validate warehouse belongs to company
 	var warehouse models.Warehouse
@@ -171,8 +206,108 @@ func (s *InventoryAdjustmentService) CreateInventoryAdjustment(
 		return nil, pkgerrors.NewInternalError(err)
 	}
 
+	// === AUDIT LOGGING ===
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		// Get product names for human-readable audit
+		productIDs := make([]string, len(req.Items))
+		for i, item := range req.Items {
+			productIDs[i] = item.ProductID
+		}
+		productNameMap := make(map[string]string)
+		productCodeMap := make(map[string]string)
+		var products []models.Product
+		if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+			Where("id IN ?", productIDs).
+			Select("id", "name", "code").
+			Find(&products).Error; err == nil {
+			for _, p := range products {
+				productNameMap[p.ID] = p.Name
+				productCodeMap[p.ID] = p.Code
+			}
+		}
+
+		// Build audit items data
+		itemsData := make([]adjustmentAuditItemData, len(req.Items))
+		for i, itemReq := range req.Items {
+			qty, _ := decimal.NewFromString(itemReq.QuantityAdjusted)
+			unitCost, _ := decimal.NewFromString(itemReq.UnitCost)
+
+			// Get current stock for quantity before
+			var warehouseStock models.WarehouseStock
+			currentQty := decimal.Zero
+			if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+				Where("warehouse_id = ? AND product_id = ?", req.WarehouseID, itemReq.ProductID).
+				First(&warehouseStock).Error; err == nil {
+				currentQty = warehouseStock.Quantity
+			}
+
+			var qtyAdjusted, qtyAfter decimal.Decimal
+			if req.AdjustmentType == "INCREASE" {
+				qtyAdjusted = qty
+				qtyAfter = currentQty.Add(qty)
+			} else {
+				qtyAdjusted = qty.Neg()
+				qtyAfter = currentQty.Sub(qty)
+			}
+
+			itemsData[i] = adjustmentAuditItemData{
+				ProductID:        itemReq.ProductID,
+				ProductName:      productNameMap[itemReq.ProductID],
+				ProductCode:      productCodeMap[itemReq.ProductID],
+				QuantityBefore:   currentQty.String(),
+				QuantityAdjusted: qtyAdjusted.String(),
+				QuantityAfter:    qtyAfter.String(),
+				UnitCost:         unitCost.String(),
+				TotalValue:       qty.Mul(unitCost).String(),
+				Notes:            derefString(itemReq.Notes),
+			}
+		}
+
+		// Build audit data
+		adjustmentNotes := ""
+		if req.Notes != nil {
+			adjustmentNotes = *req.Notes
+		}
+
+		auditData := adjustmentAuditData{
+			WarehouseID:      req.WarehouseID,
+			WarehouseName:    warehouse.Name,
+			AdjustmentNumber: adjustment.AdjustmentNumber,
+			AdjustmentDate:   req.AdjustmentDate,
+			AdjustmentType:   strings.ToUpper(req.AdjustmentType),
+			Reason:           strings.ToUpper(req.Reason),
+			Status:           "DRAFT",
+			Notes:            adjustmentNotes,
+			TotalItems:       totalItems,
+			TotalValue:       totalValue.String(),
+			Items:            itemsData,
+		}
+
+		if err := s.auditService.LogInventoryAdjustmentCreated(ctx, auditCtx, adjustment.ID, auditData); err != nil {
+			fmt.Printf("WARNING: Failed to create audit log for adjustment %s: %v\n", adjustment.ID, err)
+		}
+	}
+
 	// Reload with associations
 	return s.GetInventoryAdjustmentByID(ctx, tenantID, companyID, adjustment.ID)
+}
+
+// derefString safely dereferences a string pointer
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // ListInventoryAdjustments lists inventory adjustments with filtering
@@ -186,7 +321,7 @@ func (s *InventoryAdjustmentService) ListInventoryAdjustments(
 	var total int64
 
 	db := s.db.WithContext(ctx).Set("tenant_id", tenantID).
-		Where("company_id = ?", companyID)
+		Where("company_id = ? AND is_active = ?", companyID, true)
 
 	// Apply filters
 	if query.Status != nil {
@@ -269,7 +404,7 @@ func (s *InventoryAdjustmentService) GetInventoryAdjustmentByID(
 	var adjustment models.InventoryAdjustment
 
 	err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
-		Where("id = ? AND company_id = ?", adjustmentID, companyID).
+		Where("id = ? AND company_id = ? AND is_active = ?", adjustmentID, companyID, true).
 		Preload("Warehouse").
 		Preload("CreatedByUser").
 		Preload("ApprovedByUser").
@@ -289,18 +424,56 @@ func (s *InventoryAdjustmentService) GetInventoryAdjustmentByID(
 // UpdateInventoryAdjustment updates a DRAFT adjustment
 func (s *InventoryAdjustmentService) UpdateInventoryAdjustment(
 	ctx context.Context,
-	tenantID, companyID, adjustmentID string,
+	tenantID, companyID, adjustmentID, userID string,
 	req *dto.UpdateInventoryAdjustmentRequest,
+	ipAddress, userAgent string,
 ) (*models.InventoryAdjustment, error) {
-	// Get adjustment without preloading
+	// Get adjustment with warehouse for audit logging (only active records)
 	var adjustment models.InventoryAdjustment
 	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
-		Where("id = ? AND company_id = ?", adjustmentID, companyID).
+		Where("id = ? AND company_id = ? AND is_active = ?", adjustmentID, companyID, true).
+		Preload("Warehouse").
+		Preload("Items.Product").
 		First(&adjustment).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, pkgerrors.NewNotFoundError("Inventory adjustment not found")
 		}
 		return nil, pkgerrors.NewInternalError(err)
+	}
+
+	// Capture old values for audit logging
+	oldAdjustmentType := string(adjustment.AdjustmentType)
+	oldReason := string(adjustment.Reason)
+	oldWarehouseID := adjustment.WarehouseID
+	oldWarehouseName := ""
+	if adjustment.Warehouse.ID != "" {
+		oldWarehouseName = adjustment.Warehouse.Name
+	}
+	oldAdjustmentDate := adjustment.AdjustmentDate.Format("2006-01-02")
+	oldNotes := derefString(adjustment.Notes)
+	oldTotalItems := adjustment.TotalItems
+	oldTotalValue := adjustment.TotalValue.String()
+
+	// Capture old items for audit
+	oldItemsData := make([]adjustmentAuditItemData, len(adjustment.Items))
+	for i, item := range adjustment.Items {
+		productName := ""
+		productCode := ""
+		if item.Product.ID != "" {
+			productName = item.Product.Name
+			productCode = item.Product.Code
+		}
+		oldItemsData[i] = adjustmentAuditItemData{
+			ProductID:        item.ProductID,
+			ProductName:      productName,
+			ProductCode:      productCode,
+			QuantityBefore:   item.QuantityBefore.String(),
+			QuantityAdjusted: item.QuantityAdjusted.String(),
+			QuantityAfter:    item.QuantityAfter.String(),
+			UnitCost:         item.UnitCost.String(),
+			TotalValue:       item.TotalValue.String(),
+			Notes:            derefString(item.Notes),
+		}
 	}
 
 	// Only DRAFT can be updated
@@ -354,7 +527,8 @@ func (s *InventoryAdjustmentService) UpdateInventoryAdjustment(
 		updateFields["notes"] = adjustment.Notes
 	}
 
-	if err := tx.Model(&adjustment).Updates(updateFields).Error; err != nil {
+	// Use fresh model with Where clause to prevent GORM from trying to save preloaded associations
+	if err := tx.Model(&models.InventoryAdjustment{}).Where("id = ?", adjustment.ID).Updates(updateFields).Error; err != nil {
 		tx.Rollback()
 		return nil, pkgerrors.NewInternalError(err)
 	}
@@ -427,8 +601,8 @@ func (s *InventoryAdjustmentService) UpdateInventoryAdjustment(
 			totalValue = totalValue.Add(qty.Mul(unitCost))
 		}
 
-		// Update totals
-		if err := tx.Model(&adjustment).Updates(map[string]interface{}{
+		// Update totals - use fresh model to prevent GORM from saving preloaded associations
+		if err := tx.Model(&models.InventoryAdjustment{}).Where("id = ?", adjustment.ID).Updates(map[string]interface{}{
 			"total_items": totalItems,
 			"total_value": totalValue,
 		}).Error; err != nil {
@@ -441,13 +615,93 @@ func (s *InventoryAdjustmentService) UpdateInventoryAdjustment(
 		return nil, pkgerrors.NewInternalError(err)
 	}
 
+	// === AUDIT LOGGING ===
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		// Get updated adjustment for new values
+		updatedAdjustment, err := s.GetInventoryAdjustmentByID(ctx, tenantID, companyID, adjustmentID)
+		if err == nil {
+			// Build old values audit data
+			oldAuditData := adjustmentAuditData{
+				WarehouseID:      oldWarehouseID,
+				WarehouseName:    oldWarehouseName,
+				AdjustmentNumber: adjustment.AdjustmentNumber,
+				AdjustmentDate:   oldAdjustmentDate,
+				AdjustmentType:   oldAdjustmentType,
+				Reason:           oldReason,
+				Status:           string(adjustment.Status),
+				Notes:            oldNotes,
+				TotalItems:       oldTotalItems,
+				TotalValue:       oldTotalValue,
+				Items:            oldItemsData,
+			}
+
+			// Build new items for audit
+			newItemsData := make([]adjustmentAuditItemData, len(updatedAdjustment.Items))
+			for i, item := range updatedAdjustment.Items {
+				productName := ""
+				productCode := ""
+				if item.Product.ID != "" {
+					productName = item.Product.Name
+					productCode = item.Product.Code
+				}
+				newItemsData[i] = adjustmentAuditItemData{
+					ProductID:        item.ProductID,
+					ProductName:      productName,
+					ProductCode:      productCode,
+					QuantityBefore:   item.QuantityBefore.String(),
+					QuantityAdjusted: item.QuantityAdjusted.String(),
+					QuantityAfter:    item.QuantityAfter.String(),
+					UnitCost:         item.UnitCost.String(),
+					TotalValue:       item.TotalValue.String(),
+					Notes:            derefString(item.Notes),
+				}
+			}
+
+			newWarehouseName := ""
+			if updatedAdjustment.Warehouse.ID != "" {
+				newWarehouseName = updatedAdjustment.Warehouse.Name
+			}
+
+			newAuditData := adjustmentAuditData{
+				WarehouseID:      updatedAdjustment.WarehouseID,
+				WarehouseName:    newWarehouseName,
+				AdjustmentNumber: updatedAdjustment.AdjustmentNumber,
+				AdjustmentDate:   updatedAdjustment.AdjustmentDate.Format("2006-01-02"),
+				AdjustmentType:   strings.ToUpper(string(updatedAdjustment.AdjustmentType)),
+				Reason:           strings.ToUpper(string(updatedAdjustment.Reason)),
+				Status:           strings.ToUpper(string(updatedAdjustment.Status)),
+				Notes:            derefString(updatedAdjustment.Notes),
+				TotalItems:       updatedAdjustment.TotalItems,
+				TotalValue:       updatedAdjustment.TotalValue.String(),
+				Items:            newItemsData,
+			}
+
+			if err := s.auditService.LogInventoryAdjustmentUpdated(ctx, auditCtx, adjustmentID, oldAuditData, newAuditData); err != nil {
+				fmt.Printf("WARNING: Failed to create audit log for adjustment update %s: %v\n", adjustmentID, err)
+			}
+
+			return updatedAdjustment, nil
+		}
+	}
+
 	return s.GetInventoryAdjustmentByID(ctx, tenantID, companyID, adjustmentID)
 }
 
 // DeleteInventoryAdjustment deletes a DRAFT adjustment
 func (s *InventoryAdjustmentService) DeleteInventoryAdjustment(
 	ctx context.Context,
-	tenantID, companyID, adjustmentID string,
+	tenantID, companyID, adjustmentID, userID string,
+	ipAddress, userAgent string,
 ) error {
 	adjustment, err := s.GetInventoryAdjustmentByID(ctx, tenantID, companyID, adjustmentID)
 	if err != nil {
@@ -459,21 +713,43 @@ func (s *InventoryAdjustmentService) DeleteInventoryAdjustment(
 		return pkgerrors.NewBadRequestError("Only DRAFT adjustments can be deleted")
 	}
 
-	tx := s.db.WithContext(ctx).Set("tenant_id", tenantID).Begin()
-
-	// Delete items first
-	if err := tx.Where("adjustment_id = ?", adjustmentID).Delete(&models.InventoryAdjustmentItem{}).Error; err != nil {
-		tx.Rollback()
+	// Soft delete: Set is_active = false
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+		Model(&models.InventoryAdjustment{}).
+		Where("id = ?", adjustmentID).
+		Updates(map[string]interface{}{
+			"is_active":  false,
+			"updated_at": time.Now(),
+		}).Error; err != nil {
 		return pkgerrors.NewInternalError(err)
 	}
 
-	// Delete adjustment
-	if err := tx.Delete(adjustment).Error; err != nil {
-		tx.Rollback()
-		return pkgerrors.NewInternalError(err)
+	// === AUDIT LOGGING ===
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		// For soft delete, only record is_active change
+		oldValues := map[string]interface{}{
+			"is_active": true,
+		}
+		newValues := map[string]interface{}{
+			"is_active": false,
+		}
+
+		if err := s.auditService.LogInventoryAdjustmentDeleted(ctx, auditCtx, adjustmentID, adjustment.AdjustmentNumber, oldValues, newValues); err != nil {
+			fmt.Printf("WARNING: Failed to create audit log for adjustment deletion %s: %v\n", adjustmentID, err)
+		}
 	}
 
-	return tx.Commit().Error
+	return nil
 }
 
 // ApproveInventoryAdjustment approves an adjustment (DRAFT → APPROVED)
@@ -481,11 +757,12 @@ func (s *InventoryAdjustmentService) ApproveInventoryAdjustment(
 	ctx context.Context,
 	tenantID, companyID, adjustmentID, userID string,
 	req *dto.ApproveAdjustmentRequest,
+	ipAddress, userAgent string,
 ) (*models.InventoryAdjustment, error) {
-	// Get adjustment without preloading
+	// Get adjustment without preloading (only active records)
 	var adjustment models.InventoryAdjustment
 	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
-		Where("id = ? AND company_id = ?", adjustmentID, companyID).
+		Where("id = ? AND company_id = ? AND is_active = ?", adjustmentID, companyID, true).
 		First(&adjustment).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, pkgerrors.NewNotFoundError("Inventory adjustment not found")
@@ -548,7 +825,8 @@ func (s *InventoryAdjustmentService) ApproveInventoryAdjustment(
 		updateFields["notes"] = *req.Notes
 	}
 
-	if err := tx.Model(&adjustment).Updates(updateFields).Error; err != nil {
+	// Use fresh model to prevent GORM from saving preloaded associations
+	if err := tx.Model(&models.InventoryAdjustment{}).Where("id = ?", adjustment.ID).Updates(updateFields).Error; err != nil {
 		tx.Rollback()
 		return nil, pkgerrors.NewInternalError(err)
 	}
@@ -598,6 +876,36 @@ func (s *InventoryAdjustmentService) ApproveInventoryAdjustment(
 		return nil, pkgerrors.NewInternalError(err)
 	}
 
+	// === AUDIT LOGGING ===
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		// Old values - just the status
+		oldValues := map[string]interface{}{
+			"status": "DRAFT",
+		}
+
+		// New values - status change and notes if provided
+		newValues := map[string]interface{}{
+			"status": "APPROVED",
+		}
+		if req != nil && req.Notes != nil && *req.Notes != "" {
+			newValues["notes"] = *req.Notes
+		}
+
+		if err := s.auditService.LogInventoryAdjustmentApproved(ctx, auditCtx, adjustmentID, adjustment.AdjustmentNumber, oldValues, newValues); err != nil {
+			fmt.Printf("WARNING: Failed to create audit log for adjustment approval %s: %v\n", adjustmentID, err)
+		}
+	}
+
 	return s.GetInventoryAdjustmentByID(ctx, tenantID, companyID, adjustmentID)
 }
 
@@ -606,11 +914,12 @@ func (s *InventoryAdjustmentService) CancelInventoryAdjustment(
 	ctx context.Context,
 	tenantID, companyID, adjustmentID, userID string,
 	req *dto.CancelAdjustmentRequest,
+	ipAddress, userAgent string,
 ) (*models.InventoryAdjustment, error) {
-	// Get adjustment without preloading
+	// Get adjustment without preloading (only active records)
 	var adjustment models.InventoryAdjustment
 	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
-		Where("id = ? AND company_id = ?", adjustmentID, companyID).
+		Where("id = ? AND company_id = ? AND is_active = ?", adjustmentID, companyID, true).
 		First(&adjustment).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, pkgerrors.NewNotFoundError("Inventory adjustment not found")
@@ -635,13 +944,42 @@ func (s *InventoryAdjustmentService) CancelInventoryAdjustment(
 		"updated_at":    now,
 	}
 
-	if err := tx.Model(&adjustment).Updates(updateFields).Error; err != nil {
+	// Use fresh model to prevent GORM from saving preloaded associations
+	if err := tx.Model(&models.InventoryAdjustment{}).Where("id = ?", adjustment.ID).Updates(updateFields).Error; err != nil {
 		tx.Rollback()
 		return nil, pkgerrors.NewInternalError(err)
 	}
 
 	if err := tx.Commit().Error; err != nil {
 		return nil, pkgerrors.NewInternalError(err)
+	}
+
+	// === AUDIT LOGGING ===
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		// Old values - just the status
+		oldValues := map[string]interface{}{
+			"status": "DRAFT",
+		}
+
+		// New values - status and cancel reason
+		newValues := map[string]interface{}{
+			"status":        "CANCELLED",
+			"cancel_reason": req.Reason,
+		}
+
+		if err := s.auditService.LogInventoryAdjustmentCancelled(ctx, auditCtx, adjustmentID, adjustment.AdjustmentNumber, oldValues, newValues, req.Reason); err != nil {
+			fmt.Printf("WARNING: Failed to create audit log for adjustment cancellation %s: %v\n", adjustmentID, err)
+		}
 	}
 
 	return s.GetInventoryAdjustmentByID(ctx, tenantID, companyID, adjustmentID)
@@ -660,4 +998,44 @@ func (s *InventoryAdjustmentService) generateAdjustmentNumber(tx *gorm.DB, tenan
 	}
 
 	return fmt.Sprintf("%s%05d", prefix, count+1), nil
+}
+
+// GetStatusCounts returns counts of adjustments by status for a company
+func (s *InventoryAdjustmentService) GetStatusCounts(
+	ctx context.Context,
+	tenantID, companyID string,
+) (*dto.InventoryAdjustmentStatusCounts, error) {
+	var counts dto.InventoryAdjustmentStatusCounts
+
+	// Count DRAFT (only active records)
+	var draftCount int64
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+		Model(&models.InventoryAdjustment{}).
+		Where("company_id = ? AND status = ? AND is_active = ?", companyID, models.InventoryAdjustmentStatusDraft, true).
+		Count(&draftCount).Error; err != nil {
+		return nil, pkgerrors.NewInternalError(err)
+	}
+	counts.Draft = int(draftCount)
+
+	// Count APPROVED (only active records)
+	var approvedCount int64
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+		Model(&models.InventoryAdjustment{}).
+		Where("company_id = ? AND status = ? AND is_active = ?", companyID, models.InventoryAdjustmentStatusApproved, true).
+		Count(&approvedCount).Error; err != nil {
+		return nil, pkgerrors.NewInternalError(err)
+	}
+	counts.Approved = int(approvedCount)
+
+	// Count CANCELLED (only active records)
+	var cancelledCount int64
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+		Model(&models.InventoryAdjustment{}).
+		Where("company_id = ? AND status = ? AND is_active = ?", companyID, models.InventoryAdjustmentStatusCancelled, true).
+		Count(&cancelledCount).Error; err != nil {
+		return nil, pkgerrors.NewInternalError(err)
+	}
+	counts.Cancelled = int(cancelledCount)
+
+	return &counts, nil
 }

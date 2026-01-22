@@ -13,7 +13,14 @@
 import { useState, useEffect, useMemo } from "react";
 import { useSelector } from "react-redux";
 import { useRouter } from "next/navigation";
-import { Plus, Search, Package, PackageX, AlertTriangle, CheckCircle2 } from "lucide-react";
+import {
+  Plus,
+  Search,
+  Package,
+  PackageX,
+  AlertTriangle,
+  CheckCircle2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,7 +36,10 @@ import { ErrorDisplay } from "@/components/shared/error-display";
 import { useListProductsQuery } from "@/store/services/productApi";
 import { usePermissions } from "@/hooks/use-permissions";
 import { ProductsTable } from "@/components/products/products-table";
-import type { ProductFilters, ProductListResponse } from "@/types/product.types";
+import type {
+  ProductFilters,
+  ProductListResponse,
+} from "@/types/product.types";
 import type { RootState } from "@/store";
 
 interface ProductsClientProps {
@@ -64,9 +74,9 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
   );
 
   // Compute permission checks ONCE at top level
-  const canCreateProducts = permissions.canCreate('products');
-  const canEditProducts = permissions.canEdit('products');
-  const canDeleteProducts = permissions.canDelete('products');
+  const canCreateProducts = permissions.canCreate("products");
+  const canEditProducts = permissions.canEdit("products");
+  const canDeleteProducts = permissions.canDelete("products");
 
   // Debounce search input (wait 500ms after user stops typing)
   useEffect(() => {
@@ -123,7 +133,9 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
           return totalStock === 0;
         case "low":
           // Products with low stock (below minimum but not zero)
-          return totalStock !== null && totalStock > 0 && totalStock < minimumStock;
+          return (
+            totalStock !== null && totalStock > 0 && totalStock < minimumStock
+          );
         case "normal":
           // Products with normal stock (at or above minimum)
           return totalStock !== null && totalStock >= minimumStock;
@@ -138,7 +150,9 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
       pagination: {
         ...rawDisplayData.pagination,
         totalItems: filteredProducts.length,
-        totalPages: Math.ceil(filteredProducts.length / (filters.pageSize || 20)),
+        totalPages: Math.ceil(
+          filteredProducts.length / (filters.pageSize || 20)
+        ),
       },
     };
   }, [rawDisplayData, stockStatusFilter, filters.pageSize]);
@@ -159,7 +173,7 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
     setFilters((prev) => ({
       ...prev,
       pageSize: parseInt(newPageSize),
-      page: 1 // Reset to page 1 when changing page size
+      page: 1, // Reset to page 1 when changing page size
     }));
   };
 
@@ -196,9 +210,7 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
       {/* Page title and actions */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
-          <h1 className="text-3xl font-bold tracking-tight">
-            Daftar Produk
-          </h1>
+          <h1 className="text-3xl font-bold tracking-tight">Daftar Produk</h1>
           <p className="text-muted-foreground">
             Kelola produk, unit, dan harga untuk distribusi
           </p>
@@ -234,9 +246,7 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
             <Select
               value={categoryFilter || "all"}
               onValueChange={(value) =>
-                handleCategoryFilterChange(
-                  value === "all" ? undefined : value
-                )
+                handleCategoryFilterChange(value === "all" ? undefined : value)
               }
             >
               <SelectTrigger className="w-full sm:w-[180px]">
@@ -247,9 +257,7 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
                 {displayData?.data &&
                   Array.from(
                     new Set(
-                      displayData.data
-                        .map((p) => p.category)
-                        .filter(Boolean)
+                      displayData.data.map((p) => p.category).filter(Boolean)
                     )
                   ).map((category) => (
                     <SelectItem key={category} value={category as string}>
@@ -327,7 +335,10 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
             </Select>
 
             {/* Clear Filters Button */}
-            {(categoryFilter || statusFilter !== undefined || stockStatusFilter !== "all" || search) && (
+            {(categoryFilter ||
+              statusFilter !== undefined ||
+              stockStatusFilter !== "all" ||
+              search) && (
               <Button
                 variant="outline"
                 size="sm"
@@ -379,7 +390,9 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
                     Mulai dengan menambahkan produk pertama Anda
                   </p>
                   {canCreateProducts && (
-                    <Button onClick={() => router.push("/master/products/create")}>
+                    <Button
+                      onClick={() => router.push("/master/products/create")}
+                    >
                       <Plus className="mr-2 h-4 w-4" />
                       Tambah Produk
                     </Button>
@@ -405,14 +418,16 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
 
                   {/* Pagination */}
                   {displayData?.pagination && (
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t pt-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ">
                       {/* 1. Summary - Record Data */}
                       <div className="text-sm text-muted-foreground text-center sm:text-left">
                         {(() => {
                           const pagination = displayData.pagination as any;
                           const page = pagination.page || 1;
-                          const pageSize = pagination.limit || pagination.pageSize || 20;
-                          const totalItems = pagination.total || pagination.totalItems || 0;
+                          const pageSize =
+                            pagination.limit || pagination.pageSize || 20;
+                          const totalItems =
+                            pagination.total || pagination.totalItems || 0;
                           const start = (page - 1) * pageSize + 1;
                           const end = Math.min(page * pageSize, totalItems);
                           return `Menampilkan ${start}-${end} dari ${totalItems} item`;
@@ -508,7 +523,6 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
           )}
         </CardContent>
       </Card>
-
     </div>
   );
 }

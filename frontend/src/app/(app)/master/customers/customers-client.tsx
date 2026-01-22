@@ -30,7 +30,11 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { useListCustomersQuery } from "@/store/services/customerApi";
 import { usePermissions } from "@/hooks/use-permissions";
 import { CustomersTable } from "@/components/customers/customers-table";
-import type { CustomerFilters, CustomerType, CustomerListResponse } from "@/types/customer.types";
+import type {
+  CustomerFilters,
+  CustomerType,
+  CustomerListResponse,
+} from "@/types/customer.types";
 import type { RootState } from "@/store";
 
 interface CustomersClientProps {
@@ -311,7 +315,8 @@ export function CustomersClient({ initialData }: CustomersClientProps) {
                     canCreateCustomers
                       ? {
                           label: "Tambah Pelanggan",
-                          onClick: () => router.push("/master/customers/create"),
+                          onClick: () =>
+                            router.push("/master/customers/create"),
                         }
                       : undefined
                   }
@@ -339,14 +344,16 @@ export function CustomersClient({ initialData }: CustomersClientProps) {
 
               {/* Pagination */}
               {displayData?.pagination && (
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t pt-4 mt-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3  mt-6">
                   {/* 1. Summary - Record Data */}
                   <div className="text-sm text-muted-foreground text-center sm:text-left">
                     {(() => {
                       const pagination = displayData.pagination as any;
                       const page = pagination.page || 1;
-                      const pageSize = pagination.limit || pagination.pageSize || 20;
-                      const totalItems = pagination.total || pagination.totalItems || 0;
+                      const pageSize =
+                        pagination.limit || pagination.pageSize || 20;
+                      const totalItems =
+                        pagination.total || pagination.totalItems || 0;
                       const start = (page - 1) * pageSize + 1;
                       const end = Math.min(page * pageSize, totalItems);
                       return `Menampilkan ${start}-${end} dari ${totalItems} item`;

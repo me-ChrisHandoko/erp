@@ -29,7 +29,11 @@ import { ErrorDisplay } from "@/components/shared/error-display";
 import { useListPaymentsQuery } from "@/store/services/paymentApi";
 import { usePermissions } from "@/hooks/use-permissions";
 import { PaymentsTable } from "@/components/payments/payments-table";
-import type { PaymentFilters, PaymentListResponse, PaymentMethod } from "@/types/payment.types";
+import type {
+  PaymentFilters,
+  PaymentListResponse,
+  PaymentMethod,
+} from "@/types/payment.types";
 import type { RootState } from "@/store";
 import { PAYMENT_METHOD_LABELS } from "@/types/payment.types";
 
@@ -41,9 +45,9 @@ export function PaymentsClient({ initialData }: PaymentsClientProps) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [paymentMethodFilter, setPaymentMethodFilter] = useState<PaymentMethod | undefined>(
-    undefined
-  );
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState<
+    PaymentMethod | undefined
+  >(undefined);
   const [filters, setFilters] = useState<PaymentFilters>({
     page: 1,
     pageSize: 20,
@@ -60,8 +64,8 @@ export function PaymentsClient({ initialData }: PaymentsClientProps) {
   );
 
   // Compute permission checks ONCE at top level
-  const canCreatePayments = permissions.canCreate('supplier-payments');
-  const canEditPayments = permissions.canEdit('supplier-payments');
+  const canCreatePayments = permissions.canCreate("supplier-payments");
+  const canEditPayments = permissions.canEdit("supplier-payments");
 
   // Debounce search input (wait 500ms after user stops typing)
   useEffect(() => {
@@ -107,7 +111,7 @@ export function PaymentsClient({ initialData }: PaymentsClientProps) {
     setFilters((prev) => ({
       ...prev,
       pageSize: parseInt(newPageSize),
-      page: 1
+      page: 1,
     }));
   };
 
@@ -140,9 +144,7 @@ export function PaymentsClient({ initialData }: PaymentsClientProps) {
           <h1 className="text-3xl font-bold tracking-tight">
             Daftar Pembayaran
           </h1>
-          <p className="text-muted-foreground">
-            Kelola pembayaran ke pemasok
-          </p>
+          <p className="text-muted-foreground">Kelola pembayaran ke pemasok</p>
         </div>
         {canCreatePayments && (
           <Button
@@ -242,7 +244,11 @@ export function PaymentsClient({ initialData }: PaymentsClientProps) {
                     Mulai dengan mencatat pembayaran pertama Anda
                   </p>
                   {canCreatePayments && (
-                    <Button onClick={() => router.push("/procurement/payments/create")}>
+                    <Button
+                      onClick={() =>
+                        router.push("/procurement/payments/create")
+                      }
+                    >
                       <Plus className="mr-2 h-4 w-4" />
                       Tambah Pembayaran
                     </Button>
@@ -268,14 +274,16 @@ export function PaymentsClient({ initialData }: PaymentsClientProps) {
 
                   {/* Pagination */}
                   {displayData?.pagination && (
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t pt-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ">
                       {/* Summary */}
                       <div className="text-sm text-muted-foreground text-center sm:text-left">
                         {(() => {
                           const pagination = displayData.pagination as any;
                           const page = pagination.page || 1;
-                          const pageSize = pagination.limit || pagination.pageSize || 20;
-                          const totalItems = pagination.total || pagination.totalItems || 0;
+                          const pageSize =
+                            pagination.limit || pagination.pageSize || 20;
+                          const totalItems =
+                            pagination.total || pagination.totalItems || 0;
                           const start = (page - 1) * pageSize + 1;
                           const end = Math.min(page * pageSize, totalItems);
                           return `Menampilkan ${start}-${end} dari ${totalItems} item`;

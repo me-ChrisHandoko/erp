@@ -1925,3 +1925,248 @@ func (s *AuditService) LogWarehouseStockUpdated(
 	}
 	return db.Create(auditLog).Error
 }
+
+// ==================== Inventory Adjustment Audit Methods ====================
+
+// LogInventoryAdjustmentCreated logs when an inventory adjustment is created
+func (s *AuditService) LogInventoryAdjustmentCreated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	adjustmentID string,
+	adjustmentData interface{},
+) error {
+	newValuesJSON, _ := json.Marshal(adjustmentData)
+	newValuesStr := string(newValuesJSON)
+	entityType := "INVENTORY_ADJUSTMENT"
+
+	// Create human-readable notes with created fields
+	createdFields := extractFieldNames(adjustmentData)
+
+	notes := ""
+	if len(createdFields) > 0 {
+		notes = fmt.Sprintf("Created fields: [%s]", strings.Join(createdFields, ", "))
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "INVENTORY_ADJUSTMENT_CREATED",
+		EntityType: &entityType,
+		EntityID:   &adjustmentID,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogInventoryAdjustmentUpdated logs when an inventory adjustment is updated
+func (s *AuditService) LogInventoryAdjustmentUpdated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	adjustmentID string,
+	oldValues interface{},
+	newValues interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "INVENTORY_ADJUSTMENT"
+
+	notes := "Inventory adjustment updated"
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "INVENTORY_ADJUSTMENT_UPDATED",
+		EntityType: &entityType,
+		EntityID:   &adjustmentID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogInventoryAdjustmentDeleted logs when an inventory adjustment is soft deleted
+func (s *AuditService) LogInventoryAdjustmentDeleted(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	adjustmentID string,
+	adjustmentNumber string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesJSON, _ := json.Marshal(newValues)
+	newValuesStr := string(newValuesJSON)
+	entityType := "INVENTORY_ADJUSTMENT"
+
+	notes := fmt.Sprintf("Inventory adjustment %s deleted", adjustmentNumber)
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "INVENTORY_ADJUSTMENT_DELETED",
+		EntityType: &entityType,
+		EntityID:   &adjustmentID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogInventoryAdjustmentApproved logs when an inventory adjustment is approved
+func (s *AuditService) LogInventoryAdjustmentApproved(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	adjustmentID string,
+	adjustmentNumber string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "INVENTORY_ADJUSTMENT"
+
+	notes := "Inventory adjustment approved (DRAFT → APPROVED)"
+	if adjustmentNumber != "" {
+		notes = fmt.Sprintf("Inventory adjustment %s approved (DRAFT → APPROVED)", adjustmentNumber)
+	}
+	// Append approval notes if provided
+	if approvalNotes, ok := newValues["notes"].(string); ok && approvalNotes != "" {
+		notes = fmt.Sprintf("%s. Notes: %s", notes, approvalNotes)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "INVENTORY_ADJUSTMENT_APPROVED",
+		EntityType: &entityType,
+		EntityID:   &adjustmentID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogInventoryAdjustmentCancelled logs when an inventory adjustment is cancelled
+func (s *AuditService) LogInventoryAdjustmentCancelled(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	adjustmentID string,
+	adjustmentNumber string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+	reason string,
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "INVENTORY_ADJUSTMENT"
+
+	notes := fmt.Sprintf("Inventory adjustment cancelled (DRAFT → CANCELLED). Reason: %s", reason)
+	if adjustmentNumber != "" {
+		notes = fmt.Sprintf("Inventory adjustment %s cancelled (DRAFT → CANCELLED). Reason: %s", adjustmentNumber, reason)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "INVENTORY_ADJUSTMENT_CANCELLED",
+		EntityType: &entityType,
+		EntityID:   &adjustmentID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogInventoryAdjustmentOperationFailed logs when an inventory adjustment operation fails
+func (s *AuditService) LogInventoryAdjustmentOperationFailed(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	action string,
+	adjustmentID string,
+	errorMsg string,
+) error {
+	entityType := "INVENTORY_ADJUSTMENT"
+	notes := fmt.Sprintf("Operation failed: %s", errorMsg)
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     action,
+		EntityType: &entityType,
+		EntityID:   &adjustmentID,
+		Status:     StatusFailed,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}

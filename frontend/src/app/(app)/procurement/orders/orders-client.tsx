@@ -47,11 +47,15 @@ export function OrdersClient({ initialData }: OrdersClientProps) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<PurchaseOrderStatus | undefined>(
+  const [statusFilter, setStatusFilter] = useState<
+    PurchaseOrderStatus | undefined
+  >(undefined);
+  const [supplierFilter, setSupplierFilter] = useState<string | undefined>(
     undefined
   );
-  const [supplierFilter, setSupplierFilter] = useState<string | undefined>(undefined);
-  const [warehouseFilter, setWarehouseFilter] = useState<string | undefined>(undefined);
+  const [warehouseFilter, setWarehouseFilter] = useState<string | undefined>(
+    undefined
+  );
   const [filters, setFilters] = useState<PurchaseOrderFilters>({
     page: 1,
     pageSize: 20,
@@ -68,14 +72,20 @@ export function OrdersClient({ initialData }: OrdersClientProps) {
   );
 
   // Compute permission checks ONCE at top level
-  const canCreateOrders = permissions.canCreate('purchase-orders');
-  const canEditOrders = permissions.canEdit('purchase-orders');
-  const canConfirmOrders = permissions.canEdit('purchase-orders'); // Same as edit
-  const canCancelOrders = permissions.canDelete('purchase-orders');
+  const canCreateOrders = permissions.canCreate("purchase-orders");
+  const canEditOrders = permissions.canEdit("purchase-orders");
+  const canConfirmOrders = permissions.canEdit("purchase-orders"); // Same as edit
+  const canCancelOrders = permissions.canDelete("purchase-orders");
 
   // Fetch suppliers and warehouses for filter dropdowns
-  const { data: suppliersData } = useListSuppliersQuery({ isActive: true, pageSize: 100 });
-  const { data: warehousesData } = useListWarehousesQuery({ isActive: true, pageSize: 100 });
+  const { data: suppliersData } = useListSuppliersQuery({
+    isActive: true,
+    pageSize: 100,
+  });
+  const { data: warehousesData } = useListWarehousesQuery({
+    isActive: true,
+    pageSize: 100,
+  });
 
   // Debounce search input (wait 500ms after user stops typing)
   useEffect(() => {
@@ -141,7 +151,8 @@ export function OrdersClient({ initialData }: OrdersClientProps) {
       return {
         ...prev,
         sortBy: sortBy as PurchaseOrderFilters["sortBy"],
-        sortOrder: sortBy === "poDate" || sortBy === "totalAmount" ? "desc" : "asc",
+        sortOrder:
+          sortBy === "poDate" || sortBy === "totalAmount" ? "desc" : "asc",
       } as PurchaseOrderFilters;
     });
   };
@@ -340,7 +351,7 @@ export function OrdersClient({ initialData }: OrdersClientProps) {
 
                   {/* Pagination */}
                   {displayData?.pagination && (
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t pt-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ">
                       {/* 1. Summary - Record Data */}
                       <div className="text-sm text-muted-foreground text-center sm:text-left">
                         {(() => {

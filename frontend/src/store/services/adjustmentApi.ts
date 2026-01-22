@@ -21,11 +21,18 @@ import type {
   AdjustmentFilters,
 } from "@/types/adjustment.types";
 import type { ApiSuccessResponse } from "@/types/api";
+import type { AuditLog } from "@/types/audit";
+
+// Response type for audit logs by entity
+interface AuditLogsByEntityResponse {
+  success: boolean;
+  data: AuditLog[];
+}
 
 export const adjustmentApi = createApi({
   reducerPath: "adjustmentApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["Adjustment", "AdjustmentList", "Stock", "StockList"],
+  tagTypes: ["Adjustment", "AdjustmentList", "Stock", "StockList", "AdjustmentAuditLog"],
   endpoints: (builder) => ({
     // ==================== Adjustment Listing ====================
 
@@ -195,6 +202,27 @@ export const adjustmentApi = createApi({
         { type: "AdjustmentList", id: "LIST" },
       ],
     }),
+
+    // ==================== Audit Logs ====================
+
+    /**
+     * Get Adjustment Audit Logs
+     * GET /api/v1/audit-logs/inventory_adjustment/:adjustmentId
+     * Returns audit trail for a specific inventory adjustment
+     */
+    getAdjustmentAuditLogs: builder.query<
+      AuditLog[],
+      { adjustmentId: string; limit?: number; offset?: number }
+    >({
+      query: ({ adjustmentId, limit = 50, offset = 0 }) => ({
+        url: `/audit-logs/inventory_adjustment/${adjustmentId}`,
+        params: { limit, offset },
+      }),
+      transformResponse: (response: AuditLogsByEntityResponse) => response.data,
+      providesTags: (result, error, { adjustmentId }) => [
+        { type: "AdjustmentAuditLog", id: adjustmentId },
+      ],
+    }),
   }),
 });
 
@@ -207,4 +235,5 @@ export const {
   useDeleteAdjustmentMutation,
   useApproveAdjustmentMutation,
   useCancelAdjustmentMutation,
+  useGetAdjustmentAuditLogsQuery,
 } = adjustmentApi;

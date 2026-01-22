@@ -97,11 +97,19 @@ type InventoryAdjustmentResponse struct {
 	UpdatedAt        time.Time                         `json:"updatedAt"`
 }
 
+// InventoryAdjustmentStatusCounts - Status counts for statistics cards
+type InventoryAdjustmentStatusCounts struct {
+	Draft     int `json:"draft"`
+	Approved  int `json:"approved"`
+	Cancelled int `json:"cancelled"`
+}
+
 // InventoryAdjustmentListResponse - Response DTO for inventory adjustment list with pagination
 type InventoryAdjustmentListResponse struct {
-	Success    bool                          `json:"success"`
-	Data       []InventoryAdjustmentResponse `json:"data"`
-	Pagination PaginationInfo                `json:"pagination"`
+	Success      bool                             `json:"success"`
+	Data         []InventoryAdjustmentResponse    `json:"data"`
+	Pagination   PaginationInfo                   `json:"pagination"`
+	StatusCounts *InventoryAdjustmentStatusCounts `json:"statusCounts,omitempty"`
 }
 
 // InventoryAdjustmentQuery - Query parameters for listing inventory adjustments

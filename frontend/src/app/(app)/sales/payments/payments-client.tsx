@@ -30,9 +30,16 @@ import { ErrorDisplay } from "@/components/shared/error-display";
 import { useListSalesPaymentsQuery } from "@/store/services/salesPaymentApi";
 import { usePermissions } from "@/hooks/use-permissions";
 import { SalesPaymentsTable } from "@/components/sales-payments/sales-payments-table";
-import type { SalesPaymentFilters, SalesPaymentListResponse, PaymentMethod } from "@/types/sales-payment.types";
+import type {
+  SalesPaymentFilters,
+  SalesPaymentListResponse,
+  PaymentMethod,
+} from "@/types/sales-payment.types";
 import type { RootState } from "@/store";
-import { PAYMENT_METHOD, PAYMENT_METHOD_LABELS } from "@/types/sales-payment.types";
+import {
+  PAYMENT_METHOD,
+  PAYMENT_METHOD_LABELS,
+} from "@/types/sales-payment.types";
 
 interface SalesPaymentsClientProps {
   initialData: SalesPaymentListResponse;
@@ -42,9 +49,9 @@ export function SalesPaymentsClient({ initialData }: SalesPaymentsClientProps) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [paymentMethodFilter, setPaymentMethodFilter] = useState<PaymentMethod | undefined>(
-    undefined
-  );
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState<
+    PaymentMethod | undefined
+  >(undefined);
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   const [filters, setFilters] = useState<SalesPaymentFilters>({
@@ -64,9 +71,9 @@ export function SalesPaymentsClient({ initialData }: SalesPaymentsClientProps) {
   );
 
   // Compute permission checks ONCE at top level
-  const canCreatePayments = permissions.canCreate('customer-payments');
-  const canEditPayments = permissions.canEdit('customer-payments');
-  const canDeletePayments = permissions.canDelete('customer-payments');
+  const canCreatePayments = permissions.canCreate("customer-payments");
+  const canEditPayments = permissions.canEdit("customer-payments");
+  const canDeletePayments = permissions.canDelete("customer-payments");
 
   // Debounce search input (wait 500ms after user stops typing)
   useEffect(() => {
@@ -119,7 +126,7 @@ export function SalesPaymentsClient({ initialData }: SalesPaymentsClientProps) {
     setFilters((prev) => ({
       ...prev,
       pageSize: parseInt(newPageSize),
-      page: 1 // Reset to page 1 when changing page size
+      page: 1, // Reset to page 1 when changing page size
     }));
   };
 
@@ -141,14 +148,16 @@ export function SalesPaymentsClient({ initialData }: SalesPaymentsClientProps) {
     });
   };
 
-  const handlePaymentMethodFilterChange = (method: PaymentMethod | undefined) => {
+  const handlePaymentMethodFilterChange = (
+    method: PaymentMethod | undefined
+  ) => {
     setPaymentMethodFilter(method);
     setFilters((prev) => ({ ...prev, page: 1 }));
   };
 
   // Quick date filter functions
   const setDateRangeToToday = () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toISOString().split("T")[0];
     setDateFrom(today);
     setDateTo(today);
     setFilters((prev) => ({ ...prev, page: 1 }));
@@ -162,8 +171,8 @@ export function SalesPaymentsClient({ initialData }: SalesPaymentsClientProps) {
     const sunday = new Date(monday);
     sunday.setDate(monday.getDate() + 6);
 
-    setDateFrom(monday.toISOString().split('T')[0]);
-    setDateTo(sunday.toISOString().split('T')[0]);
+    setDateFrom(monday.toISOString().split("T")[0]);
+    setDateTo(sunday.toISOString().split("T")[0]);
     setFilters((prev) => ({ ...prev, page: 1 }));
   };
 
@@ -172,8 +181,8 @@ export function SalesPaymentsClient({ initialData }: SalesPaymentsClientProps) {
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
-    setDateFrom(firstDay.toISOString().split('T')[0]);
-    setDateTo(lastDay.toISOString().split('T')[0]);
+    setDateFrom(firstDay.toISOString().split("T")[0]);
+    setDateTo(lastDay.toISOString().split("T")[0]);
     setFilters((prev) => ({ ...prev, page: 1 }));
   };
 
@@ -223,7 +232,7 @@ export function SalesPaymentsClient({ initialData }: SalesPaymentsClientProps) {
                 value={paymentMethodFilter || "all"}
                 onValueChange={(value) =>
                   handlePaymentMethodFilterChange(
-                    value === "all" ? undefined : value as PaymentMethod
+                    value === "all" ? undefined : (value as PaymentMethod)
                   )
                 }
               >
@@ -247,7 +256,10 @@ export function SalesPaymentsClient({ initialData }: SalesPaymentsClientProps) {
               <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-end">
                 {/* From Date */}
                 <div className="flex-1 space-y-2">
-                  <Label htmlFor="dateFrom" className="text-xs text-muted-foreground">
+                  <Label
+                    htmlFor="dateFrom"
+                    className="text-xs text-muted-foreground"
+                  >
                     Tanggal Mulai
                   </Label>
                   <div className="relative">
@@ -267,7 +279,10 @@ export function SalesPaymentsClient({ initialData }: SalesPaymentsClientProps) {
 
                 {/* To Date */}
                 <div className="flex-1 space-y-2">
-                  <Label htmlFor="dateTo" className="text-xs text-muted-foreground">
+                  <Label
+                    htmlFor="dateTo"
+                    className="text-xs text-muted-foreground"
+                  >
                     Tanggal Akhir
                   </Label>
                   <div className="relative">
@@ -368,7 +383,9 @@ export function SalesPaymentsClient({ initialData }: SalesPaymentsClientProps) {
                     Mulai dengan mencatat pembayaran pertama dari pelanggan
                   </p>
                   {canCreatePayments && (
-                    <Button onClick={() => router.push("/sales/payments/create")}>
+                    <Button
+                      onClick={() => router.push("/sales/payments/create")}
+                    >
                       <Plus className="mr-2 h-4 w-4" />
                       Catat Pembayaran
                     </Button>
@@ -394,14 +411,16 @@ export function SalesPaymentsClient({ initialData }: SalesPaymentsClientProps) {
 
                   {/* Pagination */}
                   {displayData?.pagination && (
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t pt-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ">
                       {/* 1. Summary - Record Data */}
                       <div className="text-sm text-muted-foreground text-center sm:text-left">
                         {(() => {
                           const pagination = displayData.pagination as any;
                           const page = pagination.page || 1;
-                          const pageSize = pagination.limit || pagination.pageSize || 20;
-                          const totalItems = pagination.total || pagination.totalItems || 0;
+                          const pageSize =
+                            pagination.limit || pagination.pageSize || 20;
+                          const totalItems =
+                            pagination.total || pagination.totalItems || 0;
                           const start = (page - 1) * pageSize + 1;
                           const end = Math.min(page * pageSize, totalItems);
                           return `Menampilkan ${start}-${end} dari ${totalItems} item`;
@@ -497,7 +516,6 @@ export function SalesPaymentsClient({ initialData }: SalesPaymentsClientProps) {
           )}
         </CardContent>
       </Card>
-
     </div>
   );
 }

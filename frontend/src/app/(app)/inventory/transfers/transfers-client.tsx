@@ -135,7 +135,9 @@ export function TransfersClient({ initialData }: TransfersClientProps) {
     status: statusFilter,
     sourceWarehouseId: sourceWarehouseFilter,
     destWarehouseId: destWarehouseFilter,
-    dateFrom: dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
+    dateFrom: dateRange?.from
+      ? format(dateRange.from, "yyyy-MM-dd")
+      : undefined,
     dateTo: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined,
   };
 
@@ -275,7 +277,7 @@ export function TransfersClient({ initialData }: TransfersClientProps) {
 
       {/* Status Statistics Cards */}
       {displayData && displayData.data && (
-        <div className="grid gap-1 md:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-4">
           {/* Draft Card */}
           <Card className="overflow-hidden border-none shadow-none hover:shadow-sm transition-shadow duration-300 rounded-xl">
             <CardContent className="p-0">
@@ -542,7 +544,7 @@ export function TransfersClient({ initialData }: TransfersClientProps) {
 
                   {/* Pagination */}
                   {displayData?.pagination && (
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t pt-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ">
                       {/* 1. Summary - Record Data */}
                       <div className="text-sm text-muted-foreground text-center sm:text-left">
                         {(() => {

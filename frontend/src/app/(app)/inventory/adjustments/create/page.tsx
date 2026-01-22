@@ -12,7 +12,7 @@
 import { useRouter } from "next/navigation";
 import { Package } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
-import { CreateAdjustmentForm } from "@/components/adjustments/create-adjustment-form";
+import { AdjustmentForm } from "@/components/adjustments/adjustment-form";
 
 export default function CreateAdjustmentPage() {
   const router = useRouter();
@@ -53,7 +53,8 @@ export default function CreateAdjustmentPage() {
         </div>
 
         {/* Create Adjustment Form */}
-        <CreateAdjustmentForm
+        <AdjustmentForm
+          mode="create"
           onSuccess={handleSuccess}
           onCancel={handleCancel}
         />

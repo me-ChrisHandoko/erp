@@ -13,7 +13,16 @@
 import { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
 import { useRouter } from "next/navigation";
-import { Plus, Search, ClipboardList } from "lucide-react";
+import { type DateRange } from "react-day-picker";
+import { format } from "date-fns";
+import {
+  Plus,
+  Search,
+  ClipboardList,
+  FileEdit,
+  CheckCircle2,
+  XCircle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { ErrorDisplay } from "@/components/shared/error-display";
 import { useListAdjustmentsQuery } from "@/store/services/adjustmentApi";
@@ -53,24 +63,29 @@ export function AdjustmentsClient({ initialData }: AdjustmentsClientProps) {
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<AdjustmentStatus | undefined>(
-    undefined
-  );
+  const [statusFilter, setStatusFilter] = useState<
+    AdjustmentStatus | undefined
+  >(undefined);
   const [typeFilter, setTypeFilter] = useState<AdjustmentType | undefined>(
     undefined
   );
-  const [reasonFilter, setReasonFilter] = useState<AdjustmentReason | undefined>(
-    undefined
-  );
+  const [reasonFilter, setReasonFilter] = useState<
+    AdjustmentReason | undefined
+  >(undefined);
   const [warehouseFilter, setWarehouseFilter] = useState<string | undefined>(
     undefined
   );
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+
   // Action dialogs state (only action dialogs: Approve, Cancel, Delete)
-  const [adjustmentToApprove, setAdjustmentToApprove] = useState<InventoryAdjustment | null>(null);
+  const [adjustmentToApprove, setAdjustmentToApprove] =
+    useState<InventoryAdjustment | null>(null);
   const [isApproveDialogOpen, setIsApproveDialogOpen] = useState(false);
-  const [adjustmentToCancel, setAdjustmentToCancel] = useState<InventoryAdjustment | null>(null);
+  const [adjustmentToCancel, setAdjustmentToCancel] =
+    useState<InventoryAdjustment | null>(null);
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
-  const [adjustmentToDelete, setAdjustmentToDelete] = useState<InventoryAdjustment | null>(null);
+  const [adjustmentToDelete, setAdjustmentToDelete] =
+    useState<InventoryAdjustment | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const [filters, setFilters] = useState<AdjustmentFilters>({
@@ -89,10 +104,13 @@ export function AdjustmentsClient({ initialData }: AdjustmentsClientProps) {
   );
 
   // Compute permission checks ONCE at top level
-  const canCreateAdjustments = permissions.canCreate('inventory-adjustments');
-  const canEditAdjustments = permissions.canEdit('inventory-adjustments');
-  const canDeleteAdjustments = permissions.canDelete('inventory-adjustments');
-  const canApproveAdjustments = permissions.can('approve', 'inventory-adjustments');
+  const canCreateAdjustments = permissions.canCreate("inventory-adjustments");
+  const canEditAdjustments = permissions.canEdit("inventory-adjustments");
+  const canDeleteAdjustments = permissions.canDelete("inventory-adjustments");
+  const canApproveAdjustments = permissions.can(
+    "approve",
+    "inventory-adjustments"
+  );
 
   // Fetch warehouses for filters
   const { data: warehousesData } = useListWarehousesQuery(
@@ -118,6 +136,10 @@ export function AdjustmentsClient({ initialData }: AdjustmentsClientProps) {
     adjustmentType: typeFilter,
     reason: reasonFilter,
     warehouseId: warehouseFilter,
+    dateFrom: dateRange?.from
+      ? format(dateRange.from, "yyyy-MM-dd")
+      : undefined,
+    dateTo: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined,
   };
 
   const {
@@ -131,6 +153,15 @@ export function AdjustmentsClient({ initialData }: AdjustmentsClientProps) {
 
   // Use initialData as fallback only for first render before query completes
   const displayData = adjustmentsData || initialData;
+
+  // Use server-provided status counts (total counts, not per-page)
+  const statusStats = displayData?.statusCounts
+    ? {
+        draft: displayData.statusCounts.draft,
+        approved: displayData.statusCounts.approved,
+        cancelled: displayData.statusCounts.cancelled,
+      }
+    : { draft: 0, approved: 0, cancelled: 0 };
 
   // Explicit refetch when company changes
   useEffect(() => {
@@ -170,7 +201,9 @@ export function AdjustmentsClient({ initialData }: AdjustmentsClientProps) {
   };
 
   const handleStatusFilterChange = (status: string) => {
-    setStatusFilter(status === "all" ? undefined : (status as AdjustmentStatus));
+    setStatusFilter(
+      status === "all" ? undefined : (status as AdjustmentStatus)
+    );
     setFilters((prev) => ({ ...prev, page: 1 }));
   };
 
@@ -180,7 +213,9 @@ export function AdjustmentsClient({ initialData }: AdjustmentsClientProps) {
   };
 
   const handleReasonFilterChange = (reason: string) => {
-    setReasonFilter(reason === "all" ? undefined : (reason as AdjustmentReason));
+    setReasonFilter(
+      reason === "all" ? undefined : (reason as AdjustmentReason)
+    );
     setFilters((prev) => ({ ...prev, page: 1 }));
   };
 
@@ -221,12 +256,18 @@ export function AdjustmentsClient({ initialData }: AdjustmentsClientProps) {
     refetch(); // Refetch adjustments list after successful action
   };
 
-  const hasActiveFilters = search || statusFilter || typeFilter || reasonFilter || warehouseFilter;
+  const hasActiveFilters =
+    search ||
+    statusFilter ||
+    typeFilter ||
+    reasonFilter ||
+    warehouseFilter ||
+    dateRange;
 
   return (
-    <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+    <div className="flex flex-1 flex-col gap-0 p-4 pt-0">
       {/* Page title and actions */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-0 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <h1 className="text-3xl font-bold tracking-tight">
             Penyesuaian Stok
@@ -243,13 +284,87 @@ export function AdjustmentsClient({ initialData }: AdjustmentsClientProps) {
         )}
       </div>
 
+      {/* Status Statistics Cards */}
+      {displayData && displayData.data && (
+        <div className="grid gap-3 md:grid-cols-3">
+          {/* Draft Card */}
+          <Card className="overflow-hidden border-none shadow-none hover:shadow-sm transition-shadow duration-300 rounded-xl">
+            <CardContent className="p-0">
+              <div className="relative bg-gradient-to-br from-gray-500 to-gray-600 p-4 rounded-xl">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-gray-100">Draft</p>
+                    <p className="text-2xl font-bold text-white">
+                      {statusStats.draft}
+                    </p>
+                    <div className="flex items-center gap-1 text-xs text-gray-100">
+                      <span>Menunggu persetujuan</span>
+                    </div>
+                  </div>
+                  <div className="rounded-full bg-white/20 p-2 backdrop-blur-sm">
+                    <FileEdit className="h-5 w-5 text-white" />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Approved Card */}
+          <Card className="overflow-hidden border-none shadow-none hover:shadow-sm transition-shadow duration-300 rounded-xl">
+            <CardContent className="p-0">
+              <div className="relative bg-gradient-to-br from-green-500 to-green-600 p-4 rounded-xl">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-green-100">
+                      Disetujui
+                    </p>
+                    <p className="text-2xl font-bold text-white">
+                      {statusStats.approved}
+                    </p>
+                    <div className="flex items-center gap-1 text-xs text-green-100">
+                      <span>Penyesuaian selesai</span>
+                    </div>
+                  </div>
+                  <div className="rounded-full bg-white/20 p-2 backdrop-blur-sm">
+                    <CheckCircle2 className="h-5 w-5 text-white" />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Cancelled Card */}
+          <Card className="overflow-hidden border-none shadow-none hover:shadow-sm transition-shadow duration-300 rounded-xl">
+            <CardContent className="p-0">
+              <div className="relative bg-gradient-to-br from-red-500 to-red-600 p-4 rounded-xl">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-red-100">
+                      Dibatalkan
+                    </p>
+                    <p className="text-2xl font-bold text-white">
+                      {statusStats.cancelled}
+                    </p>
+                    <div className="flex items-center gap-1 text-xs text-red-100">
+                      <span>Penyesuaian batal</span>
+                    </div>
+                  </div>
+                  <div className="rounded-full bg-white/20 p-2 backdrop-blur-sm">
+                    <XCircle className="h-5 w-5 text-white" />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Adjustments table with search and filters */}
       <Card className="shadow-sm">
         <CardContent>
-          {/* Search and Filters Row */}
-          <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center flex-wrap">
-            {/* Search */}
-            <div className="relative flex-1 min-w-[200px]">
+          {/* Search Row - Full Width */}
+          <div className="mb-4">
+            <div className="relative w-full">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Cari nomor penyesuaian atau produk..."
@@ -258,20 +373,36 @@ export function AdjustmentsClient({ initialData }: AdjustmentsClientProps) {
                 className="pl-9"
               />
             </div>
+          </div>
 
-            {/* Status Filter */}
+          {/* Filters Row - Order: Date, Warehouse, Type, Reason, Status, Reset */}
+          <div className="mb-6 flex flex-col sm:flex-row gap-3 sm:items-center">
+            {/* Date Range Filter - Fixed width */}
+            <DateRangePicker
+              value={dateRange}
+              onChange={(range) => {
+                setDateRange(range);
+                setFilters((prev) => ({ ...prev, page: 1 }));
+              }}
+              placeholder="Semua Tanggal"
+              className="w-full sm:w-[220px] shrink-0"
+            />
+
+            {/* Warehouse Filter */}
             <Select
-              value={statusFilter || "all"}
-              onValueChange={handleStatusFilterChange}
+              value={warehouseFilter || "all"}
+              onValueChange={handleWarehouseFilterChange}
             >
-              <SelectTrigger className="w-full sm:w-[140px]">
-                <SelectValue placeholder="Status" />
+              <SelectTrigger className="w-full sm:flex-1">
+                <SelectValue placeholder="Semua Gudang" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Semua Status</SelectItem>
-                <SelectItem value="DRAFT">Draft</SelectItem>
-                <SelectItem value="APPROVED">Disetujui</SelectItem>
-                <SelectItem value="CANCELLED">Dibatalkan</SelectItem>
+                <SelectItem value="all">Semua Gudang</SelectItem>
+                {warehousesData?.data?.map((warehouse) => (
+                  <SelectItem key={warehouse.id} value={warehouse.id}>
+                    {warehouse.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
 
@@ -280,8 +411,8 @@ export function AdjustmentsClient({ initialData }: AdjustmentsClientProps) {
               value={typeFilter || "all"}
               onValueChange={handleTypeFilterChange}
             >
-              <SelectTrigger className="w-full sm:w-[140px]">
-                <SelectValue placeholder="Tipe" />
+              <SelectTrigger className="w-full sm:flex-1">
+                <SelectValue placeholder="Semua Tipe" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Semua Tipe</SelectItem>
@@ -295,42 +426,42 @@ export function AdjustmentsClient({ initialData }: AdjustmentsClientProps) {
               value={reasonFilter || "all"}
               onValueChange={handleReasonFilterChange}
             >
-              <SelectTrigger className="w-full sm:w-[160px]">
-                <SelectValue placeholder="Alasan" />
+              <SelectTrigger className="w-full sm:flex-1">
+                <SelectValue placeholder="Semua Alasan" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Semua Alasan</SelectItem>
-                {Object.entries(ADJUSTMENT_REASON_CONFIG).map(([key, config]) => (
-                  <SelectItem key={key} value={key}>
-                    {config.label}
-                  </SelectItem>
-                ))}
+                {Object.entries(ADJUSTMENT_REASON_CONFIG).map(
+                  ([key, config]) => (
+                    <SelectItem key={key} value={key}>
+                      {config.label}
+                    </SelectItem>
+                  )
+                )}
               </SelectContent>
             </Select>
 
-            {/* Warehouse Filter */}
+            {/* Status Filter */}
             <Select
-              value={warehouseFilter || "all"}
-              onValueChange={handleWarehouseFilterChange}
+              value={statusFilter || "all"}
+              onValueChange={handleStatusFilterChange}
             >
-              <SelectTrigger className="w-full sm:w-[160px]">
-                <SelectValue placeholder="Gudang" />
+              <SelectTrigger className="w-full sm:flex-1">
+                <SelectValue placeholder="Semua Status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Semua Gudang</SelectItem>
-                {warehousesData?.data?.map((warehouse) => (
-                  <SelectItem key={warehouse.id} value={warehouse.id}>
-                    {warehouse.name}
-                  </SelectItem>
-                ))}
+                <SelectItem value="all">Semua Status</SelectItem>
+                <SelectItem value="DRAFT">Draft</SelectItem>
+                <SelectItem value="APPROVED">Disetujui</SelectItem>
+                <SelectItem value="CANCELLED">Dibatalkan</SelectItem>
               </SelectContent>
             </Select>
 
-            {/* Clear Filters Button */}
+            {/* Clear Filters Button - in same row */}
             {hasActiveFilters && (
               <Button
                 variant="outline"
-                size="sm"
+                size="default"
                 onClick={() => {
                   setSearch("");
                   setDebouncedSearch("");
@@ -338,11 +469,12 @@ export function AdjustmentsClient({ initialData }: AdjustmentsClientProps) {
                   setTypeFilter(undefined);
                   setReasonFilter(undefined);
                   setWarehouseFilter(undefined);
+                  setDateRange(undefined);
                   setFilters((prev) => ({ ...prev, page: 1 }));
                 }}
-                className="w-full sm:w-auto"
+                className="shrink-0"
               >
-                Reset
+                Reset Filter
               </Button>
             )}
           </div>
@@ -409,7 +541,7 @@ export function AdjustmentsClient({ initialData }: AdjustmentsClientProps) {
 
                   {/* Pagination */}
                   {displayData?.pagination && (
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t pt-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ">
                       {/* 1. Summary - Record Data */}
                       <div className="text-sm text-muted-foreground text-center sm:text-left">
                         {(() => {

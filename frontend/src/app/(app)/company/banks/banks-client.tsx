@@ -175,7 +175,7 @@ export function BanksClient({ initialData }: BanksClientProps) {
 
               {/* Pagination */}
               {pagination && (
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t pt-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   {/* 1. Summary - Record Data */}
                   <div className="text-sm text-muted-foreground text-center sm:text-left">
                     {(() => {

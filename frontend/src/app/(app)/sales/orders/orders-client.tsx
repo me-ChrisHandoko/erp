@@ -230,9 +230,7 @@ export function OrdersClient({ initialData }: OrdersClientProps) {
             <Select
               value={customerFilter || "all"}
               onValueChange={(value) =>
-                handleCustomerFilterChange(
-                  value === "all" ? undefined : value
-                )
+                handleCustomerFilterChange(value === "all" ? undefined : value)
               }
             >
               <SelectTrigger className="w-full sm:w-[180px]">
@@ -248,9 +246,7 @@ export function OrdersClient({ initialData }: OrdersClientProps) {
             <Select
               value={warehouseFilter || "all"}
               onValueChange={(value) =>
-                handleWarehouseFilterChange(
-                  value === "all" ? undefined : value
-                )
+                handleWarehouseFilterChange(value === "all" ? undefined : value)
               }
             >
               <SelectTrigger className="w-full sm:w-[180px]">
@@ -345,7 +341,7 @@ export function OrdersClient({ initialData }: OrdersClientProps) {
 
                   {/* Pagination */}
                   {displayData?.pagination && (
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t pt-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ">
                       {/* 1. Summary - Record Data */}
                       <div className="text-sm text-muted-foreground text-center sm:text-left">
                         {(() => {

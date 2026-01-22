@@ -152,9 +152,11 @@ export default function AdjustmentDetailPage() {
   };
 
   // Determine available actions based on status
+  // Only DRAFT adjustments can be edited, approved, cancelled, or deleted
+  // APPROVED adjustments cannot be cancelled because stock has already changed
   const canEditAdjustment = canEdit && adjustment.status === "DRAFT";
   const canApproveAdjustment = canApprove && adjustment.status === "DRAFT";
-  const canCancelAdjustment = canApprove && (adjustment.status === "DRAFT" || adjustment.status === "APPROVED");
+  const canCancelAdjustment = canApprove && adjustment.status === "DRAFT";
   const canDeleteAdjustment = canDelete && adjustment.status === "DRAFT";
 
   return (

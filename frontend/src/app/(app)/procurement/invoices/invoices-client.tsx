@@ -41,16 +41,18 @@ interface PurchaseInvoicesClientProps {
   initialData: PurchaseInvoiceListResponse;
 }
 
-export function PurchaseInvoicesClient({ initialData }: PurchaseInvoicesClientProps) {
+export function PurchaseInvoicesClient({
+  initialData,
+}: PurchaseInvoicesClientProps) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<PurchaseInvoiceStatus | undefined>(
-    undefined
-  );
-  const [paymentStatusFilter, setPaymentStatusFilter] = useState<PaymentStatus | undefined>(
-    undefined
-  );
+  const [statusFilter, setStatusFilter] = useState<
+    PurchaseInvoiceStatus | undefined
+  >(undefined);
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<
+    PaymentStatus | undefined
+  >(undefined);
   const [filters, setFilters] = useState<PurchaseInvoiceFilters>({
     page: 1,
     page_size: 20,
@@ -68,9 +70,9 @@ export function PurchaseInvoicesClient({ initialData }: PurchaseInvoicesClientPr
   );
 
   // Compute permission checks ONCE at top level
-  const canCreateInvoices = permissions.canCreate('purchase-invoices');
-  const canEditInvoices = permissions.canEdit('purchase-invoices');
-  const canApproveInvoices = permissions.canApprove('purchase-invoices');
+  const canCreateInvoices = permissions.canCreate("purchase-invoices");
+  const canEditInvoices = permissions.canEdit("purchase-invoices");
+  const canApproveInvoices = permissions.canApprove("purchase-invoices");
 
   // Debounce search input (wait 500ms after user stops typing)
   useEffect(() => {
@@ -166,8 +168,7 @@ export function PurchaseInvoicesClient({ initialData }: PurchaseInvoicesClientPr
     router.push("/procurement/invoices/create");
   };
 
-  const hasActiveFilters =
-    statusFilter || paymentStatusFilter || search;
+  const hasActiveFilters = statusFilter || paymentStatusFilter || search;
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
@@ -279,7 +280,8 @@ export function PurchaseInvoicesClient({ initialData }: PurchaseInvoicesClientPr
           {/* Data Display */}
           {!error && displayData && (
             <>
-              {(!displayData.data || displayData.data.length === 0) && !hasActiveFilters ? (
+              {(!displayData.data || displayData.data.length === 0) &&
+              !hasActiveFilters ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <FileText className="mb-4 h-12 w-12 text-muted-foreground" />
                   <h3 className="mb-2 text-lg font-semibold">
@@ -314,105 +316,107 @@ export function PurchaseInvoicesClient({ initialData }: PurchaseInvoicesClientPr
                     canApprove={canApproveInvoices}
                   />
 
-              {/* Pagination */}
-              {displayData?.pagination && (
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t pt-4">
-                  {/* 1. Summary - Record Data */}
-                  <div className="text-sm text-muted-foreground text-center sm:text-left">
-                    {(() => {
-                      const pagination = displayData.pagination as any;
-                      const page = pagination.page || 1;
-                      const pageSize = pagination.limit || pagination.page_size || 20;
-                      const totalItems = pagination.total || pagination.totalItems || 0;
-                      const start = (page - 1) * pageSize + 1;
-                      const end = Math.min(page * pageSize, totalItems);
-                      return `Menampilkan ${start}-${end} dari ${totalItems} faktur`;
-                    })()}
-                  </div>
+                  {/* Pagination */}
+                  {displayData?.pagination && (
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ">
+                      {/* 1. Summary - Record Data */}
+                      <div className="text-sm text-muted-foreground text-center sm:text-left">
+                        {(() => {
+                          const pagination = displayData.pagination as any;
+                          const page = pagination.page || 1;
+                          const pageSize =
+                            pagination.limit || pagination.page_size || 20;
+                          const totalItems =
+                            pagination.total || pagination.totalItems || 0;
+                          const start = (page - 1) * pageSize + 1;
+                          const end = Math.min(page * pageSize, totalItems);
+                          return `Menampilkan ${start}-${end} dari ${totalItems} faktur`;
+                        })()}
+                      </div>
 
-                  {/* 2. Page Size Selector */}
-                  <div className="flex items-center justify-center sm:justify-start gap-2">
-                    <span className="text-sm text-muted-foreground whitespace-nowrap">
-                      Baris per Halaman
-                    </span>
-                    <Select
-                      value={filters.page_size?.toString() || "20"}
-                      onValueChange={handlePageSizeChange}
-                    >
-                      <SelectTrigger className="w-[70px] h-8">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="10">10</SelectItem>
-                        <SelectItem value="20">20</SelectItem>
-                        <SelectItem value="50">50</SelectItem>
-                        <SelectItem value="100">100</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                      {/* 2. Page Size Selector */}
+                      <div className="flex items-center justify-center sm:justify-start gap-2">
+                        <span className="text-sm text-muted-foreground whitespace-nowrap">
+                          Baris per Halaman
+                        </span>
+                        <Select
+                          value={filters.page_size?.toString() || "20"}
+                          onValueChange={handlePageSizeChange}
+                        >
+                          <SelectTrigger className="w-[70px] h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="10">10</SelectItem>
+                            <SelectItem value="20">20</SelectItem>
+                            <SelectItem value="50">50</SelectItem>
+                            <SelectItem value="100">100</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
 
-                  {/* 3. Navigation Buttons */}
-                  <div className="flex items-center justify-center sm:justify-end gap-2">
-                    {/* First Page */}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handlePageChange(1)}
-                      disabled={displayData.pagination.page === 1}
-                    >
-                      &laquo;
-                    </Button>
+                      {/* 3. Navigation Buttons */}
+                      <div className="flex items-center justify-center sm:justify-end gap-2">
+                        {/* First Page */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handlePageChange(1)}
+                          disabled={displayData.pagination.page === 1}
+                        >
+                          &laquo;
+                        </Button>
 
-                    {/* Previous Page */}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        handlePageChange(displayData.pagination.page - 1)
-                      }
-                      disabled={displayData.pagination.page === 1}
-                    >
-                      &lsaquo;
-                    </Button>
+                        {/* Previous Page */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            handlePageChange(displayData.pagination.page - 1)
+                          }
+                          disabled={displayData.pagination.page === 1}
+                        >
+                          &lsaquo;
+                        </Button>
 
-                    {/* Current Page Info */}
-                    <span className="text-sm text-muted-foreground px-2">
-                      Halaman {displayData.pagination.page} dari{" "}
-                      {displayData.pagination.totalPages}
-                    </span>
+                        {/* Current Page Info */}
+                        <span className="text-sm text-muted-foreground px-2">
+                          Halaman {displayData.pagination.page} dari{" "}
+                          {displayData.pagination.totalPages}
+                        </span>
 
-                    {/* Next Page */}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        handlePageChange(displayData.pagination.page + 1)
-                      }
-                      disabled={
-                        displayData.pagination.page >=
-                        displayData.pagination.totalPages
-                      }
-                    >
-                      &rsaquo;
-                    </Button>
+                        {/* Next Page */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            handlePageChange(displayData.pagination.page + 1)
+                          }
+                          disabled={
+                            displayData.pagination.page >=
+                            displayData.pagination.totalPages
+                          }
+                        >
+                          &rsaquo;
+                        </Button>
 
-                    {/* Last Page */}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        handlePageChange(displayData.pagination.totalPages)
-                      }
-                      disabled={
-                        displayData.pagination.page >=
-                        displayData.pagination.totalPages
-                      }
-                    >
-                      &raquo;
-                    </Button>
-                  </div>
-                </div>
-              )}
+                        {/* Last Page */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            handlePageChange(displayData.pagination.totalPages)
+                          }
+                          disabled={
+                            displayData.pagination.page >=
+                            displayData.pagination.totalPages
+                          }
+                        >
+                          &raquo;
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </>

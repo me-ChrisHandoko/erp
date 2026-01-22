@@ -56,6 +56,9 @@ func (h *InventoryAdjustmentHandler) CreateInventoryAdjustment(c *gin.Context) {
 		return
 	}
 
+	// Get client info for audit logging
+	ipAddress, userAgent := h.getClientInfo(c)
+
 	// Create adjustment
 	adjustment, err := h.adjustmentService.CreateInventoryAdjustment(
 		c.Request.Context(),
@@ -63,6 +66,8 @@ func (h *InventoryAdjustmentHandler) CreateInventoryAdjustment(c *gin.Context) {
 		companyID.(string),
 		userIDStr,
 		&req,
+		ipAddress,
+		userAgent,
 	)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
@@ -130,15 +135,27 @@ func (h *InventoryAdjustmentHandler) ListInventoryAdjustments(c *gin.Context) {
 		return
 	}
 
+	// Get status counts for statistics cards
+	statusCounts, err := h.adjustmentService.GetStatusCounts(
+		c.Request.Context(),
+		tenantID.(string),
+		companyID.(string),
+	)
+	if err != nil {
+		// Log error but don't fail the request - status counts are optional
+		statusCounts = nil
+	}
+
 	responses := make([]dto.InventoryAdjustmentResponse, len(adjustments))
 	for i, adjustment := range adjustments {
 		responses[i] = mapInventoryAdjustmentToResponse(&adjustment)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"success":    true,
-		"data":       responses,
-		"pagination": pagination,
+		"success":      true,
+		"data":         responses,
+		"pagination":   pagination,
+		"statusCounts": statusCounts,
 	})
 }
 
@@ -198,6 +215,12 @@ func (h *InventoryAdjustmentHandler) UpdateInventoryAdjustment(c *gin.Context) {
 		return
 	}
 
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
 	adjustmentID := c.Param("id")
 	if adjustmentID == "" {
 		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Adjustment ID is required"))
@@ -210,12 +233,18 @@ func (h *InventoryAdjustmentHandler) UpdateInventoryAdjustment(c *gin.Context) {
 		return
 	}
 
+	// Get client info for audit logging
+	ipAddress, userAgent := h.getClientInfo(c)
+
 	adjustment, err := h.adjustmentService.UpdateInventoryAdjustment(
 		c.Request.Context(),
 		tenantID.(string),
 		companyID.(string),
 		adjustmentID,
+		userIDStr,
 		&req,
+		ipAddress,
+		userAgent,
 	)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
@@ -247,17 +276,29 @@ func (h *InventoryAdjustmentHandler) DeleteInventoryAdjustment(c *gin.Context) {
 		return
 	}
 
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
 	adjustmentID := c.Param("id")
 	if adjustmentID == "" {
 		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Adjustment ID is required"))
 		return
 	}
 
+	// Get client info for audit logging
+	ipAddress, userAgent := h.getClientInfo(c)
+
 	err := h.adjustmentService.DeleteInventoryAdjustment(
 		c.Request.Context(),
 		tenantID.(string),
 		companyID.(string),
 		adjustmentID,
+		userIDStr,
+		ipAddress,
+		userAgent,
 	)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
@@ -308,6 +349,9 @@ func (h *InventoryAdjustmentHandler) ApproveInventoryAdjustment(c *gin.Context) 
 	// Bind JSON, but it's okay if body is empty
 	_ = c.ShouldBindJSON(&req)
 
+	// Get client info for audit logging
+	ipAddress, userAgent := h.getClientInfo(c)
+
 	adjustment, err := h.adjustmentService.ApproveInventoryAdjustment(
 		c.Request.Context(),
 		tenantID.(string),
@@ -315,6 +359,8 @@ func (h *InventoryAdjustmentHandler) ApproveInventoryAdjustment(c *gin.Context) 
 		adjustmentID,
 		userIDStr,
 		&req,
+		ipAddress,
+		userAgent,
 	)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
@@ -364,6 +410,9 @@ func (h *InventoryAdjustmentHandler) CancelInventoryAdjustment(c *gin.Context) {
 		return
 	}
 
+	// Get client info for audit logging
+	ipAddress, userAgent := h.getClientInfo(c)
+
 	adjustment, err := h.adjustmentService.CancelInventoryAdjustment(
 		c.Request.Context(),
 		tenantID.(string),
@@ -371,6 +420,8 @@ func (h *InventoryAdjustmentHandler) CancelInventoryAdjustment(c *gin.Context) {
 		adjustmentID,
 		userIDStr,
 		&req,
+		ipAddress,
+		userAgent,
 	)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
@@ -391,6 +442,17 @@ func (h *InventoryAdjustmentHandler) CancelInventoryAdjustment(c *gin.Context) {
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
+
+// getClientInfo extracts IP address and User-Agent from request for audit logging
+func (h *InventoryAdjustmentHandler) getClientInfo(c *gin.Context) (ipAddress, userAgent string) {
+	// Get IP address (check forwarded headers first for proxy support)
+	ipAddress = c.ClientIP()
+
+	// Get User-Agent
+	userAgent = c.Request.UserAgent()
+
+	return ipAddress, userAgent
+}
 
 func (h *InventoryAdjustmentHandler) handleValidationError(c *gin.Context, err error) {
 	if validationErrs, ok := err.(validator.ValidationErrors); ok {

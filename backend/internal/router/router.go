@@ -478,7 +478,7 @@ func setupProtectedRoutes(
 		// INVENTORY ADJUSTMENT MANAGEMENT ROUTES (PHASE 2 - Inventory Management)
 		// Reference: Manual stock adjustments (increase/decrease) for various reasons
 		// ============================================================================
-		inventoryAdjustmentService := inventoryadjustment.NewInventoryAdjustmentService(db)
+		inventoryAdjustmentService := inventoryadjustment.NewInventoryAdjustmentService(db, auditService)
 		inventoryAdjustmentHandler := handler.NewInventoryAdjustmentHandler(inventoryAdjustmentService)
 
 		inventoryAdjustmentGroup := businessProtected.Group("/inventory-adjustments")

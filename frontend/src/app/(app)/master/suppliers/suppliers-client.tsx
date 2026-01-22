@@ -30,7 +30,10 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { useListSuppliersQuery } from "@/store/services/supplierApi";
 import { usePermissions } from "@/hooks/use-permissions";
 import { SuppliersTable } from "@/components/suppliers/suppliers-table";
-import type { SupplierFilters, SupplierListResponse } from "@/types/supplier.types";
+import type {
+  SupplierFilters,
+  SupplierListResponse,
+} from "@/types/supplier.types";
 import type { RootState } from "@/store";
 
 interface SuppliersClientProps {
@@ -164,274 +167,271 @@ export function SuppliersClient({ initialData }: SuppliersClientProps) {
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-          {/* Page title and actions */}
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="space-y-1">
-              <h1 className="text-3xl font-bold tracking-tight">
-                Daftar Supplier
-              </h1>
-              <p className="text-muted-foreground">
-                Kelola informasi supplier dan rekanan bisnis
-              </p>
+      {/* Page title and actions */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-bold tracking-tight">Daftar Supplier</h1>
+          <p className="text-muted-foreground">
+            Kelola informasi supplier dan rekanan bisnis
+          </p>
+        </div>
+        {canCreateSuppliers && (
+          <Button
+            className="shrink-0"
+            onClick={() => router.push("/master/suppliers/create")}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Tambah Supplier
+          </Button>
+        )}
+      </div>
+
+      {/* Suppliers table with search and filters */}
+      <Card className="shadow-sm">
+        <CardContent>
+          {/* Search and Filters Row */}
+          <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+            {/* Search */}
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Cari kode, nama, atau email supplier..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
             </div>
-            {canCreateSuppliers && (
+
+            {/* Type Filter */}
+            <Select
+              value={typeFilter || "all"}
+              onValueChange={(value) =>
+                handleTypeFilterChange(value === "all" ? undefined : value)
+              }
+            >
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <SelectValue placeholder="Semua Tipe" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Tipe</SelectItem>
+                {displayData?.data &&
+                  Array.from(
+                    new Set(displayData.data.map((s) => s.type).filter(Boolean))
+                  ).map((type) => (
+                    <SelectItem key={type} value={type as string}>
+                      {(type as string).charAt(0) +
+                        (type as string).slice(1).toLowerCase()}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+
+            {/* Status Filter */}
+            <Select
+              value={
+                statusFilter === undefined
+                  ? "all"
+                  : statusFilter
+                  ? "active"
+                  : "inactive"
+              }
+              onValueChange={(value) =>
+                handleStatusFilterChange(
+                  value === "all" ? undefined : value === "active"
+                )
+              }
+            >
+              <SelectTrigger className="w-full sm:w-[150px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Status</SelectItem>
+                <SelectItem value="active">Aktif</SelectItem>
+                <SelectItem value="inactive">Nonaktif</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Clear Filters Button */}
+            {hasActiveFilters && (
               <Button
-                className="shrink-0"
-                onClick={() => router.push("/master/suppliers/create")}
+                variant="ghost"
+                onClick={handleResetFilters}
+                className="h-10 px-4"
               >
-                <Plus className="mr-2 h-4 w-4" />
-                Tambah Supplier
+                Reset
               </Button>
             )}
           </div>
 
-          {/* Suppliers table with search and filters */}
-          <Card className="shadow-sm">
-            <CardContent>
-              {/* Search and Filters Row */}
-              <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
-                {/* Search */}
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    placeholder="Cari kode, nama, atau email supplier..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="pl-9"
-                  />
-                </div>
+          {/* Loading State (only for refetching) */}
+          {isLoading && !displayData && (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center space-y-3">
+                <LoadingSpinner size="lg" />
+                <p className="text-sm text-muted-foreground">
+                  Memuat data supplier...
+                </p>
+              </div>
+            </div>
+          )}
 
-                {/* Type Filter */}
-                <Select
-                  value={typeFilter || "all"}
-                  onValueChange={(value) =>
-                    handleTypeFilterChange(value === "all" ? undefined : value)
-                  }
-                >
-                  <SelectTrigger className="w-full sm:w-[180px]">
-                    <SelectValue placeholder="Semua Tipe" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Semua Tipe</SelectItem>
-                    {displayData?.data &&
-                      Array.from(
-                        new Set(
-                          displayData.data
-                            .map((s) => s.type)
-                            .filter(Boolean)
-                        )
-                      ).map((type) => (
-                        <SelectItem key={type} value={type as string}>
-                          {(type as string).charAt(0) + (type as string).slice(1).toLowerCase()}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
+          {/* Error State */}
+          {error && !isLoading && (
+            <div className="py-8">
+              <ErrorDisplay
+                error={error}
+                onRetry={refetch}
+                title="Gagal memuat data supplier"
+              />
+            </div>
+          )}
 
-                {/* Status Filter */}
-                <Select
-                  value={
-                    statusFilter === undefined
-                      ? "all"
-                      : statusFilter
-                      ? "active"
-                      : "inactive"
+          {/* Empty State (no data at all) */}
+          {!isLoading &&
+            !error &&
+            displayData?.data &&
+            displayData.data.length === 0 &&
+            !hasActiveFilters && (
+              <div className="py-12">
+                <EmptyState
+                  icon={Building2}
+                  title="Belum ada supplier"
+                  description="Mulai dengan menambahkan supplier pertama Anda"
+                  action={
+                    canCreateSuppliers
+                      ? {
+                          label: "Tambah Supplier",
+                          onClick: () =>
+                            router.push("/master/suppliers/create"),
+                        }
+                      : undefined
                   }
-                  onValueChange={(value) =>
-                    handleStatusFilterChange(
-                      value === "all" ? undefined : value === "active"
-                    )
-                  }
-                >
-                  <SelectTrigger className="w-full sm:w-[150px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Semua Status</SelectItem>
-                    <SelectItem value="active">Aktif</SelectItem>
-                    <SelectItem value="inactive">Nonaktif</SelectItem>
-                  </SelectContent>
-                </Select>
+                />
+              </div>
+            )}
 
-                {/* Clear Filters Button */}
-                {hasActiveFilters && (
-                  <Button
-                    variant="ghost"
-                    onClick={handleResetFilters}
-                    className="h-10 px-4"
-                  >
-                    Reset
-                  </Button>
+          {/* Data Display */}
+          {!error && displayData?.data && displayData.data.length > 0 && (
+            <>
+              <div className="space-y-4">
+                {/* Subtle loading indicator for refetching */}
+                {isLoading && (
+                  <div className="text-sm text-muted-foreground text-center py-2">
+                    Memperbarui data...
+                  </div>
+                )}
+                <SuppliersTable
+                  suppliers={displayData.data}
+                  sortBy={filters.sortBy}
+                  sortOrder={filters.sortOrder}
+                  onSortChange={handleSortChange}
+                  canEdit={canEditSuppliers}
+                />
+
+                {/* Pagination */}
+                {displayData?.pagination && (
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    {/* 1. Summary - Record Data */}
+                    <div className="text-sm text-muted-foreground text-center sm:text-left">
+                      {(() => {
+                        const pagination = displayData.pagination;
+                        const page = pagination.page || 1;
+                        const pageSize = pagination.limit || 20;
+                        const totalItems = pagination.total || 0;
+                        const start = (page - 1) * pageSize + 1;
+                        const end = Math.min(page * pageSize, totalItems);
+                        return `Menampilkan ${start}-${end} dari ${totalItems} item`;
+                      })()}
+                    </div>
+
+                    {/* 2. Page Size Selector - Baris per Halaman */}
+                    <div className="flex items-center justify-center sm:justify-start gap-2">
+                      <span className="text-sm text-muted-foreground whitespace-nowrap">
+                        Baris per Halaman
+                      </span>
+                      <Select
+                        value={filters.pageSize?.toString() || "20"}
+                        onValueChange={handlePageSizeChange}
+                      >
+                        <SelectTrigger className="w-[70px] h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="10">10</SelectItem>
+                          <SelectItem value="20">20</SelectItem>
+                          <SelectItem value="50">50</SelectItem>
+                          <SelectItem value="100">100</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* 3. Navigation Buttons - << < Halaman > >> */}
+                    <div className="flex items-center justify-center sm:justify-end gap-2">
+                      {/* First Page */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handlePageChange(1)}
+                        disabled={displayData.pagination.page === 1}
+                      >
+                        &laquo;
+                      </Button>
+
+                      {/* Previous Page */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          handlePageChange(displayData.pagination.page - 1)
+                        }
+                        disabled={displayData.pagination.page === 1}
+                      >
+                        &lsaquo;
+                      </Button>
+
+                      {/* Current Page Info */}
+                      <span className="text-sm text-muted-foreground px-2">
+                        Halaman {displayData.pagination.page} dari{" "}
+                        {displayData.pagination.totalPages}
+                      </span>
+
+                      {/* Next Page */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          handlePageChange(displayData.pagination.page + 1)
+                        }
+                        disabled={
+                          displayData.pagination.page >=
+                          displayData.pagination.totalPages
+                        }
+                      >
+                        &rsaquo;
+                      </Button>
+
+                      {/* Last Page */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          handlePageChange(displayData.pagination.totalPages)
+                        }
+                        disabled={
+                          displayData.pagination.page >=
+                          displayData.pagination.totalPages
+                        }
+                      >
+                        &raquo;
+                      </Button>
+                    </div>
+                  </div>
                 )}
               </div>
-
-              {/* Loading State (only for refetching) */}
-              {isLoading && !displayData && (
-                <div className="flex items-center justify-center py-12">
-                  <div className="text-center space-y-3">
-                    <LoadingSpinner size="lg" />
-                    <p className="text-sm text-muted-foreground">
-                      Memuat data supplier...
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Error State */}
-              {error && !isLoading && (
-                <div className="py-8">
-                  <ErrorDisplay
-                    error={error}
-                    onRetry={refetch}
-                    title="Gagal memuat data supplier"
-                  />
-                </div>
-              )}
-
-              {/* Empty State (no data at all) */}
-              {!isLoading &&
-                !error &&
-                displayData?.data &&
-                displayData.data.length === 0 &&
-                !hasActiveFilters && (
-                  <div className="py-12">
-                    <EmptyState
-                      icon={Building2}
-                      title="Belum ada supplier"
-                      description="Mulai dengan menambahkan supplier pertama Anda"
-                      action={
-                        canCreateSuppliers
-                          ? {
-                              label: "Tambah Supplier",
-                              onClick: () => router.push("/master/suppliers/create"),
-                            }
-                          : undefined
-                      }
-                    />
-                  </div>
-                )}
-
-              {/* Data Display */}
-              {!error && displayData?.data && displayData.data.length > 0 && (
-                <>
-                  {/* Subtle loading indicator for refetching */}
-                  {isLoading && (
-                    <div className="text-sm text-muted-foreground text-center py-2">
-                      Memperbarui data...
-                    </div>
-                  )}
-
-                  <SuppliersTable
-                    suppliers={displayData.data}
-                    sortBy={filters.sortBy}
-                    sortOrder={filters.sortOrder}
-                    onSortChange={handleSortChange}
-                    canEdit={canEditSuppliers}
-                  />
-
-                  {/* Pagination */}
-                  {displayData?.pagination && (
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t pt-4 mt-6">
-                      {/* 1. Summary - Record Data */}
-                      <div className="text-sm text-muted-foreground text-center sm:text-left">
-                        {(() => {
-                          const pagination = displayData.pagination;
-                          const page = pagination.page || 1;
-                          const pageSize = pagination.limit || 20;
-                          const totalItems = pagination.total || 0;
-                          const start = (page - 1) * pageSize + 1;
-                          const end = Math.min(page * pageSize, totalItems);
-                          return `Menampilkan ${start}-${end} dari ${totalItems} item`;
-                        })()}
-                      </div>
-
-                      {/* 2. Page Size Selector - Baris per Halaman */}
-                      <div className="flex items-center justify-center sm:justify-start gap-2">
-                        <span className="text-sm text-muted-foreground whitespace-nowrap">
-                          Baris per Halaman
-                        </span>
-                        <Select
-                          value={filters.pageSize?.toString() || "20"}
-                          onValueChange={handlePageSizeChange}
-                        >
-                          <SelectTrigger className="w-[70px] h-8">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="10">10</SelectItem>
-                            <SelectItem value="20">20</SelectItem>
-                            <SelectItem value="50">50</SelectItem>
-                            <SelectItem value="100">100</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      {/* 3. Navigation Buttons - << < Halaman > >> */}
-                      <div className="flex items-center justify-center sm:justify-end gap-2">
-                        {/* First Page */}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handlePageChange(1)}
-                          disabled={displayData.pagination.page === 1}
-                        >
-                          &laquo;
-                        </Button>
-
-                        {/* Previous Page */}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() =>
-                            handlePageChange(displayData.pagination.page - 1)
-                          }
-                          disabled={displayData.pagination.page === 1}
-                        >
-                          &lsaquo;
-                        </Button>
-
-                        {/* Current Page Info */}
-                        <span className="text-sm text-muted-foreground px-2">
-                          Halaman {displayData.pagination.page} dari{" "}
-                          {displayData.pagination.totalPages}
-                        </span>
-
-                        {/* Next Page */}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() =>
-                            handlePageChange(displayData.pagination.page + 1)
-                          }
-                          disabled={
-                            displayData.pagination.page >=
-                            displayData.pagination.totalPages
-                          }
-                        >
-                          &rsaquo;
-                        </Button>
-
-                        {/* Last Page */}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() =>
-                            handlePageChange(displayData.pagination.totalPages)
-                          }
-                          disabled={
-                            displayData.pagination.page >=
-                            displayData.pagination.totalPages
-                          }
-                        >
-                          &raquo;
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
+            </>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

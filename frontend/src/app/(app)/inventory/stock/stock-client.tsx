@@ -393,7 +393,7 @@ export function StockClient({ initialData }: StockClientProps) {
 
                   {/* Pagination */}
                   {displayData?.pagination && (
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t pt-4 mt-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3  mt-6">
                       {/* 1. Summary - Record Data */}
                       <div className="text-sm text-muted-foreground text-center sm:text-left">
                         {(() => {

@@ -29,6 +29,7 @@ type InventoryAdjustment struct {
 	CancelledBy      *string                   `gorm:"type:varchar(255)"` // User who cancelled
 	CancelledAt      *time.Time                `gorm:"type:timestamp"`
 	CancelReason     *string                   `gorm:"type:text"` // Reason for cancellation
+	IsActive         bool                      `gorm:"type:boolean;default:true;index"` // false = soft deleted
 	CreatedAt        time.Time                 `gorm:"autoCreateTime"`
 	UpdatedAt        time.Time                 `gorm:"autoUpdateTime"`
 

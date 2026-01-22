@@ -13,7 +13,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Package, AlertCircle, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
-import { EditAdjustmentForm } from "@/components/adjustments/edit-adjustment-form";
+import { AdjustmentForm } from "@/components/adjustments/adjustment-form";
 import { useGetAdjustmentQuery } from "@/store/services/adjustmentApi";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -154,7 +154,8 @@ export default function EditAdjustmentPage() {
         </div>
 
         {/* Edit Adjustment Form */}
-        <EditAdjustmentForm
+        <AdjustmentForm
+          mode="edit"
           adjustment={adjustment}
           onSuccess={handleSuccess}
           onCancel={handleCancel}
