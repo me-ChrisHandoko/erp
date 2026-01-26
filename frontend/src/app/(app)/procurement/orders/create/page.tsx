@@ -32,9 +32,9 @@ export default function CreateOrderPage() {
       <PageHeader
         breadcrumbs={[
           { label: "Dashboard", href: "/dashboard" },
-          { label: "Procurement", href: "/procurement/orders" },
-          { label: "Purchase Orders", href: "/procurement/orders" },
-          { label: "Buat PO Baru" },
+          { label: "Pembelian" },
+          { label: "Pesanan Pembelian", href: "/procurement/orders" },
+          { label: "Buat Pesanan" },
         ]}
       />
 
@@ -44,10 +44,10 @@ export default function CreateOrderPage() {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <ShoppingCart className="h-6 w-6 text-muted-foreground" />
-            <h1 className="text-3xl font-bold tracking-tight">Buat Purchase Order Baru</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Buat Pesanan Pembelian Baru</h1>
           </div>
           <p className="text-muted-foreground">
-            Buat purchase order untuk pembelian barang dari supplier
+            Buat pesanan pembelian barang dari supplier
           </p>
         </div>
 

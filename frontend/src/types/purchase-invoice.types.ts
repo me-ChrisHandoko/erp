@@ -62,6 +62,11 @@ export interface CreatePurchaseInvoiceRequest {
   taxRate?: string;
   paymentTermDays?: number;
   notes?: string;
+  // Non-Goods Costs (Biaya Tambahan)
+  shippingCost?: string; // Biaya Pengiriman / Ongkir
+  handlingCost?: string; // Biaya Handling / Bongkar Muat
+  otherCost?: string; // Biaya Lain-lain
+  otherCostDescription?: string; // Keterangan Biaya Lain-lain
   items: CreatePurchaseInvoiceItemRequest[];
 }
 
@@ -74,6 +79,11 @@ export interface UpdatePurchaseInvoiceRequest {
   paymentTermDays?: number;
   notes?: string;
   status?: PurchaseInvoiceStatus;
+  // Non-Goods Costs (Biaya Tambahan)
+  shippingCost?: string; // Biaya Pengiriman / Ongkir
+  handlingCost?: string; // Biaya Handling / Bongkar Muat
+  otherCost?: string; // Biaya Lain-lain
+  otherCostDescription?: string; // Keterangan Biaya Lain-lain
 }
 
 export interface ApprovePurchaseInvoiceRequest {
@@ -152,6 +162,12 @@ export interface PurchaseInvoiceResponse {
   totalAmount: string;
   paidAmount: string;
   remainingAmount: string;
+  // Non-Goods Costs (Biaya Tambahan)
+  shippingCost: string; // Biaya Pengiriman / Ongkir
+  handlingCost: string; // Biaya Handling / Bongkar Muat
+  otherCost: string; // Biaya Lain-lain
+  otherCostDescription?: string; // Keterangan Biaya Lain-lain
+  totalNonGoodsCost: string; // Total Biaya Tambahan (computed)
   paymentTermDays: number;
   status: PurchaseInvoiceStatus;
   paymentStatus: PaymentStatus;
@@ -223,6 +239,11 @@ export interface PurchaseInvoiceFormData {
   taxRate: string;
   paymentTermDays: number;
   notes: string;
+  // Non-Goods Costs (Biaya Tambahan)
+  shippingCost: string; // Biaya Pengiriman / Ongkir
+  handlingCost: string; // Biaya Handling / Bongkar Muat
+  otherCost: string; // Biaya Lain-lain
+  otherCostDescription: string; // Keterangan Biaya Lain-lain
   items: PurchaseInvoiceItemFormData[];
 }
 

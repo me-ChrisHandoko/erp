@@ -59,6 +59,13 @@ type CancelPurchaseOrderRequest struct {
 	CancellationNote string `json:"cancellationNote" binding:"required,min=1,max=500"`
 }
 
+// ShortClosePurchaseOrderRequest - Request to short close a purchase order (SAP DCI model)
+// Short close allows closing a PO even if not fully delivered - for cases where
+// supplier won't/can't deliver remaining quantity (e.g., rejected items not replaced)
+type ShortClosePurchaseOrderRequest struct {
+	ShortCloseReason string `json:"shortCloseReason" binding:"required,min=1,max=500"`
+}
+
 // PurchaseOrderProductResponse - Product info for purchase order items
 type PurchaseOrderProductResponse struct {
 	ID             string `json:"id"`
@@ -117,6 +124,9 @@ type PurchaseOrderResponse struct {
 	CancelledBy        *string                     `json:"cancelledBy,omitempty"`
 	CancelledAt        *time.Time                  `json:"cancelledAt,omitempty"`
 	CancellationNote   *string                     `json:"cancellationNote,omitempty"`
+	ShortClosedBy      *string                     `json:"shortClosedBy,omitempty"`
+	ShortClosedAt      *time.Time                  `json:"shortClosedAt,omitempty"`
+	ShortCloseReason   *string                     `json:"shortCloseReason,omitempty"`
 	Items              []PurchaseOrderItemResponse `json:"items,omitempty"`
 	CreatedAt          time.Time                   `json:"createdAt"`
 	UpdatedAt          time.Time                   `json:"updatedAt"`
@@ -134,7 +144,7 @@ type PurchaseOrderListQuery struct {
 	Page        int     `form:"page" binding:"omitempty,min=1"`
 	PageSize    int     `form:"page_size" binding:"omitempty,min=1,max=100"`
 	Search      string  `form:"search" binding:"omitempty"` // Search by PO number
-	Status      *string `form:"status" binding:"omitempty,oneof=DRAFT CONFIRMED COMPLETED CANCELLED"`
+	Status      *string `form:"status" binding:"omitempty,oneof=DRAFT CONFIRMED COMPLETED SHORT_CLOSED CANCELLED"`
 	SupplierID  *string `form:"supplier_id" binding:"omitempty,uuid"`
 	WarehouseID *string `form:"warehouse_id" binding:"omitempty,uuid"`
 	DateFrom    *string `form:"date_from" binding:"omitempty"` // ISO date string

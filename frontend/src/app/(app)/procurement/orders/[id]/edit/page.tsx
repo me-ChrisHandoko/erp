@@ -42,9 +42,9 @@ export default function EditOrderPage() {
         <PageHeader
           breadcrumbs={[
             { label: "Dashboard", href: "/dashboard" },
-            { label: "Procurement", href: "/procurement/orders" },
-            { label: "Purchase Orders", href: "/procurement/orders" },
-            { label: "Edit PO" },
+            { label: "Pembelian" },
+            { label: "Pesanan Pembelian", href: "/procurement/orders" },
+            { label: "Edit Pesanan" },
           ]}
         />
         <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
@@ -66,16 +66,16 @@ export default function EditOrderPage() {
         <PageHeader
           breadcrumbs={[
             { label: "Dashboard", href: "/dashboard" },
-            { label: "Procurement", href: "/procurement/orders" },
-            { label: "Purchase Orders", href: "/procurement/orders" },
-            { label: "Edit PO" },
+            { label: "Pembelian" },
+            { label: "Pesanan Pembelian", href: "/procurement/orders" },
+            { label: "Edit Pesanan" },
           ]}
         />
         <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              {error ? "Gagal memuat data purchase order" : "Purchase order tidak ditemukan"}
+              {error ? "Gagal memuat data pesanan pembelian" : "Pesanan pembelian tidak ditemukan"}
             </AlertDescription>
           </Alert>
           <Button
@@ -84,7 +84,7 @@ export default function EditOrderPage() {
             onClick={() => router.push("/procurement/orders")}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Kembali ke Daftar PO
+            Kembali ke Daftar Pesanan
           </Button>
         </div>
       </div>
@@ -100,8 +100,8 @@ export default function EditOrderPage() {
         <PageHeader
           breadcrumbs={[
             { label: "Dashboard", href: "/dashboard" },
-            { label: "Procurement", href: "/procurement/orders" },
-            { label: "Purchase Orders", href: "/procurement/orders" },
+            { label: "Pembelian" },
+            { label: "Pesanan Pembelian", href: "/procurement/orders" },
             { label: order.poNumber, href: `/procurement/orders/${orderId}` },
             { label: "Edit" },
           ]}
@@ -110,7 +110,7 @@ export default function EditOrderPage() {
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              Purchase order dengan status {order.status} tidak dapat diedit. Hanya PO dengan
+              Pesanan pembelian dengan status {order.status} tidak dapat diedit. Hanya pesanan dengan
               status DRAFT yang dapat diedit.
             </AlertDescription>
           </Alert>
@@ -120,7 +120,7 @@ export default function EditOrderPage() {
             onClick={() => router.push(`/procurement/orders/${orderId}`)}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Kembali ke Detail PO
+            Kembali ke Detail Pesanan
           </Button>
         </div>
       </div>
@@ -132,8 +132,8 @@ export default function EditOrderPage() {
       <PageHeader
         breadcrumbs={[
           { label: "Dashboard", href: "/dashboard" },
-          { label: "Procurement", href: "/procurement/orders" },
-          { label: "Purchase Orders", href: "/procurement/orders" },
+          { label: "Pembelian" },
+          { label: "Pesanan Pembelian", href: "/procurement/orders" },
           { label: order.poNumber, href: `/procurement/orders/${orderId}` },
           { label: "Edit" },
         ]}
@@ -145,10 +145,10 @@ export default function EditOrderPage() {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <ShoppingCart className="h-6 w-6 text-muted-foreground" />
-            <h1 className="text-3xl font-bold tracking-tight">Edit Purchase Order</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Edit Pesanan Pembelian</h1>
           </div>
           <p className="text-muted-foreground">
-            Perbarui purchase order{" "}
+            Perbarui pesanan pembelian{" "}
             <span className="font-mono font-semibold">{order.poNumber}</span>
           </p>
         </div>

@@ -31,6 +31,9 @@ type PurchaseOrder struct {
 	CancelledBy        *string         `gorm:"type:varchar(255)"`
 	CancelledAt        *time.Time      `gorm:"type:timestamp"`
 	CancellationNote   *string         `gorm:"type:text"`
+	ShortClosedBy      *string         `gorm:"type:varchar(255)"` // User who short closed (SAP DCI model)
+	ShortClosedAt      *time.Time      `gorm:"type:timestamp"`    // Timestamp of short close
+	ShortCloseReason   *string         `gorm:"type:text"`         // Reason for short closing
 	CreatedAt          time.Time       `gorm:"autoCreateTime"`
 	UpdatedAt          time.Time       `gorm:"autoUpdateTime"`
 

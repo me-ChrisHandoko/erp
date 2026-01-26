@@ -7,9 +7,9 @@
 
 /**
  * Purchase Order Status Enum
- * Simplified PO workflow (PHASE 0)
+ * PO workflow with Short Close support (SAP DCI Model)
  */
-export type PurchaseOrderStatus = "DRAFT" | "CONFIRMED" | "COMPLETED" | "CANCELLED";
+export type PurchaseOrderStatus = "DRAFT" | "CONFIRMED" | "COMPLETED" | "SHORT_CLOSED" | "CANCELLED";
 
 /**
  * Purchase Order
@@ -106,6 +106,8 @@ export interface CreatePurchaseOrderRequest {
   warehouseId: string;
   poDate?: string;
   expectedDeliveryAt?: string;
+  discountAmount?: string; // Header-level discount (nominal)
+  taxAmount?: string; // Manual tax override (optional)
   notes?: string;
   items: CreatePurchaseOrderItemRequest[];
 }
@@ -132,6 +134,8 @@ export interface UpdatePurchaseOrderRequest {
   warehouseId?: string;
   poDate?: string;
   expectedDeliveryAt?: string;
+  discountAmount?: string; // Header-level discount (nominal)
+  taxAmount?: string; // Manual tax override (optional)
   notes?: string;
   items?: UpdatePurchaseOrderItemRequest[];
 }
@@ -162,6 +166,14 @@ export interface ConfirmPurchaseOrderRequest {
  */
 export interface CancelPurchaseOrderRequest {
   cancellationNote: string;
+}
+
+/**
+ * Short Close Purchase Order Request (SAP DCI Model)
+ * Closes PO even if not fully delivered
+ */
+export interface ShortClosePurchaseOrderRequest {
+  shortCloseReason: string;
 }
 
 // ============================================================================
@@ -294,6 +306,7 @@ export const PURCHASE_ORDER_STATUS_LABELS: Record<PurchaseOrderStatus, string> =
   DRAFT: "Draft",
   CONFIRMED: "Dikonfirmasi",
   COMPLETED: "Selesai",
+  SHORT_CLOSED: "Ditutup Sebagian",
   CANCELLED: "Dibatalkan",
 };
 
@@ -304,6 +317,7 @@ export const PURCHASE_ORDER_STATUS_COLORS: Record<PurchaseOrderStatus, string> =
   DRAFT: "bg-gray-500 text-white hover:bg-gray-600",
   CONFIRMED: "bg-blue-500 text-white hover:bg-blue-600",
   COMPLETED: "bg-green-500 text-white hover:bg-green-600",
+  SHORT_CLOSED: "bg-orange-500 text-white hover:bg-orange-600",
   CANCELLED: "bg-red-500 text-white hover:bg-red-600",
 };
 
@@ -314,6 +328,7 @@ export const PURCHASE_ORDER_STATUS_OPTIONS = [
   { value: "DRAFT", label: "Draft" },
   { value: "CONFIRMED", label: "Dikonfirmasi" },
   { value: "COMPLETED", label: "Selesai" },
+  { value: "SHORT_CLOSED", label: "Ditutup Sebagian" },
   { value: "CANCELLED", label: "Dibatalkan" },
 ] as const;
 
@@ -346,7 +361,7 @@ export function getStatusBadgeColor(status: PurchaseOrderStatus): string {
  * Type guard to check if value is a valid purchase order status
  */
 export function isPurchaseOrderStatus(value: string): value is PurchaseOrderStatus {
-  return ["DRAFT", "CONFIRMED", "COMPLETED", "CANCELLED"].includes(value);
+  return ["DRAFT", "CONFIRMED", "COMPLETED", "SHORT_CLOSED", "CANCELLED"].includes(value);
 }
 
 /**

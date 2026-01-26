@@ -680,6 +680,338 @@ func (s *WarehouseService) GetWarehouseStockStatus(ctx context.Context, tenantID
 }
 
 // ============================================================================
+// INITIAL STOCK SETUP
+// ============================================================================
+
+// CreateInitialStock creates initial warehouse stocks for a warehouse
+// This is used for one-time initial stock setup when migrating data or setting up a new warehouse
+func (s *WarehouseService) CreateInitialStock(
+	ctx context.Context,
+	tenantID, companyID, userID, ipAddress, userAgent string,
+	req *dto.InitialStockSetupRequest,
+) (*dto.InitialStockSetupResponse, error) {
+	// Create audit context early for failure logging
+	requestID := uuid.New().String()
+	auditCtx := &audit.AuditContext{
+		TenantID:  &tenantID,
+		CompanyID: &companyID,
+		UserID:    &userID,
+		RequestID: &requestID,
+		IPAddress: &ipAddress,
+		UserAgent: &userAgent,
+	}
+
+	// Helper function for failure logging
+	logFailure := func(errorMsg string) {
+		reqData := map[string]interface{}{
+			"warehouse_id": req.WarehouseID,
+			"total_items":  len(req.Items),
+		}
+		if err := s.auditService.LogInitialStockOperationFailed(ctx, auditCtx, req.WarehouseID, errorMsg, reqData); err != nil {
+			fmt.Printf("WARNING: Failed to create failure audit log: %v\n", err)
+		}
+	}
+
+	// Validate warehouse exists and belongs to company
+	warehouse, err := s.GetWarehouseByID(ctx, tenantID, companyID, req.WarehouseID)
+	if err != nil {
+		logFailure(fmt.Sprintf("Warehouse validation failed: %v", err))
+		return nil, err
+	}
+
+	if !warehouse.IsActive {
+		logFailure("Warehouse is not active")
+		return nil, pkgerrors.NewBadRequestError("Warehouse is not active")
+	}
+
+	// Get all product IDs from request
+	productIDs := make([]string, len(req.Items))
+	for i, item := range req.Items {
+		productIDs[i] = item.ProductID
+	}
+
+	// Validate all products exist and belong to company
+	var products []models.Product
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+		Where("company_id = ? AND id IN ?", companyID, productIDs).
+		Find(&products).Error; err != nil {
+		logFailure(fmt.Sprintf("Failed to fetch products: %v", err))
+		return nil, fmt.Errorf("failed to fetch products: %w", err)
+	}
+
+	productMap := make(map[string]*models.Product)
+	for i := range products {
+		productMap[products[i].ID] = &products[i]
+	}
+
+	// Validate all products were found
+	for _, item := range req.Items {
+		if _, exists := productMap[item.ProductID]; !exists {
+			return nil, pkgerrors.NewBadRequestError(fmt.Sprintf("Product with ID %s not found", item.ProductID))
+		}
+	}
+
+	// Start transaction
+	tx := s.db.WithContext(ctx).Set("tenant_id", tenantID).Begin()
+	if tx.Error != nil {
+		logFailure(fmt.Sprintf("Failed to start transaction: %v", tx.Error))
+		return nil, fmt.Errorf("failed to start transaction: %w", tx.Error)
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	createdCount := 0
+	updatedCount := 0
+	totalValue := decimal.Zero
+
+	// Collect item details for audit logging
+	type itemAuditData struct {
+		ProductID    string  `json:"product_id"`
+		ProductCode  string  `json:"product_code"`
+		ProductName  string  `json:"product_name"`
+		Quantity     string  `json:"quantity"`
+		CostPerUnit  string  `json:"cost_per_unit"`
+		Value        string  `json:"value"`
+		Location     *string `json:"location,omitempty"`
+		MinimumStock string  `json:"minimum_stock"`
+		MaximumStock string  `json:"maximum_stock"`
+		Notes        *string `json:"notes,omitempty"`
+		Action       string  `json:"action"`
+		StockBefore  string  `json:"stock_before"`
+		StockAfter   string  `json:"stock_after"`
+	}
+	itemsAuditData := make([]itemAuditData, 0, len(req.Items))
+
+	for _, item := range req.Items {
+		// Parse quantity
+		qty, err := decimal.NewFromString(item.Quantity)
+		if err != nil {
+			tx.Rollback()
+			return nil, pkgerrors.NewBadRequestError(fmt.Sprintf("Invalid quantity for product %s", item.ProductID))
+		}
+		if qty.LessThanOrEqual(decimal.Zero) {
+			tx.Rollback()
+			return nil, pkgerrors.NewBadRequestError(fmt.Sprintf("Quantity must be positive for product %s", item.ProductID))
+		}
+
+		// Parse cost per unit
+		cost, err := decimal.NewFromString(item.CostPerUnit)
+		if err != nil {
+			tx.Rollback()
+			return nil, pkgerrors.NewBadRequestError(fmt.Sprintf("Invalid cost for product %s", item.ProductID))
+		}
+		if cost.LessThanOrEqual(decimal.Zero) {
+			tx.Rollback()
+			return nil, pkgerrors.NewBadRequestError(fmt.Sprintf("Cost must be positive for product %s", item.ProductID))
+		}
+
+		// Parse optional fields
+		var minStock, maxStock decimal.Decimal
+		if item.MinimumStock != nil && *item.MinimumStock != "" {
+			minStock, err = decimal.NewFromString(*item.MinimumStock)
+			if err != nil {
+				tx.Rollback()
+				return nil, pkgerrors.NewBadRequestError(fmt.Sprintf("Invalid minimum stock for product %s", item.ProductID))
+			}
+		}
+		if item.MaximumStock != nil && *item.MaximumStock != "" {
+			maxStock, err = decimal.NewFromString(*item.MaximumStock)
+			if err != nil {
+				tx.Rollback()
+				return nil, pkgerrors.NewBadRequestError(fmt.Sprintf("Invalid maximum stock for product %s", item.ProductID))
+			}
+		}
+
+		// Check if warehouse stock already exists
+		var existingStock models.WarehouseStock
+		err = tx.Where("warehouse_id = ? AND product_id = ?", req.WarehouseID, item.ProductID).
+			First(&existingStock).Error
+
+		if err == gorm.ErrRecordNotFound {
+			// Create new warehouse stock
+			newStock := &models.WarehouseStock{
+				WarehouseID:  req.WarehouseID,
+				ProductID:    item.ProductID,
+				Quantity:     qty,
+				MinimumStock: minStock,
+				MaximumStock: maxStock,
+				Location:     item.Location,
+			}
+
+			if err := tx.Create(newStock).Error; err != nil {
+				tx.Rollback()
+				logFailure(fmt.Sprintf("Failed to create warehouse stock for product %s: %v", item.ProductID, err))
+				return nil, fmt.Errorf("failed to create warehouse stock: %w", err)
+			}
+
+			// Create inventory movement
+			refType := "INITIAL_STOCK"
+			movement := &models.InventoryMovement{
+				TenantID:      tenantID,
+				CompanyID:     companyID,
+				MovementDate:  time.Now(),
+				WarehouseID:   req.WarehouseID,
+				ProductID:     item.ProductID,
+				MovementType:  models.MovementTypeInitial,
+				Quantity:      qty,
+				StockBefore:   decimal.Zero,
+				StockAfter:    qty,
+				ReferenceType: &refType,
+				ReferenceID:   &newStock.ID,
+				Notes:         req.Notes,
+				CreatedBy:     &userID,
+			}
+
+			if err := tx.Create(movement).Error; err != nil {
+				tx.Rollback()
+				logFailure(fmt.Sprintf("Failed to create inventory movement for product %s: %v", item.ProductID, err))
+				return nil, fmt.Errorf("failed to create inventory movement: %w", err)
+			}
+
+			// Collect audit data for created item
+			product := productMap[item.ProductID]
+			itemValue := qty.Mul(cost)
+			itemsAuditData = append(itemsAuditData, itemAuditData{
+				ProductID:    item.ProductID,
+				ProductCode:  product.Code,
+				ProductName:  product.Name,
+				Quantity:     qty.String(),
+				CostPerUnit:  cost.String(),
+				Value:        itemValue.String(),
+				Location:     item.Location,
+				MinimumStock: minStock.String(),
+				MaximumStock: maxStock.String(),
+				Notes:        item.Notes,
+				Action:       "created",
+				StockBefore:  "0",
+				StockAfter:   qty.String(),
+			})
+
+			createdCount++
+		} else if err != nil {
+			tx.Rollback()
+			logFailure(fmt.Sprintf("Failed to check existing stock for product %s: %v", item.ProductID, err))
+			return nil, fmt.Errorf("failed to check existing stock: %w", err)
+		} else {
+			// Update existing warehouse stock
+			stockBefore := existingStock.Quantity
+			existingStock.Quantity = existingStock.Quantity.Add(qty)
+			if item.MinimumStock != nil && *item.MinimumStock != "" {
+				existingStock.MinimumStock = minStock
+			}
+			if item.MaximumStock != nil && *item.MaximumStock != "" {
+				existingStock.MaximumStock = maxStock
+			}
+			if item.Location != nil {
+				existingStock.Location = item.Location
+			}
+
+			if err := tx.Save(&existingStock).Error; err != nil {
+				tx.Rollback()
+				logFailure(fmt.Sprintf("Failed to update warehouse stock for product %s: %v", item.ProductID, err))
+				return nil, fmt.Errorf("failed to update warehouse stock: %w", err)
+			}
+
+			// Create inventory movement
+			refType := "INITIAL_STOCK"
+			movement := &models.InventoryMovement{
+				TenantID:      tenantID,
+				CompanyID:     companyID,
+				MovementDate:  time.Now(),
+				WarehouseID:   req.WarehouseID,
+				ProductID:     item.ProductID,
+				MovementType:  models.MovementTypeInitial,
+				Quantity:      qty,
+				StockBefore:   stockBefore,
+				StockAfter:    existingStock.Quantity,
+				ReferenceType: &refType,
+				ReferenceID:   &existingStock.ID,
+				Notes:         req.Notes,
+				CreatedBy:     &userID,
+			}
+
+			if err := tx.Create(movement).Error; err != nil {
+				tx.Rollback()
+				logFailure(fmt.Sprintf("Failed to create inventory movement for product %s: %v", item.ProductID, err))
+				return nil, fmt.Errorf("failed to create inventory movement: %w", err)
+			}
+
+			// Collect audit data for updated item
+			product := productMap[item.ProductID]
+			itemValue := qty.Mul(cost)
+			itemsAuditData = append(itemsAuditData, itemAuditData{
+				ProductID:    item.ProductID,
+				ProductCode:  product.Code,
+				ProductName:  product.Name,
+				Quantity:     qty.String(),
+				CostPerUnit:  cost.String(),
+				Value:        itemValue.String(),
+				Location:     item.Location,
+				MinimumStock: minStock.String(),
+				MaximumStock: maxStock.String(),
+				Notes:        item.Notes,
+				Action:       "updated",
+				StockBefore:  stockBefore.String(),
+				StockAfter:   existingStock.Quantity.String(),
+			})
+
+			updatedCount++
+		}
+
+		// Calculate total value
+		itemValue := qty.Mul(cost)
+		totalValue = totalValue.Add(itemValue)
+	}
+
+	// Commit transaction
+	if err := tx.Commit().Error; err != nil {
+		logFailure(fmt.Sprintf("Transaction commit failed: %v", err))
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	// Audit logging for success - struct ensures JSON field ordering
+	type initialStockAuditData struct {
+		WarehouseID   string          `json:"warehouse_id"`
+		WarehouseName string          `json:"warehouse_name"`
+		WarehouseCode string          `json:"warehouse_code"`
+		UpdatedStocks int             `json:"updated_stocks"`
+		TotalItems    int             `json:"total_items"`
+		TotalValue    string          `json:"total_value"`
+		CreatedStocks int             `json:"created_stocks"`
+		Notes         *string         `json:"notes,omitempty"`
+		Items         []itemAuditData `json:"items"`
+	}
+
+	auditData := initialStockAuditData{
+		WarehouseID:   req.WarehouseID,
+		WarehouseName: warehouse.Name,
+		WarehouseCode: warehouse.Code,
+		UpdatedStocks: updatedCount,
+		TotalItems:    len(req.Items),
+		TotalValue:    totalValue.String(),
+		CreatedStocks: createdCount,
+		Notes:         req.Notes,
+		Items:         itemsAuditData,
+	}
+
+	if err := s.auditService.LogInitialStockCreated(ctx, auditCtx, req.WarehouseID, auditData, len(req.Items), createdCount, updatedCount); err != nil {
+		fmt.Printf("WARNING: Failed to create audit log for initial stock: %v\n", err)
+	}
+
+	return &dto.InitialStockSetupResponse{
+		Success:       true,
+		Message:       fmt.Sprintf("Successfully created initial stock for %d items", len(req.Items)),
+		TotalItems:    len(req.Items),
+		TotalValue:    totalValue.String(),
+		CreatedStocks: createdCount,
+		UpdatedStocks: updatedCount,
+	}, nil
+}
+
+// ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
 

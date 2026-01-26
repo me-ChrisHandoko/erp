@@ -60,6 +60,12 @@ type PurchaseInvoice struct {
 	PaidAmount      decimal.Decimal `gorm:"type:decimal(20,4);default:0;index:idx_purchase_invoice_paid_amount"`
 	RemainingAmount decimal.Decimal `gorm:"type:decimal(20,4);not null;default:0"`
 
+	// Non-Goods Costs (Biaya Tambahan / Biaya Non-Barang)
+	ShippingCost         decimal.Decimal `gorm:"type:decimal(20,4);default:0"` // Biaya Pengiriman / Ongkir
+	HandlingCost         decimal.Decimal `gorm:"type:decimal(20,4);default:0"` // Biaya Handling / Bongkar Muat
+	OtherCost            decimal.Decimal `gorm:"type:decimal(20,4);default:0"` // Biaya Lain-lain
+	OtherCostDescription *string         `gorm:"type:text"`                    // Keterangan Biaya Lain-lain
+
 	// Payment Terms
 	PaymentTermDays int     `gorm:"default:30"` // e.g., NET 30
 	Notes           *string `gorm:"type:text"`
@@ -125,8 +131,18 @@ func (pi *PurchaseInvoice) CalculateTotals() {
 	pi.SubtotalAmount = subtotal
 	taxableAmount := subtotal.Sub(discount)
 	pi.TaxAmount = taxableAmount.Mul(pi.TaxRate).Div(decimal.NewFromInt(100))
-	pi.TotalAmount = taxableAmount.Add(pi.TaxAmount)
+
+	// Calculate total non-goods costs
+	totalNonGoodsCost := pi.ShippingCost.Add(pi.HandlingCost).Add(pi.OtherCost)
+
+	// Total = taxable amount + tax + non-goods costs
+	pi.TotalAmount = taxableAmount.Add(pi.TaxAmount).Add(totalNonGoodsCost)
 	pi.RemainingAmount = pi.TotalAmount.Sub(pi.PaidAmount)
+}
+
+// GetTotalNonGoodsCost returns the sum of all non-goods costs
+func (pi *PurchaseInvoice) GetTotalNonGoodsCost() decimal.Decimal {
+	return pi.ShippingCost.Add(pi.HandlingCost).Add(pi.OtherCost)
 }
 
 // UpdatePaymentStatus updates payment status based on paid amount

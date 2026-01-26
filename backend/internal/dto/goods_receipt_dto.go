@@ -79,6 +79,22 @@ type RejectGoodsRequest struct {
 	RejectionReason string `json:"rejectionReason" binding:"required,min=1,max=500"`
 }
 
+// UpdateRejectionDispositionRequest - Request to update rejection disposition for a goods receipt item
+// This is used to track what happens to rejected items (Odoo+M3 model):
+// - PENDING_REPLACEMENT: Waiting for supplier to send replacement
+// - CREDIT_REQUESTED: Requesting credit note from supplier
+// - RETURNED: Items returned to supplier
+// - WRITTEN_OFF: Items written off as loss
+type UpdateRejectionDispositionRequest struct {
+	RejectionDisposition string  `json:"rejectionDisposition" binding:"required,oneof=PENDING_REPLACEMENT CREDIT_REQUESTED RETURNED WRITTEN_OFF"`
+	DispositionNotes     *string `json:"dispositionNotes" binding:"omitempty,max=500"`
+}
+
+// ResolveDispositionRequest - Request to mark a rejection disposition as resolved
+type ResolveDispositionRequest struct {
+	DispositionResolvedNotes *string `json:"dispositionResolvedNotes" binding:"omitempty,max=500"`
+}
+
 // GoodsReceiptProductResponse - Product info for goods receipt items
 type GoodsReceiptProductResponse struct {
 	ID             string `json:"id"`
@@ -111,9 +127,16 @@ type GoodsReceiptItemResponse struct {
 	OrderedQty          string                           `json:"orderedQty"`
 	ReceivedQty         string                           `json:"receivedQty"`
 	AcceptedQty         string                           `json:"acceptedQty"`
-	RejectedQty         string                           `json:"rejectedQty"`
-	RejectionReason     *string                          `json:"rejectionReason,omitempty"`
-	QualityNote         *string                          `json:"qualityNote,omitempty"`
+	RejectedQty              string                           `json:"rejectedQty"`
+	RejectionReason          *string                          `json:"rejectionReason,omitempty"`
+	RejectionDisposition     *string                          `json:"rejectionDisposition,omitempty"`
+	DispositionResolved      bool                             `json:"dispositionResolved"`
+	DispositionResolvedAt    *time.Time                       `json:"dispositionResolvedAt,omitempty"`
+	DispositionResolvedBy    *string                          `json:"dispositionResolvedBy,omitempty"`
+	DispositionResolver      *UserBasicResponse               `json:"dispositionResolver,omitempty"`
+	DispositionNotes         *string                          `json:"dispositionNotes,omitempty"`
+	DispositionResolvedNotes *string                          `json:"dispositionResolvedNotes,omitempty"`
+	QualityNote              *string                          `json:"qualityNote,omitempty"`
 	Notes               *string                          `json:"notes,omitempty"`
 	CreatedAt           time.Time                        `json:"createdAt"`
 	UpdatedAt           time.Time                        `json:"updatedAt"`
@@ -146,7 +169,12 @@ type GoodsReceiptResponse struct {
 	InspectedAt      *time.Time                         `json:"inspectedAt,omitempty"`
 	SupplierInvoice  *string                            `json:"supplierInvoice,omitempty"`
 	SupplierDONumber *string                            `json:"supplierDONumber,omitempty"`
-	Notes            *string                            `json:"notes,omitempty"`
+	Notes            *string                            `json:"notes,omitempty"`            // General notes (from creation)
+	ReceiveNotes     *string                            `json:"receiveNotes,omitempty"`     // Notes during receive (PENDING → RECEIVED)
+	InspectionNotes  *string                            `json:"inspectionNotes,omitempty"`  // Notes during inspection (RECEIVED → INSPECTED)
+	AcceptanceNotes  *string                            `json:"acceptanceNotes,omitempty"`  // Notes during acceptance (INSPECTED → ACCEPTED/PARTIAL)
+	RejectionNotes   *string                            `json:"rejectionNotes,omitempty"`   // Notes during rejection
+	ItemCount        int                                `json:"itemCount"`                  // Number of items in the goods receipt
 	Items            []GoodsReceiptItemResponse         `json:"items,omitempty"`
 	CreatedAt        time.Time                          `json:"createdAt"`
 	UpdatedAt        time.Time                          `json:"updatedAt"`
@@ -163,7 +191,7 @@ type GoodsReceiptListResponse struct {
 type GoodsReceiptListQuery struct {
 	Page            int     `form:"page" binding:"omitempty,min=1"`
 	PageSize        int     `form:"page_size" binding:"omitempty,min=1,max=100"`
-	Search          string  `form:"search" binding:"omitempty"` // Search by GRN number
+	Search          string  `form:"search" binding:"omitempty"` // Search by GRN number or PO number
 	Status          *string `form:"status" binding:"omitempty,oneof=PENDING RECEIVED INSPECTED ACCEPTED REJECTED PARTIAL"`
 	PurchaseOrderID *string `form:"purchase_order_id" binding:"omitempty,uuid"`
 	SupplierID      *string `form:"supplier_id" binding:"omitempty,uuid"`

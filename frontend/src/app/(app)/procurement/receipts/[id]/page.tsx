@@ -30,6 +30,8 @@ import {
   useInspectGoodsMutation,
   useAcceptGoodsMutation,
   useRejectGoodsMutation,
+  useUpdateRejectionDispositionMutation,
+  useResolveDispositionMutation,
 } from "@/store/services/goodsReceiptApi";
 import { usePermissions } from "@/hooks/use-permissions";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -48,6 +50,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { InspectGoodsDialog } from "@/components/goods-receipts/inspect-goods-dialog";
+import { RejectionDispositionDialog } from "@/components/goods-receipts/rejection-disposition-dialog";
+import { ResolveDispositionDialog } from "@/components/goods-receipts/resolve-disposition-dialog";
+import type { InspectGoodsRequest, GoodsReceiptItemResponse, RejectionDispositionStatus } from "@/types/goods-receipt.types";
 
 export default function GoodsReceiptDetailPage() {
   const params = useParams();
@@ -67,11 +73,18 @@ export default function GoodsReceiptDetailPage() {
   const [rejectionReason, setRejectionReason] = useState("");
   const [notes, setNotes] = useState("");
 
+  // Disposition dialog states
+  const [dispositionDialogOpen, setDispositionDialogOpen] = useState(false);
+  const [resolveDispositionDialogOpen, setResolveDispositionDialogOpen] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<GoodsReceiptItemResponse | null>(null);
+
   // Mutations
   const [receiveGoods, { isLoading: isReceiving }] = useReceiveGoodsMutation();
   const [inspectGoods, { isLoading: isInspecting }] = useInspectGoodsMutation();
   const [acceptGoods, { isLoading: isAccepting }] = useAcceptGoodsMutation();
   const [rejectGoods, { isLoading: isRejecting }] = useRejectGoodsMutation();
+  const [updateRejectionDisposition, { isLoading: isSettingDisposition }] = useUpdateRejectionDispositionMutation();
+  const [resolveDisposition, { isLoading: isResolvingDisposition }] = useResolveDispositionMutation();
 
   const handleReceiveGoods = async () => {
     if (!data) return;
@@ -93,19 +106,18 @@ export default function GoodsReceiptDetailPage() {
     }
   };
 
-  const handleInspectGoods = async () => {
+  const handleInspectGoods = async (inspectData: InspectGoodsRequest) => {
     if (!data) return;
 
     try {
       await inspectGoods({
         id: receiptId,
-        data: notes ? { notes } : undefined,
+        data: inspectData,
       }).unwrap();
       toast.success("Barang Diperiksa", {
         description: `${data.grnNumber} berhasil diperiksa`,
       });
       setInspectDialogOpen(false);
-      setNotes("");
     } catch (error: any) {
       toast.error("Gagal Memeriksa Barang", {
         description: error?.data?.error?.message || "Terjadi kesalahan",
@@ -148,6 +160,62 @@ export default function GoodsReceiptDetailPage() {
       setRejectionReason("");
     } catch (error: any) {
       toast.error("Gagal Menolak Barang", {
+        description: error?.data?.error?.message || "Terjadi kesalahan",
+      });
+    }
+  };
+
+  // Handler for opening disposition dialog
+  const handleOpenDispositionDialog = (item: GoodsReceiptItemResponse) => {
+    setSelectedItem(item);
+    setDispositionDialogOpen(true);
+  };
+
+  // Handler for opening resolve disposition dialog
+  const handleOpenResolveDialog = (item: GoodsReceiptItemResponse) => {
+    setSelectedItem(item);
+    setResolveDispositionDialogOpen(true);
+  };
+
+  // Handler for setting disposition
+  const handleSetDisposition = async (dispositionData: { rejectionDisposition: RejectionDispositionStatus; dispositionNotes?: string }) => {
+    if (!data || !selectedItem) return;
+
+    try {
+      await updateRejectionDisposition({
+        goodsReceiptId: receiptId,
+        itemId: selectedItem.id,
+        data: dispositionData,
+      }).unwrap();
+      toast.success("Disposisi Diatur", {
+        description: `Disposisi untuk ${selectedItem.product?.name || "item"} berhasil diatur`,
+      });
+      setDispositionDialogOpen(false);
+      setSelectedItem(null);
+    } catch (error: any) {
+      toast.error("Gagal Mengatur Disposisi", {
+        description: error?.data?.error?.message || "Terjadi kesalahan",
+      });
+    }
+  };
+
+  // Handler for resolving disposition
+  const handleResolveDisposition = async (resolveData: { dispositionResolvedNotes?: string }) => {
+    if (!data || !selectedItem) return;
+
+    try {
+      await resolveDisposition({
+        goodsReceiptId: receiptId,
+        itemId: selectedItem.id,
+        data: resolveData,
+      }).unwrap();
+      toast.success("Disposisi Diselesaikan", {
+        description: `Disposisi untuk ${selectedItem.product?.name || "item"} berhasil diselesaikan`,
+      });
+      setResolveDispositionDialogOpen(false);
+      setSelectedItem(null);
+    } catch (error: any) {
+      toast.error("Gagal Menyelesaikan Disposisi", {
         description: error?.data?.error?.message || "Terjadi kesalahan",
       });
     }
@@ -295,7 +363,11 @@ export default function GoodsReceiptDetailPage() {
         </div>
 
         {/* Receipt Detail Component */}
-        <ReceiptDetail receipt={receipt} />
+        <ReceiptDetail
+          receipt={receipt}
+          onSetDisposition={canEdit ? handleOpenDispositionDialog : undefined}
+          onResolveDisposition={canEdit ? handleOpenResolveDialog : undefined}
+        />
       </div>
 
       {/* Receive Dialog */}
@@ -312,12 +384,12 @@ export default function GoodsReceiptDetailPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="py-4">
-            <Label htmlFor="receiveNotes">Catatan (Opsional)</Label>
+            <Label htmlFor="receiveNotes">Catatan Penerimaan (Opsional)</Label>
             <Textarea
               id="receiveNotes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Masukkan catatan jika ada..."
+              placeholder="Masukkan catatan penerimaan barang..."
               className="mt-2"
             />
           </div>
@@ -335,40 +407,13 @@ export default function GoodsReceiptDetailPage() {
       </AlertDialog>
 
       {/* Inspect Dialog */}
-      <AlertDialog open={inspectDialogOpen} onOpenChange={setInspectDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Periksa Barang</AlertDialogTitle>
-            <AlertDialogDescription>
-              Apakah Anda yakin ingin menandai barang telah diperiksa untuk{" "}
-              <span className="font-semibold">{receipt.grnNumber}</span>?
-              <br />
-              <br />
-              Setelah diperiksa, Anda dapat menyetujui atau menolak barang.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="py-4">
-            <Label htmlFor="inspectNotes">Catatan Inspeksi (Opsional)</Label>
-            <Textarea
-              id="inspectNotes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Masukkan hasil inspeksi jika ada..."
-              className="mt-2"
-            />
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isInspecting}>Batal</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleInspectGoods}
-              disabled={isInspecting}
-              className="bg-purple-600 hover:bg-purple-700"
-            >
-              {isInspecting ? "Memproses..." : "Tandai Diperiksa"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <InspectGoodsDialog
+        open={inspectDialogOpen}
+        onOpenChange={setInspectDialogOpen}
+        receipt={receipt}
+        onSubmit={handleInspectGoods}
+        isLoading={isInspecting}
+      />
 
       {/* Accept Dialog */}
       <AlertDialog open={acceptDialogOpen} onOpenChange={setAcceptDialogOpen}>
@@ -384,12 +429,12 @@ export default function GoodsReceiptDetailPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="py-4">
-            <Label htmlFor="acceptNotes">Catatan (Opsional)</Label>
+            <Label htmlFor="acceptNotes">Catatan Persetujuan (Opsional)</Label>
             <Textarea
               id="acceptNotes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Masukkan catatan jika ada..."
+              placeholder="Masukkan catatan persetujuan barang..."
               className="mt-2"
             />
           </div>
@@ -443,6 +488,24 @@ export default function GoodsReceiptDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Rejection Disposition Dialog */}
+      <RejectionDispositionDialog
+        open={dispositionDialogOpen}
+        onOpenChange={setDispositionDialogOpen}
+        item={selectedItem}
+        onSubmit={handleSetDisposition}
+        isLoading={isSettingDisposition}
+      />
+
+      {/* Resolve Disposition Dialog */}
+      <ResolveDispositionDialog
+        open={resolveDispositionDialogOpen}
+        onOpenChange={setResolveDispositionDialogOpen}
+        item={selectedItem}
+        onSubmit={handleResolveDisposition}
+        isLoading={isResolvingDisposition}
+      />
     </div>
   );
 }

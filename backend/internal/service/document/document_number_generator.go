@@ -4,6 +4,7 @@ package document
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -46,16 +47,20 @@ func (g *DocumentNumberGenerator) GenerateNumber(
 	companyID string,
 	docType DocumentType,
 ) (string, error) {
+	log.Printf("🔍 DEBUG [DocNumberGen]: Starting - tenantID=%s, companyID=%s, docType=%s", tenantID, companyID, docType)
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
 	// 1. Get company settings
+	log.Printf("🔍 DEBUG [DocNumberGen]: Getting company settings...")
 	var company models.Company
 	if err := g.db.WithContext(ctx).
 		Set("tenant_id", tenantID).
 		First(&company, "id = ?", companyID).Error; err != nil {
+		log.Printf("❌ DEBUG [DocNumberGen]: Failed to get company: %v", err)
 		return "", fmt.Errorf("failed to get company: %w", err)
 	}
+	log.Printf("✅ DEBUG [DocNumberGen]: Company found - Name=%s, POPrefix=%s, POFormat=%s", company.Name, company.POPrefix, company.PONumberFormat)
 
 	// 2. Get format and prefix based on document type
 	var prefix, format string
@@ -78,17 +83,23 @@ func (g *DocumentNumberGenerator) GenerateNumber(
 		prefix = "DEL"
 		format = "{PREFIX}/{YEAR}/{MONTH}/{NUMBER}"
 	default:
+		log.Printf("❌ DEBUG [DocNumberGen]: Unsupported document type: %s", docType)
 		return "", fmt.Errorf("unsupported document type: %s", docType)
 	}
+	log.Printf("🔍 DEBUG [DocNumberGen]: Using prefix=%s, format=%s", prefix, format)
 
 	// 3. Get next sequence number
+	log.Printf("🔍 DEBUG [DocNumberGen]: Getting next sequence...")
 	sequence, err := g.getNextSequence(ctx, tenantID, companyID, docType, format)
 	if err != nil {
+		log.Printf("❌ DEBUG [DocNumberGen]: Failed to get sequence: %v", err)
 		return "", err
 	}
+	log.Printf("✅ DEBUG [DocNumberGen]: Sequence number=%d", sequence)
 
 	// 4. Parse format string and build number
 	number := g.buildNumber(prefix, format, sequence)
+	log.Printf("✅ DEBUG [DocNumberGen]: Generated number=%s", number)
 
 	return number, nil
 }
@@ -115,9 +126,11 @@ func (g *DocumentNumberGenerator) getNextSequence(
 	docType DocumentType,
 	format string,
 ) (int, error) {
+	log.Printf("🔍 DEBUG [getNextSequence]: docType=%s, format=%s", docType, format)
 	// Determine if sequence should reset based on format
 	shouldResetMonthly := strings.Contains(format, "{MONTH}")
 	shouldResetYearly := strings.Contains(format, "{YEAR}") && !shouldResetMonthly
+	log.Printf("🔍 DEBUG [getNextSequence]: shouldResetMonthly=%v, shouldResetYearly=%v", shouldResetMonthly, shouldResetYearly)
 
 	var count int64
 	var query *gorm.DB
@@ -125,6 +138,7 @@ func (g *DocumentNumberGenerator) getNextSequence(
 	// Build query based on document type
 	switch docType {
 	case DocTypePurchaseOrder:
+		log.Printf("🔍 DEBUG [getNextSequence]: Building query for PurchaseOrder...")
 		query = g.db.WithContext(ctx).
 			Set("tenant_id", tenantID).
 			Model(&models.PurchaseOrder{}).
@@ -150,6 +164,7 @@ func (g *DocumentNumberGenerator) getNextSequence(
 
 	case DocTypeSalesInvoice:
 		// TODO: Implement when sales invoice model is ready
+		log.Printf("❌ DEBUG [getNextSequence]: Sales invoice not implemented")
 		return 0, fmt.Errorf("sales invoice not implemented yet")
 
 	case DocTypeCustomerPayment, DocTypeSupplierPayment:
@@ -159,6 +174,7 @@ func (g *DocumentNumberGenerator) getNextSequence(
 			Where("company_id = ?", companyID)
 
 	default:
+		log.Printf("❌ DEBUG [getNextSequence]: Unsupported document type: %s", docType)
 		return 0, fmt.Errorf("unsupported document type: %s", docType)
 	}
 
@@ -167,17 +183,22 @@ func (g *DocumentNumberGenerator) getNextSequence(
 	if shouldResetMonthly {
 		year := now.Year()
 		month := int(now.Month())
+		log.Printf("🔍 DEBUG [getNextSequence]: Adding monthly filter - year=%d, month=%d", year, month)
 		query = query.Where("EXTRACT(YEAR FROM created_at) = ? AND EXTRACT(MONTH FROM created_at) = ?",
 			year, month)
 	} else if shouldResetYearly {
 		year := now.Year()
+		log.Printf("🔍 DEBUG [getNextSequence]: Adding yearly filter - year=%d", year)
 		query = query.Where("EXTRACT(YEAR FROM created_at) = ?", year)
 	}
 	// else: never reset (continuous sequence)
 
+	log.Printf("🔍 DEBUG [getNextSequence]: Executing count query...")
 	if err := query.Count(&count).Error; err != nil {
+		log.Printf("❌ DEBUG [getNextSequence]: Failed to count: %v", err)
 		return 0, fmt.Errorf("failed to count documents: %w", err)
 	}
+	log.Printf("✅ DEBUG [getNextSequence]: Count result=%d, next sequence=%d", count, count+1)
 
 	return int(count) + 1, nil
 }

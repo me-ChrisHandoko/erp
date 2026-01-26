@@ -24,6 +24,7 @@ import { salesOrderApi } from './services/salesOrderApi'; // Sales order API
 import { deliveryApi } from './services/deliveryApi'; // Delivery API
 import { invoiceApi } from './services/invoiceApi'; // Sales invoice API
 import { salesPaymentApi } from './services/salesPaymentApi'; // Sales payment API (customer payments)
+import { deliveryToleranceApi } from './services/deliveryToleranceApi'; // Delivery tolerance settings API (SAP Model)
 import authReducer, { logout } from './slices/authSlice';
 import companyReducer, { setActiveCompany } from './slices/companySlice';
 
@@ -88,6 +89,7 @@ const resetAllApiStatesOnLogout: Middleware = (storeAPI) => (next) => (action) =
     storeAPI.dispatch(deliveryApi.util.resetApiState());
     storeAPI.dispatch(invoiceApi.util.resetApiState());
     storeAPI.dispatch(salesPaymentApi.util.resetApiState());
+    storeAPI.dispatch(deliveryToleranceApi.util.resetApiState());
 
     // CRITICAL: Clear company Redux state to prevent cross-user data exposure
     // Import clearCompanyState from companySlice
@@ -100,7 +102,7 @@ const resetAllApiStatesOnLogout: Middleware = (storeAPI) => (next) => (action) =
       localStorage.removeItem('activeCompanyId');
     }
 
-    console.log('[Middleware] All API caches cleared (authApi, companyApi, tenantApi, multiCompanyApi, companyUserApi, productApi, customerApi, supplierApi, warehouseApi, stockApi, initialStockApi, transferApi, opnameApi, adjustmentApi, purchaseOrderApi, goodsReceiptApi, purchaseInvoiceApi, paymentApi, salesOrderApi, deliveryApi)');
+    console.log('[Middleware] All API caches cleared (authApi, companyApi, tenantApi, multiCompanyApi, companyUserApi, productApi, customerApi, supplierApi, warehouseApi, stockApi, initialStockApi, transferApi, opnameApi, adjustmentApi, purchaseOrderApi, goodsReceiptApi, purchaseInvoiceApi, paymentApi, salesOrderApi, deliveryApi, deliveryToleranceApi)');
     console.log('[Middleware] Company Redux state cleared (activeCompany, availableCompanies)');
     console.log('[Middleware] localStorage.activeCompanyId cleared to prevent cross-user contamination');
   }
@@ -156,9 +158,10 @@ const resetAllApiStatesOnCompanySwitch: Middleware = (storeAPI) => (next) => (ac
       storeAPI.dispatch(deliveryApi.util.resetApiState());
       storeAPI.dispatch(invoiceApi.util.resetApiState());
       storeAPI.dispatch(salesPaymentApi.util.resetApiState());
+      storeAPI.dispatch(deliveryToleranceApi.util.resetApiState());
       // Note: authApi, tenantApi, multiCompanyApi are NOT reset (user-level, not company-level)
 
-      console.log('[Middleware] All company-scoped API caches cleared (companyApi, companyUserApi, productApi, customerApi, supplierApi, warehouseApi, stockApi, initialStockApi, transferApi, opnameApi, adjustmentApi, purchaseOrderApi, goodsReceiptApi, purchaseInvoiceApi, paymentApi, salesOrderApi, deliveryApi)');
+      console.log('[Middleware] All company-scoped API caches cleared (companyApi, companyUserApi, productApi, customerApi, supplierApi, warehouseApi, stockApi, initialStockApi, transferApi, opnameApi, adjustmentApi, purchaseOrderApi, goodsReceiptApi, purchaseInvoiceApi, paymentApi, salesOrderApi, deliveryApi, deliveryToleranceApi)');
       console.log('[Middleware] Next API calls will fetch data for company:', newCompanyId);
     } else if (!prevCompanyId) {
       console.log('[Middleware] Initial company selection:', newCompanyId);
@@ -207,6 +210,7 @@ export const store = configureStore({
     [deliveryApi.reducerPath]: deliveryApi.reducer, // Delivery API
     [invoiceApi.reducerPath]: invoiceApi.reducer, // Sales invoice API
     [salesPaymentApi.reducerPath]: salesPaymentApi.reducer, // Sales payment API (customer payments)
+    [deliveryToleranceApi.reducerPath]: deliveryToleranceApi.reducer, // Delivery tolerance settings API (SAP Model)
   },
 
   // Add RTK Query middleware for caching, invalidation, etc.
@@ -234,6 +238,7 @@ export const store = configureStore({
       deliveryApi.middleware, // Delivery middleware
       invoiceApi.middleware, // Sales invoice middleware
       salesPaymentApi.middleware, // Sales payment middleware (customer payments)
+      deliveryToleranceApi.middleware, // Delivery tolerance settings middleware (SAP Model)
       redirectToLogoutOnSessionExpiry, // CRITICAL: Redirect to /logout page when session expires
       resetAllApiStatesOnLogout, // CRITICAL: Reset all API caches on logout
       resetAllApiStatesOnCompanySwitch // CRITICAL: Reset company-scoped caches on company switch

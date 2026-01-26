@@ -96,6 +96,9 @@ func main() {
 		"stock_transfer_items":       &models.StockTransferItem{},
 		"inventory_adjustments":      &models.InventoryAdjustment{},
 		"inventory_adjustment_items": &models.InventoryAdjustmentItem{},
+
+		// Procurement settings (SAP Model)
+		"delivery_tolerances": &models.DeliveryTolerance{},
 	}
 
 	// Separate NEW models from existing ones

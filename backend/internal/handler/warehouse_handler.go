@@ -488,6 +488,76 @@ func (h *WarehouseHandler) UpdateWarehouseStock(c *gin.Context) {
 }
 
 // ============================================================================
+// INITIAL STOCK SETUP ENDPOINTS
+// ============================================================================
+
+// CreateInitialStock handles POST /api/v1/warehouse-stocks/initial-setup
+// @Summary Create initial stock for a warehouse
+// @Tags Warehouse Stocks
+// @Accept json
+// @Produce json
+// @Param request body dto.InitialStockSetupRequest true "Initial stock setup request"
+// @Success 201 {object} dto.InitialStockSetupResponse
+// @Failure 400 {object} pkgerrors.ErrorResponse
+// @Failure 500 {object} pkgerrors.ErrorResponse
+// @Router /api/v1/warehouse-stocks/initial-setup [post]
+// @Security BearerAuth
+func (h *WarehouseHandler) CreateInitialStock(c *gin.Context) {
+	// Get company ID from context
+	companyID, exists := c.Get("company_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Company context not found. Please set X-Company-ID header."))
+		return
+	}
+
+	// Get tenant ID from context
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
+	// Get user ID from context (for audit logging)
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("User context not found."))
+		return
+	}
+
+	// Parse request body
+	var req dto.InitialStockSetupRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.handleValidationError(c, err)
+		return
+	}
+
+	// Get IP address and User-Agent for audit logging
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
+	// Create initial stocks
+	response, err := h.warehouseService.CreateInitialStock(
+		c.Request.Context(),
+		tenantID.(string),
+		companyID.(string),
+		userID.(string),
+		ipAddress,
+		userAgent,
+		&req,
+	)
+	if err != nil {
+		if appErr, ok := err.(*pkgerrors.AppError); ok {
+			c.JSON(appErr.StatusCode, appErr)
+			return
+		}
+		c.JSON(http.StatusInternalServerError, pkgerrors.NewInternalError(err))
+		return
+	}
+
+	c.JSON(http.StatusCreated, response)
+}
+
+// ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
 

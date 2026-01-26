@@ -20,6 +20,7 @@ import {
   CheckCircle,
   XCircle,
   PackageCheck,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
@@ -29,7 +30,9 @@ import {
   useGetPurchaseOrderQuery,
   useConfirmPurchaseOrderMutation,
   useCancelPurchaseOrderMutation,
+  useShortClosePurchaseOrderMutation,
 } from "@/store/services/purchaseOrderApi";
+import { useListGoodsReceiptsQuery } from "@/store/services/goodsReceiptApi";
 import { usePermissions } from "@/hooks/use-permissions";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -46,6 +49,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { ShortCloseDialog } from "@/components/procurement/short-close-dialog";
 
 export default function PurchaseOrderDetailPage() {
   const params = useParams();
@@ -59,6 +63,25 @@ export default function PurchaseOrderDetailPage() {
 
   const { data, isLoading, error } = useGetPurchaseOrderQuery(orderId);
 
+  // Fetch goods receipts for this PO to check if cancellation should be blocked
+  const { data: goodsReceiptsData } = useListGoodsReceiptsQuery(
+    { purchaseOrderId: orderId },
+    { skip: !orderId }
+  );
+
+  // Check if any goods receipt has progressed beyond PENDING status
+  // If so, the PO cannot be cancelled because goods have been physically received
+  const hasActiveGoodsReceipt = goodsReceiptsData?.data?.some(
+    (gr) => gr.status !== "PENDING"
+  );
+
+  // Check if all items have been fully received (receivedQty >= quantity)
+  const allItemsFullyReceived = data?.items?.every((item) => {
+    const ordered = parseFloat(item.quantity) || 0;
+    const received = parseFloat(item.receivedQty) || 0;
+    return received >= ordered;
+  });
+
   // Confirm dialog state
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
 
@@ -66,9 +89,13 @@ export default function PurchaseOrderDetailPage() {
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancellationNote, setCancellationNote] = useState("");
 
+  // Short close dialog state
+  const [shortCloseDialogOpen, setShortCloseDialogOpen] = useState(false);
+
   // Mutations
   const [confirmOrder, { isLoading: isConfirming }] = useConfirmPurchaseOrderMutation();
   const [cancelOrder, { isLoading: isCancelling }] = useCancelPurchaseOrderMutation();
+  const [shortCloseOrder, { isLoading: isShortClosing }] = useShortClosePurchaseOrderMutation();
 
   const handleConfirmOrder = async () => {
     if (!data) return;
@@ -101,6 +128,25 @@ export default function PurchaseOrderDetailPage() {
       setCancellationNote("");
     } catch (error: any) {
       toast.error("Gagal Membatalkan PO", {
+        description: error?.data?.error?.message || "Terjadi kesalahan",
+      });
+    }
+  };
+
+  const handleShortCloseOrder = async (shortCloseData: { shortCloseReason: string }) => {
+    if (!data) return;
+
+    try {
+      await shortCloseOrder({
+        id: orderId,
+        data: shortCloseData,
+      }).unwrap();
+      toast.success("PO Short Closed", {
+        description: `${data.poNumber} berhasil ditutup (short close)`,
+      });
+      setShortCloseDialogOpen(false);
+    } catch (error: any) {
+      toast.error("Gagal Short Close PO", {
         description: error?.data?.error?.message || "Terjadi kesalahan",
       });
     }
@@ -223,8 +269,8 @@ export default function PurchaseOrderDetailPage() {
               </Button>
             )}
 
-            {/* Receive Goods - Only for CONFIRMED */}
-            {canEdit && order.status === "CONFIRMED" && (
+            {/* Receive Goods - Only for CONFIRMED and not all items fully received */}
+            {canEdit && order.status === "CONFIRMED" && !allItemsFullyReceived && (
               <Button
                 className="shrink-0 bg-green-600 hover:bg-green-700"
                 onClick={() => router.push(`/procurement/orders/${orderId}/receive`)}
@@ -234,9 +280,25 @@ export default function PurchaseOrderDetailPage() {
               </Button>
             )}
 
-            {/* Cancel - Only for DRAFT or CONFIRMED */}
+            {/* Short Close - Only for CONFIRMED with partial receipt (has active GR but not fully received) */}
             {canCancel &&
-              (order.status === "DRAFT" || order.status === "CONFIRMED") && (
+              order.status === "CONFIRMED" &&
+              hasActiveGoodsReceipt &&
+              !allItemsFullyReceived && (
+                <Button
+                  variant="outline"
+                  className="shrink-0 border-amber-500 text-amber-600 hover:bg-amber-50"
+                  onClick={() => setShortCloseDialogOpen(true)}
+                >
+                  <AlertTriangle className="mr-2 h-4 w-4" />
+                  Short Close
+                </Button>
+              )}
+
+            {/* Cancel - Only for DRAFT or CONFIRMED, and no active goods receipt */}
+            {canCancel &&
+              (order.status === "DRAFT" || order.status === "CONFIRMED") &&
+              !hasActiveGoodsReceipt && (
                 <Button
                   variant="destructive"
                   className="shrink-0"
@@ -317,6 +379,15 @@ export default function PurchaseOrderDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Short Close Dialog */}
+      <ShortCloseDialog
+        open={shortCloseDialogOpen}
+        onOpenChange={setShortCloseDialogOpen}
+        order={order}
+        onSubmit={handleShortCloseOrder}
+        isLoading={isShortClosing}
+      />
     </div>
   );
 }

@@ -3,6 +3,7 @@ package purchase
 import (
 	"context"
 	"fmt"
+	"log"
 	"math"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"backend/internal/dto"
+	"backend/internal/service/audit"
 	"backend/internal/service/document"
 	"backend/models"
 	pkgerrors "backend/pkg/errors"
@@ -20,14 +22,50 @@ import (
 type PurchaseOrderService struct {
 	db           *gorm.DB
 	docNumberGen *document.DocumentNumberGenerator
+	auditService *audit.AuditService
 }
 
 // NewPurchaseOrderService creates a new purchase order service instance
-func NewPurchaseOrderService(db *gorm.DB, docNumberGen *document.DocumentNumberGenerator) *PurchaseOrderService {
+func NewPurchaseOrderService(db *gorm.DB, docNumberGen *document.DocumentNumberGenerator, auditService *audit.AuditService) *PurchaseOrderService {
 	return &PurchaseOrderService{
 		db:           db,
 		docNumberGen: docNumberGen,
+		auditService: auditService,
 	}
+}
+
+// ============================================================================
+// AUDIT DATA STRUCTS (for ordered JSON serialization)
+// ============================================================================
+
+// purchaseOrderAuditData contains audit data for purchase order with ordered JSON fields
+type purchaseOrderAuditData struct {
+	SupplierID         string                       `json:"supplier_id"`
+	SupplierName       string                       `json:"supplier_name"`
+	WarehouseID        string                       `json:"warehouse_id"`
+	WarehouseName      string                       `json:"warehouse_name"`
+	PONumber           string                       `json:"po_number"`
+	PODate             string                       `json:"po_date"`
+	Status             string                       `json:"status"`
+	Subtotal           string                       `json:"subtotal"`
+	DiscountAmount     string                       `json:"discount_amount"`
+	TaxAmount          string                       `json:"tax_amount"`
+	TotalAmount        string                       `json:"total_amount"`
+	Notes              string                       `json:"notes,omitempty"`
+	ExpectedDeliveryAt string                       `json:"expected_delivery_at,omitempty"`
+	Items              []purchaseOrderAuditItemData `json:"items"`
+}
+
+// purchaseOrderAuditItemData contains audit data for purchase order item
+type purchaseOrderAuditItemData struct {
+	ProductID   string `json:"product_id"`
+	ProductCode string `json:"product_code"`
+	ProductName string `json:"product_name"`
+	Quantity    string `json:"quantity"`
+	UnitPrice   string `json:"unit_price"`
+	DiscountPct string `json:"discount_pct"`
+	Subtotal    string `json:"subtotal"`
+	Notes       string `json:"notes,omitempty"`
 }
 
 // ============================================================================
@@ -35,46 +73,63 @@ func NewPurchaseOrderService(db *gorm.DB, docNumberGen *document.DocumentNumberG
 // ============================================================================
 
 // CreatePurchaseOrder creates a new purchase order
-func (s *PurchaseOrderService) CreatePurchaseOrder(ctx context.Context, tenantID, companyID, userID string, req *dto.CreatePurchaseOrderRequest) (*models.PurchaseOrder, error) {
+func (s *PurchaseOrderService) CreatePurchaseOrder(ctx context.Context, tenantID, companyID, userID string, req *dto.CreatePurchaseOrderRequest, ipAddress, userAgent string) (*models.PurchaseOrder, error) {
+	log.Printf("🔍 DEBUG [CreatePurchaseOrder]: Starting - tenantID=%s, companyID=%s, userID=%s", tenantID, companyID, userID)
+	log.Printf("🔍 DEBUG [CreatePurchaseOrder]: Request - supplierID=%s, warehouseID=%s, poDate=%s, items=%d", req.SupplierID, req.WarehouseID, req.PODate, len(req.Items))
+
 	// Parse PO date
 	poDate, err := time.Parse("2006-01-02", req.PODate)
 	if err != nil {
+		log.Printf("❌ DEBUG [CreatePurchaseOrder]: Failed to parse poDate: %v", err)
 		return nil, pkgerrors.NewBadRequestError("invalid poDate format, expected YYYY-MM-DD")
 	}
+	log.Printf("✅ DEBUG [CreatePurchaseOrder]: Parsed poDate: %v", poDate)
 
 	// Parse expected delivery date if provided
 	var expectedDeliveryAt *time.Time
 	if req.ExpectedDeliveryAt != nil && *req.ExpectedDeliveryAt != "" {
 		parsed, err := time.Parse("2006-01-02", *req.ExpectedDeliveryAt)
 		if err != nil {
+			log.Printf("❌ DEBUG [CreatePurchaseOrder]: Failed to parse expectedDeliveryAt: %v", err)
 			return nil, pkgerrors.NewBadRequestError("invalid expectedDeliveryAt format, expected YYYY-MM-DD")
 		}
 		expectedDeliveryAt = &parsed
 	}
 
 	// Validate supplier exists
+	log.Printf("🔍 DEBUG [CreatePurchaseOrder]: Validating supplier...")
 	var supplier models.Supplier
-	if err := s.db.WithContext(ctx).Where("id = ? AND company_id = ? AND is_active = true", req.SupplierID, companyID).First(&supplier).Error; err != nil {
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).Where("id = ? AND company_id = ? AND is_active = true", req.SupplierID, companyID).First(&supplier).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
+			log.Printf("❌ DEBUG [CreatePurchaseOrder]: Supplier not found - id=%s, companyID=%s", req.SupplierID, companyID)
 			return nil, pkgerrors.NewBadRequestError("supplier not found or inactive")
 		}
+		log.Printf("❌ DEBUG [CreatePurchaseOrder]: Failed to validate supplier: %v", err)
 		return nil, fmt.Errorf("failed to validate supplier: %w", err)
 	}
+	log.Printf("✅ DEBUG [CreatePurchaseOrder]: Supplier validated - %s", supplier.Name)
 
 	// Validate warehouse exists
+	log.Printf("🔍 DEBUG [CreatePurchaseOrder]: Validating warehouse...")
 	var warehouse models.Warehouse
-	if err := s.db.WithContext(ctx).Where("id = ? AND company_id = ? AND is_active = true", req.WarehouseID, companyID).First(&warehouse).Error; err != nil {
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).Where("id = ? AND company_id = ? AND is_active = true", req.WarehouseID, companyID).First(&warehouse).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
+			log.Printf("❌ DEBUG [CreatePurchaseOrder]: Warehouse not found - id=%s, companyID=%s", req.WarehouseID, companyID)
 			return nil, pkgerrors.NewBadRequestError("warehouse not found or inactive")
 		}
+		log.Printf("❌ DEBUG [CreatePurchaseOrder]: Failed to validate warehouse: %v", err)
 		return nil, fmt.Errorf("failed to validate warehouse: %w", err)
 	}
+	log.Printf("✅ DEBUG [CreatePurchaseOrder]: Warehouse validated - %s", warehouse.Name)
 
 	// Generate PO number using document number generator
+	log.Printf("🔍 DEBUG [CreatePurchaseOrder]: Generating PO number...")
 	poNumber, err := s.docNumberGen.GenerateNumber(ctx, tenantID, companyID, document.DocTypePurchaseOrder)
 	if err != nil {
+		log.Printf("❌ DEBUG [CreatePurchaseOrder]: Failed to generate PO number: %v", err)
 		return nil, fmt.Errorf("failed to generate PO number: %w", err)
 	}
+	log.Printf("✅ DEBUG [CreatePurchaseOrder]: Generated PO number: %s", poNumber)
 
 	// Parse discount and tax amounts
 	discountAmount := decimal.Zero
@@ -94,9 +149,10 @@ func (s *PurchaseOrderService) CreatePurchaseOrder(ctx context.Context, tenantID
 	}
 
 	// Create purchase order in transaction
+	log.Printf("🔍 DEBUG [CreatePurchaseOrder]: Starting transaction...")
 	var purchaseOrder *models.PurchaseOrder
 
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.db.WithContext(ctx).Set("tenant_id", tenantID).Transaction(func(tx *gorm.DB) error {
 		// Create purchase order header
 		purchaseOrder = &models.PurchaseOrder{
 			TenantID:           tenantID,
@@ -113,17 +169,23 @@ func (s *PurchaseOrderService) CreatePurchaseOrder(ctx context.Context, tenantID
 			RequestedBy:        &userID,
 		}
 
+		log.Printf("🔍 DEBUG [CreatePurchaseOrder]: Creating PO header...")
 		if err := tx.Create(purchaseOrder).Error; err != nil {
+			log.Printf("❌ DEBUG [CreatePurchaseOrder]: Failed to create PO header: %v", err)
 			return fmt.Errorf("failed to create purchase order: %w", err)
 		}
+		log.Printf("✅ DEBUG [CreatePurchaseOrder]: PO header created - ID=%s", purchaseOrder.ID)
 
 		// Create purchase order items
 		subtotal := decimal.Zero
-		for _, itemReq := range req.Items {
+		for i, itemReq := range req.Items {
+			log.Printf("🔍 DEBUG [CreatePurchaseOrder]: Creating item %d - productID=%s, qty=%s, price=%s", i+1, itemReq.ProductID, itemReq.Quantity, itemReq.UnitPrice)
 			item, itemSubtotal, err := s.createPurchaseOrderItem(ctx, tx, companyID, purchaseOrder.ID, &itemReq)
 			if err != nil {
+				log.Printf("❌ DEBUG [CreatePurchaseOrder]: Failed to create item %d: %v", i+1, err)
 				return err
 			}
+			log.Printf("✅ DEBUG [CreatePurchaseOrder]: Item %d created - subtotal=%s", i+1, itemSubtotal.String())
 			subtotal = subtotal.Add(itemSubtotal)
 			purchaseOrder.Items = append(purchaseOrder.Items, *item)
 		}
@@ -131,31 +193,103 @@ func (s *PurchaseOrderService) CreatePurchaseOrder(ctx context.Context, tenantID
 		// Update totals
 		purchaseOrder.Subtotal = subtotal
 		purchaseOrder.TotalAmount = subtotal.Sub(discountAmount).Add(taxAmount)
+		log.Printf("🔍 DEBUG [CreatePurchaseOrder]: Updating totals - subtotal=%s, total=%s", purchaseOrder.Subtotal.String(), purchaseOrder.TotalAmount.String())
 
 		if err := tx.Save(purchaseOrder).Error; err != nil {
+			log.Printf("❌ DEBUG [CreatePurchaseOrder]: Failed to update totals: %v", err)
 			return fmt.Errorf("failed to update purchase order totals: %w", err)
 		}
+		log.Printf("✅ DEBUG [CreatePurchaseOrder]: Totals updated successfully")
 
 		return nil
 	})
 
 	if err != nil {
+		log.Printf("❌ DEBUG [CreatePurchaseOrder]: Transaction failed: %v", err)
 		return nil, err
 	}
+	log.Printf("✅ DEBUG [CreatePurchaseOrder]: Transaction completed successfully")
 
 	// Load relations
+	log.Printf("🔍 DEBUG [CreatePurchaseOrder]: Loading relations...")
 	if err := s.loadPurchaseOrderRelations(ctx, tenantID, purchaseOrder); err != nil {
+		log.Printf("❌ DEBUG [CreatePurchaseOrder]: Failed to load relations: %v", err)
 		return nil, err
 	}
+	log.Printf("✅ DEBUG [CreatePurchaseOrder]: Relations loaded successfully")
 
+	// Audit logging
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		// Prepare audit data
+		auditItems := make([]purchaseOrderAuditItemData, len(purchaseOrder.Items))
+		for i, item := range purchaseOrder.Items {
+			itemNotes := ""
+			if item.Notes != nil {
+				itemNotes = *item.Notes
+			}
+			auditItems[i] = purchaseOrderAuditItemData{
+				ProductID:   item.ProductID,
+				ProductCode: item.Product.Code,
+				ProductName: item.Product.Name,
+				Quantity:    item.Quantity.String(),
+				UnitPrice:   item.UnitPrice.String(),
+				DiscountPct: item.DiscountPct.String(),
+				Subtotal:    item.Subtotal.String(),
+				Notes:       itemNotes,
+			}
+		}
+
+		notes := ""
+		if purchaseOrder.Notes != nil {
+			notes = *purchaseOrder.Notes
+		}
+
+		expectedDelivery := ""
+		if purchaseOrder.ExpectedDeliveryAt != nil {
+			expectedDelivery = purchaseOrder.ExpectedDeliveryAt.Format("2006-01-02")
+		}
+
+		auditData := purchaseOrderAuditData{
+			SupplierID:         purchaseOrder.SupplierID,
+			SupplierName:       purchaseOrder.Supplier.Name,
+			WarehouseID:        purchaseOrder.WarehouseID,
+			WarehouseName:      purchaseOrder.Warehouse.Name,
+			PONumber:           purchaseOrder.PONumber,
+			PODate:             purchaseOrder.PODate.Format("2006-01-02"),
+			Status:             string(purchaseOrder.Status),
+			Subtotal:           purchaseOrder.Subtotal.String(),
+			DiscountAmount:     purchaseOrder.DiscountAmount.String(),
+			TaxAmount:          purchaseOrder.TaxAmount.String(),
+			TotalAmount:        purchaseOrder.TotalAmount.String(),
+			Notes:              notes,
+			ExpectedDeliveryAt: expectedDelivery,
+			Items:              auditItems,
+		}
+
+		if err := s.auditService.LogPurchaseOrderCreated(ctx, auditCtx, purchaseOrder.ID, auditData); err != nil {
+			log.Printf("WARNING: Failed to create audit log for purchase order: %v", err)
+		}
+	}
+
+	log.Printf("✅ DEBUG [CreatePurchaseOrder]: Purchase order created successfully - ID=%s, PONumber=%s", purchaseOrder.ID, purchaseOrder.PONumber)
 	return purchaseOrder, nil
 }
 
 // createPurchaseOrderItem creates a single purchase order item
 func (s *PurchaseOrderService) createPurchaseOrderItem(ctx context.Context, tx *gorm.DB, companyID, purchaseOrderID string, req *dto.CreatePurchaseOrderItemRequest) (*models.PurchaseOrderItem, decimal.Decimal, error) {
-	// Validate product exists
+	// Validate product exists (tx already has tenant_id set from transaction)
 	var product models.Product
-	if err := tx.WithContext(ctx).Where("id = ? AND company_id = ? AND is_active = true", req.ProductID, companyID).First(&product).Error; err != nil {
+	if err := tx.Where("id = ? AND company_id = ? AND is_active = true", req.ProductID, companyID).First(&product).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, decimal.Zero, pkgerrors.NewBadRequestError(fmt.Sprintf("product %s not found or inactive", req.ProductID))
 		}
@@ -165,7 +299,7 @@ func (s *PurchaseOrderService) createPurchaseOrderItem(ctx context.Context, tx *
 	// Validate product unit if provided
 	if req.ProductUnitID != nil && *req.ProductUnitID != "" {
 		var productUnit models.ProductUnit
-		if err := tx.WithContext(ctx).Where("id = ? AND product_id = ?", *req.ProductUnitID, req.ProductID).First(&productUnit).Error; err != nil {
+		if err := tx.Where("id = ? AND product_id = ?", *req.ProductUnitID, req.ProductID).First(&productUnit).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return nil, decimal.Zero, pkgerrors.NewBadRequestError("product unit not found")
 			}
@@ -410,11 +544,57 @@ func (s *PurchaseOrderService) loadPurchaseOrderRelations(ctx context.Context, t
 // ============================================================================
 
 // UpdatePurchaseOrder updates an existing purchase order (only DRAFT status)
-func (s *PurchaseOrderService) UpdatePurchaseOrder(ctx context.Context, tenantID, companyID, purchaseOrderID string, req *dto.UpdatePurchaseOrderRequest) (*models.PurchaseOrder, error) {
+func (s *PurchaseOrderService) UpdatePurchaseOrder(ctx context.Context, tenantID, companyID, purchaseOrderID, userID string, req *dto.UpdatePurchaseOrderRequest, ipAddress, userAgent string) (*models.PurchaseOrder, error) {
 	// Get existing purchase order
 	purchaseOrder, err := s.GetPurchaseOrderByID(ctx, tenantID, companyID, purchaseOrderID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Capture old values for audit logging
+	var oldAuditData purchaseOrderAuditData
+	if s.auditService != nil {
+		oldAuditItems := make([]purchaseOrderAuditItemData, len(purchaseOrder.Items))
+		for i, item := range purchaseOrder.Items {
+			oldItemNotes := ""
+			if item.Notes != nil {
+				oldItemNotes = *item.Notes
+			}
+			oldAuditItems[i] = purchaseOrderAuditItemData{
+				ProductID:   item.ProductID,
+				ProductCode: item.Product.Code,
+				ProductName: item.Product.Name,
+				Quantity:    item.Quantity.String(),
+				UnitPrice:   item.UnitPrice.String(),
+				DiscountPct: item.DiscountPct.String(),
+				Subtotal:    item.Subtotal.String(),
+				Notes:       oldItemNotes,
+			}
+		}
+		oldNotes := ""
+		if purchaseOrder.Notes != nil {
+			oldNotes = *purchaseOrder.Notes
+		}
+		oldExpectedDelivery := ""
+		if purchaseOrder.ExpectedDeliveryAt != nil {
+			oldExpectedDelivery = purchaseOrder.ExpectedDeliveryAt.Format("2006-01-02")
+		}
+		oldAuditData = purchaseOrderAuditData{
+			SupplierID:         purchaseOrder.SupplierID,
+			SupplierName:       purchaseOrder.Supplier.Name,
+			WarehouseID:        purchaseOrder.WarehouseID,
+			WarehouseName:      purchaseOrder.Warehouse.Name,
+			PONumber:           purchaseOrder.PONumber,
+			PODate:             purchaseOrder.PODate.Format("2006-01-02"),
+			Status:             string(purchaseOrder.Status),
+			Subtotal:           purchaseOrder.Subtotal.String(),
+			DiscountAmount:     purchaseOrder.DiscountAmount.String(),
+			TaxAmount:          purchaseOrder.TaxAmount.String(),
+			TotalAmount:        purchaseOrder.TotalAmount.String(),
+			Notes:              oldNotes,
+			ExpectedDeliveryAt: oldExpectedDelivery,
+			Items:              oldAuditItems,
+		}
 	}
 
 	// Check status - can only update DRAFT
@@ -422,10 +602,10 @@ func (s *PurchaseOrderService) UpdatePurchaseOrder(ctx context.Context, tenantID
 		return nil, pkgerrors.NewBadRequestError("can only update purchase orders in DRAFT status")
 	}
 
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.db.WithContext(ctx).Set("tenant_id", tenantID).Transaction(func(tx *gorm.DB) error {
 		// Update header fields
 		if req.SupplierID != nil {
-			// Validate supplier
+			// Validate supplier (tx already has tenant_id from transaction)
 			var supplier models.Supplier
 			if err := tx.Where("id = ? AND company_id = ? AND is_active = true", *req.SupplierID, companyID).First(&supplier).Error; err != nil {
 				if err == gorm.ErrRecordNotFound {
@@ -437,7 +617,7 @@ func (s *PurchaseOrderService) UpdatePurchaseOrder(ctx context.Context, tenantID
 		}
 
 		if req.WarehouseID != nil {
-			// Validate warehouse
+			// Validate warehouse (tx already has tenant_id from transaction)
 			var warehouse models.Warehouse
 			if err := tx.Where("id = ? AND company_id = ? AND is_active = true", *req.WarehouseID, companyID).First(&warehouse).Error; err != nil {
 				if err == gorm.ErrRecordNotFound {
@@ -537,6 +717,66 @@ func (s *PurchaseOrderService) UpdatePurchaseOrder(ctx context.Context, tenantID
 		return nil, err
 	}
 
+	// Audit logging
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		// Prepare new audit data
+		newAuditItems := make([]purchaseOrderAuditItemData, len(purchaseOrder.Items))
+		for i, item := range purchaseOrder.Items {
+			newItemNotes := ""
+			if item.Notes != nil {
+				newItemNotes = *item.Notes
+			}
+			newAuditItems[i] = purchaseOrderAuditItemData{
+				ProductID:   item.ProductID,
+				ProductCode: item.Product.Code,
+				ProductName: item.Product.Name,
+				Quantity:    item.Quantity.String(),
+				UnitPrice:   item.UnitPrice.String(),
+				DiscountPct: item.DiscountPct.String(),
+				Subtotal:    item.Subtotal.String(),
+				Notes:       newItemNotes,
+			}
+		}
+		newNotes := ""
+		if purchaseOrder.Notes != nil {
+			newNotes = *purchaseOrder.Notes
+		}
+		newExpectedDelivery := ""
+		if purchaseOrder.ExpectedDeliveryAt != nil {
+			newExpectedDelivery = purchaseOrder.ExpectedDeliveryAt.Format("2006-01-02")
+		}
+		newAuditData := purchaseOrderAuditData{
+			SupplierID:         purchaseOrder.SupplierID,
+			SupplierName:       purchaseOrder.Supplier.Name,
+			WarehouseID:        purchaseOrder.WarehouseID,
+			WarehouseName:      purchaseOrder.Warehouse.Name,
+			PONumber:           purchaseOrder.PONumber,
+			PODate:             purchaseOrder.PODate.Format("2006-01-02"),
+			Status:             string(purchaseOrder.Status),
+			Subtotal:           purchaseOrder.Subtotal.String(),
+			DiscountAmount:     purchaseOrder.DiscountAmount.String(),
+			TaxAmount:          purchaseOrder.TaxAmount.String(),
+			TotalAmount:        purchaseOrder.TotalAmount.String(),
+			Notes:              newNotes,
+			ExpectedDeliveryAt: newExpectedDelivery,
+			Items:              newAuditItems,
+		}
+
+		if err := s.auditService.LogPurchaseOrderUpdated(ctx, auditCtx, purchaseOrder.ID, oldAuditData, newAuditData); err != nil {
+			log.Printf("WARNING: Failed to create audit log for purchase order update: %v", err)
+		}
+	}
+
 	return purchaseOrder, nil
 }
 
@@ -545,7 +785,7 @@ func (s *PurchaseOrderService) UpdatePurchaseOrder(ctx context.Context, tenantID
 // ============================================================================
 
 // DeletePurchaseOrder deletes a purchase order (only DRAFT status)
-func (s *PurchaseOrderService) DeletePurchaseOrder(ctx context.Context, tenantID, companyID, purchaseOrderID string) error {
+func (s *PurchaseOrderService) DeletePurchaseOrder(ctx context.Context, tenantID, companyID, purchaseOrderID, userID string, ipAddress, userAgent string) error {
 	// Get purchase order
 	purchaseOrder, err := s.GetPurchaseOrderByID(ctx, tenantID, companyID, purchaseOrderID)
 	if err != nil {
@@ -557,8 +797,49 @@ func (s *PurchaseOrderService) DeletePurchaseOrder(ctx context.Context, tenantID
 		return pkgerrors.NewBadRequestError("can only delete purchase orders in DRAFT status")
 	}
 
+	// Prepare audit data before deletion
+	var auditData purchaseOrderAuditData
+	if s.auditService != nil {
+		auditItems := make([]purchaseOrderAuditItemData, len(purchaseOrder.Items))
+		for i, item := range purchaseOrder.Items {
+			itemNotes := ""
+			if item.Notes != nil {
+				itemNotes = *item.Notes
+			}
+			auditItems[i] = purchaseOrderAuditItemData{
+				ProductID:   item.ProductID,
+				ProductCode: item.Product.Code,
+				ProductName: item.Product.Name,
+				Quantity:    item.Quantity.String(),
+				UnitPrice:   item.UnitPrice.String(),
+				DiscountPct: item.DiscountPct.String(),
+				Subtotal:    item.Subtotal.String(),
+				Notes:       itemNotes,
+			}
+		}
+		notes := ""
+		if purchaseOrder.Notes != nil {
+			notes = *purchaseOrder.Notes
+		}
+		auditData = purchaseOrderAuditData{
+			SupplierID:     purchaseOrder.SupplierID,
+			SupplierName:   purchaseOrder.Supplier.Name,
+			WarehouseID:    purchaseOrder.WarehouseID,
+			WarehouseName:  purchaseOrder.Warehouse.Name,
+			PONumber:       purchaseOrder.PONumber,
+			PODate:         purchaseOrder.PODate.Format("2006-01-02"),
+			Status:         string(purchaseOrder.Status),
+			Subtotal:       purchaseOrder.Subtotal.String(),
+			DiscountAmount: purchaseOrder.DiscountAmount.String(),
+			TaxAmount:      purchaseOrder.TaxAmount.String(),
+			TotalAmount:    purchaseOrder.TotalAmount.String(),
+			Notes:          notes,
+			Items:          auditItems,
+		}
+	}
+
 	// Delete in transaction
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.db.WithContext(ctx).Set("tenant_id", tenantID).Transaction(func(tx *gorm.DB) error {
 		// Delete items first
 		if err := tx.Where("purchase_order_id = ?", purchaseOrderID).Delete(&models.PurchaseOrderItem{}).Error; err != nil {
 			return fmt.Errorf("failed to delete purchase order items: %w", err)
@@ -571,6 +852,29 @@ func (s *PurchaseOrderService) DeletePurchaseOrder(ctx context.Context, tenantID
 
 		return nil
 	})
+
+	if err != nil {
+		return err
+	}
+
+	// Audit logging after successful deletion
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		if err := s.auditService.LogPurchaseOrderDeleted(ctx, auditCtx, purchaseOrderID, auditData); err != nil {
+			log.Printf("WARNING: Failed to create audit log for purchase order deletion: %v", err)
+		}
+	}
+
+	return nil
 }
 
 // ============================================================================
@@ -578,7 +882,7 @@ func (s *PurchaseOrderService) DeletePurchaseOrder(ctx context.Context, tenantID
 // ============================================================================
 
 // ConfirmPurchaseOrder confirms a purchase order (DRAFT -> CONFIRMED)
-func (s *PurchaseOrderService) ConfirmPurchaseOrder(ctx context.Context, tenantID, companyID, purchaseOrderID, userID string) (*models.PurchaseOrder, error) {
+func (s *PurchaseOrderService) ConfirmPurchaseOrder(ctx context.Context, tenantID, companyID, purchaseOrderID, userID string, ipAddress, userAgent string) (*models.PurchaseOrder, error) {
 	purchaseOrder, err := s.GetPurchaseOrderByID(ctx, tenantID, companyID, purchaseOrderID)
 	if err != nil {
 		return nil, err
@@ -593,20 +897,57 @@ func (s *PurchaseOrderService) ConfirmPurchaseOrder(ctx context.Context, tenantI
 		return nil, pkgerrors.NewBadRequestError("cannot confirm purchase order without items")
 	}
 
+	// Capture old values for audit
+	oldStatus := string(purchaseOrder.Status)
+
 	now := time.Now()
 	purchaseOrder.Status = models.PurchaseOrderStatusConfirmed
 	purchaseOrder.ApprovedBy = &userID
 	purchaseOrder.ApprovedAt = &now
 
-	if err := s.db.WithContext(ctx).Save(purchaseOrder).Error; err != nil {
+	// Use Updates with Select to only update specific fields (avoid saving relations)
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+		Model(purchaseOrder).
+		Select("status", "approved_by", "approved_at", "updated_at").
+		Updates(purchaseOrder).Error; err != nil {
 		return nil, fmt.Errorf("failed to confirm purchase order: %w", err)
+	}
+
+	// Reload relations for response
+	if err := s.loadPurchaseOrderRelations(ctx, tenantID, purchaseOrder); err != nil {
+		return nil, err
+	}
+
+	// Audit logging - only log status change
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		oldValues := map[string]interface{}{
+			"status": oldStatus,
+		}
+
+		newValues := map[string]interface{}{
+			"status": string(purchaseOrder.Status),
+		}
+
+		if err := s.auditService.LogPurchaseOrderConfirmed(ctx, auditCtx, purchaseOrder.ID, oldValues, newValues); err != nil {
+			log.Printf("WARNING: Failed to create audit log for purchase order confirmation: %v", err)
+		}
 	}
 
 	return purchaseOrder, nil
 }
 
 // CompletePurchaseOrder completes a purchase order (CONFIRMED -> COMPLETED)
-func (s *PurchaseOrderService) CompletePurchaseOrder(ctx context.Context, tenantID, companyID, purchaseOrderID string) (*models.PurchaseOrder, error) {
+func (s *PurchaseOrderService) CompletePurchaseOrder(ctx context.Context, tenantID, companyID, purchaseOrderID, userID string, ipAddress, userAgent string) (*models.PurchaseOrder, error) {
 	purchaseOrder, err := s.GetPurchaseOrderByID(ctx, tenantID, companyID, purchaseOrderID)
 	if err != nil {
 		return nil, err
@@ -616,17 +957,54 @@ func (s *PurchaseOrderService) CompletePurchaseOrder(ctx context.Context, tenant
 		return nil, pkgerrors.NewBadRequestError("can only complete purchase orders in CONFIRMED status")
 	}
 
+	// Capture old values for audit
+	oldStatus := string(purchaseOrder.Status)
+
 	purchaseOrder.Status = models.PurchaseOrderStatusCompleted
 
-	if err := s.db.WithContext(ctx).Save(purchaseOrder).Error; err != nil {
+	// Use Updates with Select to only update specific fields (avoid saving relations)
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+		Model(purchaseOrder).
+		Select("status", "updated_at").
+		Updates(purchaseOrder).Error; err != nil {
 		return nil, fmt.Errorf("failed to complete purchase order: %w", err)
+	}
+
+	// Reload relations for response
+	if err := s.loadPurchaseOrderRelations(ctx, tenantID, purchaseOrder); err != nil {
+		return nil, err
+	}
+
+	// Audit logging - only log status change
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		oldValues := map[string]interface{}{
+			"status": oldStatus,
+		}
+
+		newValues := map[string]interface{}{
+			"status": string(purchaseOrder.Status),
+		}
+
+		if err := s.auditService.LogPurchaseOrderCompleted(ctx, auditCtx, purchaseOrder.ID, oldValues, newValues); err != nil {
+			log.Printf("WARNING: Failed to create audit log for purchase order completion: %v", err)
+		}
 	}
 
 	return purchaseOrder, nil
 }
 
 // CancelPurchaseOrder cancels a purchase order (DRAFT/CONFIRMED -> CANCELLED)
-func (s *PurchaseOrderService) CancelPurchaseOrder(ctx context.Context, tenantID, companyID, purchaseOrderID, userID string, req *dto.CancelPurchaseOrderRequest) (*models.PurchaseOrder, error) {
+func (s *PurchaseOrderService) CancelPurchaseOrder(ctx context.Context, tenantID, companyID, purchaseOrderID, userID string, req *dto.CancelPurchaseOrderRequest, ipAddress, userAgent string) (*models.PurchaseOrder, error) {
 	purchaseOrder, err := s.GetPurchaseOrderByID(ctx, tenantID, companyID, purchaseOrderID)
 	if err != nil {
 		return nil, err
@@ -636,14 +1014,117 @@ func (s *PurchaseOrderService) CancelPurchaseOrder(ctx context.Context, tenantID
 		return nil, pkgerrors.NewBadRequestError("can only cancel purchase orders in DRAFT or CONFIRMED status")
 	}
 
+	// Capture old values for audit
+	oldStatus := string(purchaseOrder.Status)
+
 	now := time.Now()
 	purchaseOrder.Status = models.PurchaseOrderStatusCancelled
 	purchaseOrder.CancelledBy = &userID
 	purchaseOrder.CancelledAt = &now
 	purchaseOrder.CancellationNote = &req.CancellationNote
 
-	if err := s.db.WithContext(ctx).Save(purchaseOrder).Error; err != nil {
+	// Use Updates with Select to only update specific fields (avoid saving relations)
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+		Model(purchaseOrder).
+		Select("status", "cancelled_by", "cancelled_at", "cancellation_note", "updated_at").
+		Updates(purchaseOrder).Error; err != nil {
 		return nil, fmt.Errorf("failed to cancel purchase order: %w", err)
+	}
+
+	// Reload relations for response
+	if err := s.loadPurchaseOrderRelations(ctx, tenantID, purchaseOrder); err != nil {
+		return nil, err
+	}
+
+	// Audit logging - only log status change
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		oldValues := map[string]interface{}{
+			"status": oldStatus,
+		}
+
+		newValues := map[string]interface{}{
+			"status":            string(purchaseOrder.Status),
+			"cancellation_note": req.CancellationNote,
+		}
+
+		if err := s.auditService.LogPurchaseOrderCancelled(ctx, auditCtx, purchaseOrder.ID, oldValues, newValues, req.CancellationNote); err != nil {
+			log.Printf("WARNING: Failed to create audit log for purchase order cancellation: %v", err)
+		}
+	}
+
+	return purchaseOrder, nil
+}
+
+// ShortClosePurchaseOrder closes a purchase order even if not fully delivered (SAP DCI model)
+// This is used when supplier cannot/will not deliver remaining quantity (e.g., rejected items not replaced)
+// Status transition: CONFIRMED -> SHORT_CLOSED
+func (s *PurchaseOrderService) ShortClosePurchaseOrder(ctx context.Context, tenantID, companyID, purchaseOrderID, userID string, req *dto.ShortClosePurchaseOrderRequest, ipAddress, userAgent string) (*models.PurchaseOrder, error) {
+	purchaseOrder, err := s.GetPurchaseOrderByID(ctx, tenantID, companyID, purchaseOrderID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Only CONFIRMED POs can be short closed
+	if purchaseOrder.Status != models.PurchaseOrderStatusConfirmed {
+		return nil, pkgerrors.NewBadRequestError("can only short close purchase orders in CONFIRMED status")
+	}
+
+	// Capture old values for audit
+	oldStatus := string(purchaseOrder.Status)
+
+	now := time.Now()
+	purchaseOrder.Status = models.PurchaseOrderStatusShortClosed
+	purchaseOrder.ShortClosedBy = &userID
+	purchaseOrder.ShortClosedAt = &now
+	purchaseOrder.ShortCloseReason = &req.ShortCloseReason
+
+	// Use Updates with Select to only update specific fields (avoid saving relations)
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+		Model(purchaseOrder).
+		Select("status", "short_closed_by", "short_closed_at", "short_close_reason", "updated_at").
+		Updates(purchaseOrder).Error; err != nil {
+		return nil, fmt.Errorf("failed to short close purchase order: %w", err)
+	}
+
+	// Reload relations for response
+	if err := s.loadPurchaseOrderRelations(ctx, tenantID, purchaseOrder); err != nil {
+		return nil, err
+	}
+
+	// Audit logging - log status change with reason
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		oldValues := map[string]interface{}{
+			"status": oldStatus,
+		}
+
+		newValues := map[string]interface{}{
+			"status":             string(purchaseOrder.Status),
+			"short_close_reason": req.ShortCloseReason,
+		}
+
+		if err := s.auditService.LogPurchaseOrderShortClosed(ctx, auditCtx, purchaseOrder.ID, oldValues, newValues, req.ShortCloseReason); err != nil {
+			log.Printf("WARNING: Failed to create audit log for purchase order short close: %v", err)
+		}
 	}
 
 	return purchaseOrder, nil
@@ -674,6 +1155,9 @@ func (s *PurchaseOrderService) mapPurchaseOrderToResponse(po *models.PurchaseOrd
 		CancelledBy:        po.CancelledBy,
 		CancelledAt:        po.CancelledAt,
 		CancellationNote:   po.CancellationNote,
+		ShortClosedBy:      po.ShortClosedBy,
+		ShortClosedAt:      po.ShortClosedAt,
+		ShortCloseReason:   po.ShortCloseReason,
 		CreatedAt:          po.CreatedAt,
 		UpdatedAt:          po.UpdatedAt,
 	}

@@ -31,6 +31,27 @@ export const GOODS_RECEIPT_STATUS_OPTIONS = [
 ] as const;
 
 // ============================================================================
+// REJECTION DISPOSITION TYPES (Odoo+M3 Model)
+// ============================================================================
+
+/**
+ * Rejection Disposition Status
+ * Tracks what happens to rejected items
+ */
+export type RejectionDispositionStatus =
+  | "PENDING_REPLACEMENT"
+  | "CREDIT_REQUESTED"
+  | "RETURNED"
+  | "WRITTEN_OFF";
+
+export const REJECTION_DISPOSITION_OPTIONS = [
+  { value: "PENDING_REPLACEMENT", label: "Menunggu Penggantian", color: "bg-yellow-100 text-yellow-800" },
+  { value: "CREDIT_REQUESTED", label: "Kredit Diminta", color: "bg-blue-100 text-blue-800" },
+  { value: "RETURNED", label: "Dikembalikan", color: "bg-purple-100 text-purple-800" },
+  { value: "WRITTEN_OFF", label: "Dihapuskan", color: "bg-gray-100 text-gray-800" },
+] as const;
+
+// ============================================================================
 // BASIC RESPONSE TYPES
 // ============================================================================
 
@@ -95,6 +116,14 @@ export interface GoodsReceiptItemResponse {
   rejectionReason?: string;
   qualityNote?: string;
   notes?: string;
+  // Rejection Disposition Fields (Odoo+M3 Model)
+  rejectionDisposition?: RejectionDispositionStatus;
+  dispositionNotes?: string;
+  dispositionResolved?: boolean;
+  dispositionResolvedAt?: string;
+  dispositionResolvedBy?: string;
+  dispositionResolvedNotes?: string;
+  dispositionResolver?: UserBasicResponse;
   createdAt: string;
   updatedAt: string;
 }
@@ -122,7 +151,12 @@ export interface GoodsReceiptResponse {
   inspectedAt?: string;
   supplierInvoice?: string;
   supplierDONumber?: string;
-  notes?: string;
+  notes?: string;            // General notes (from creation)
+  receiveNotes?: string;     // Notes during receive (PENDING → RECEIVED)
+  inspectionNotes?: string;  // Notes during inspection (RECEIVED → INSPECTED)
+  acceptanceNotes?: string;  // Notes during acceptance (INSPECTED → ACCEPTED/PARTIAL)
+  rejectionNotes?: string;   // Notes during rejection
+  itemCount: number; // Number of items in the goods receipt
   items?: GoodsReceiptItemResponse[];
   createdAt: string;
   updatedAt: string;
@@ -194,6 +228,23 @@ export interface RejectGoodsRequest {
   rejectionReason: string;
 }
 
+/**
+ * Update Rejection Disposition Request (Odoo+M3 Model)
+ * Field names must match backend DTO
+ */
+export interface UpdateRejectionDispositionRequest {
+  rejectionDisposition: RejectionDispositionStatus;
+  dispositionNotes?: string;
+}
+
+/**
+ * Resolve Disposition Request (Odoo+M3 Model)
+ * Field names must match backend DTO
+ */
+export interface ResolveDispositionRequest {
+  dispositionResolvedNotes?: string;
+}
+
 // ============================================================================
 // API RESPONSE TYPES
 // ============================================================================
@@ -240,5 +291,15 @@ export function getGoodsReceiptStatusLabel(status: GoodsReceiptStatus): string {
 
 export function getGoodsReceiptStatusColor(status: GoodsReceiptStatus): string {
   const option = GOODS_RECEIPT_STATUS_OPTIONS.find((o) => o.value === status);
+  return option?.color || "bg-gray-100 text-gray-800";
+}
+
+export function getRejectionDispositionLabel(disposition: RejectionDispositionStatus): string {
+  const option = REJECTION_DISPOSITION_OPTIONS.find((o) => o.value === disposition);
+  return option?.label || disposition;
+}
+
+export function getRejectionDispositionColor(disposition: RejectionDispositionStatus): string {
+  const option = REJECTION_DISPOSITION_OPTIONS.find((o) => o.value === disposition);
   return option?.color || "bg-gray-100 text-gray-800";
 }

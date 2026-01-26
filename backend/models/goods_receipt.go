@@ -26,7 +26,12 @@ type GoodsReceipt struct {
 	InspectedAt      *time.Time         `gorm:"type:timestamp"`
 	SupplierInvoice  *string            `gorm:"type:varchar(100)"` // Supplier's invoice number
 	SupplierDONumber *string            `gorm:"type:varchar(100)"` // Supplier's delivery order number
-	Notes            *string            `gorm:"type:text"`
+	Notes            *string            `gorm:"type:text"`         // General notes (from creation)
+	ReceiveNotes     *string            `gorm:"type:text"`         // Notes during receive (PENDING → RECEIVED)
+	InspectionNotes  *string            `gorm:"type:text"`         // Notes during inspection (RECEIVED → INSPECTED)
+	AcceptanceNotes  *string            `gorm:"type:text"`         // Notes during acceptance (INSPECTED → ACCEPTED/PARTIAL)
+	RejectionNotes   *string            `gorm:"type:text"`         // Notes during rejection
+	ItemCount        int                `gorm:"type:int;default:0"` // Number of items in the goods receipt
 	CreatedAt        time.Time          `gorm:"autoCreateTime"`
 	UpdatedAt        time.Time          `gorm:"autoUpdateTime"`
 
@@ -65,18 +70,24 @@ type GoodsReceiptItem struct {
 	OrderedQty         decimal.Decimal `gorm:"type:decimal(15,3);not null"`
 	ReceivedQty        decimal.Decimal `gorm:"type:decimal(15,3);default:0"` // Physically received
 	AcceptedQty        decimal.Decimal `gorm:"type:decimal(15,3);default:0"` // Passed quality inspection
-	RejectedQty        decimal.Decimal `gorm:"type:decimal(15,3);default:0"` // Failed quality inspection
-	RejectionReason    *string         `gorm:"type:text"`
-	QualityNote        *string         `gorm:"type:text"`
+	RejectedQty           decimal.Decimal      `gorm:"type:decimal(15,3);default:0"` // Failed quality inspection
+	RejectionReason       *string              `gorm:"type:text"`
+	RejectionDisposition  *RejectionDisposition `gorm:"type:varchar(30)"` // Disposition for rejected goods (Odoo+M3 model)
+	DispositionResolvedAt    *time.Time           `gorm:"type:timestamp"`    // When the disposition was resolved
+	DispositionResolvedBy    *string              `gorm:"type:varchar(255)"` // User who resolved the disposition
+	DispositionNotes         *string              `gorm:"type:text"`         // Notes when setting disposition
+	DispositionResolvedNotes *string              `gorm:"type:text"`         // Notes when resolving disposition
+	QualityNote              *string              `gorm:"type:text"`
 	Notes              *string         `gorm:"type:text"`
 	CreatedAt          time.Time       `gorm:"autoCreateTime"`
 	UpdatedAt          time.Time       `gorm:"autoUpdateTime"`
 
 	// Relations
-	GoodsReceipt       GoodsReceipt      `gorm:"foreignKey:GoodsReceiptID;constraint:OnDelete:CASCADE"`
-	PurchaseOrderItem  PurchaseOrderItem `gorm:"foreignKey:PurchaseOrderItemID;constraint:OnDelete:RESTRICT"`
-	Product            Product           `gorm:"foreignKey:ProductID;constraint:OnDelete:RESTRICT"`
-	ProductUnit        *ProductUnit      `gorm:"foreignKey:ProductUnitID"`
+	GoodsReceipt        GoodsReceipt      `gorm:"foreignKey:GoodsReceiptID;constraint:OnDelete:CASCADE"`
+	PurchaseOrderItem   PurchaseOrderItem `gorm:"foreignKey:PurchaseOrderItemID;constraint:OnDelete:RESTRICT"`
+	Product             Product           `gorm:"foreignKey:ProductID;constraint:OnDelete:RESTRICT"`
+	ProductUnit         *ProductUnit      `gorm:"foreignKey:ProductUnitID"`
+	DispositionResolver *User             `gorm:"foreignKey:DispositionResolvedBy"` // User who resolved the rejection disposition
 }
 
 // TableName specifies the table name for GoodsReceiptItem model

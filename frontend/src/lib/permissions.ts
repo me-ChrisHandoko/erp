@@ -91,7 +91,7 @@ const ROLE_PERMISSIONS: Record<CompanyRole, {
     'bank-accounts': ['view', 'create', 'edit', 'delete'],
     users: ['view', 'create', 'edit', 'delete'],
     roles: ['view', 'create', 'edit', 'delete'],
-    'system-config': ['view', 'edit'],
+    'system-config': ['view', 'create', 'edit', 'delete'],
     preferences: ['view', 'edit'],
   },
   ADMIN: {

@@ -125,13 +125,8 @@ export function validateExcelData(
 
     // 4. Check if product already has stock in warehouse
     const existingStock = stockMap.get(product.id);
-    console.log(`  - Checking ${product.code} (${product.id}):`);
-    console.log(`    - stockMap.has(${product.id}):`, stockMap.has(product.id));
-    console.log(`    - stockMap.get result:`, existingStock);
-    console.log(`    - existing stock =`, existingStock ? `${existingStock.quantity}` : "none");
 
     if (existingStock) {
-      console.log(`    ⚠️ CONFLICT DETECTED: ${product.code} already has ${existingStock.quantity} in stock`);
       existingStocksConflicts.push({
         productId: product.id,
         productCode: product.code,
@@ -364,18 +359,29 @@ export async function parseExcelFile(file: File): Promise<ExcelRow[]> {
 }
 
 /**
- * Generate Excel template for download
- * Creates a template with headers and sample data
+ * Product info for template generation
  */
-export async function generateExcelTemplate(): Promise<Blob> {
+interface TemplateProduct {
+  code: string;
+  name: string;
+}
+
+/**
+ * Generate Excel template for download
+ * Creates a template with headers and available product codes
+ * @param products - Optional array of available products to include in template
+ */
+export async function generateExcelTemplate(products?: TemplateProduct[]): Promise<Blob> {
   // Dynamically import xlsx to reduce bundle size
   const XLSX = await import("xlsx");
 
   // Create workbook
   const workbook = XLSX.utils.book_new();
 
-  // Define headers
-  const headers = [
+  // ============================================================
+  // SHEET 1: Template Input Stok
+  // ============================================================
+  const inputHeaders = [
     "Kode Produk",
     "Quantity",
     "Harga Beli",
@@ -385,32 +391,77 @@ export async function generateExcelTemplate(): Promise<Blob> {
     "Catatan",
   ];
 
-  // Sample data rows
-  const sampleData = [
-    ["PROD-001", "100", "5000", "Rak A-1", "10", "500", "Stok awal produk A"],
-    ["PROD-002", "50", "7500", "Rak B-2", "5", "200", ""],
-    ["PROD-003", "200", "3000", "", "20", "1000", ""],
-  ];
+  // Generate rows with product codes if available, otherwise use sample data
+  let inputData: (string | number)[][];
+  if (products && products.length > 0) {
+    // First row: Example with sample values to guide user
+    const exampleRow = [
+      products[0].code, // Use first product code as example
+      "100",            // Quantity example
+      "15000",          // Harga Beli example (tanpa titik/koma)
+      "Rak A-1",        // Lokasi example
+      "10",             // Stok Minimum example
+      "500",            // Stok Maksimum example
+      "Contoh pengisian", // Catatan example
+    ];
 
-  // Combine headers and sample data
-  const worksheetData = [headers, ...sampleData];
+    // Remaining rows: Product codes with empty values for user to fill
+    const remainingRows = products.slice(1).map((product) => [
+      product.code,
+      "", // Quantity - to be filled
+      "", // Harga Beli - to be filled
+      "", // Lokasi - optional
+      "", // Stok Minimum - optional
+      "", // Stok Maksimum - optional
+      "", // Catatan - optional
+    ]);
+
+    inputData = [exampleRow, ...remainingRows];
+  } else {
+    // Fallback to sample data if no products provided
+    inputData = [
+      ["PROD-001", "100", "15000", "Rak A-1", "10", "500", "Contoh pengisian"],
+      ["PROD-002", "", "", "", "", "", ""],
+      ["PROD-003", "", "", "", "", "", ""],
+    ];
+  }
+
+  // Combine headers and data
+  const inputSheetData = [inputHeaders, ...inputData];
 
   // Create worksheet
-  const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+  const inputWorksheet = XLSX.utils.aoa_to_sheet(inputSheetData);
 
   // Set column widths
-  worksheet["!cols"] = [
-    { wch: 15 }, // Kode Produk
-    { wch: 10 }, // Quantity
-    { wch: 12 }, // Harga Beli
-    { wch: 12 }, // Lokasi
+  inputWorksheet["!cols"] = [
+    { wch: 20 }, // Kode Produk
+    { wch: 12 }, // Quantity
+    { wch: 15 }, // Harga Beli
+    { wch: 15 }, // Lokasi
     { wch: 15 }, // Stok Minimum
     { wch: 15 }, // Stok Maksimum
     { wch: 30 }, // Catatan
   ];
 
-  // Add worksheet to workbook
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Template Stok Awal");
+  // Add input worksheet to workbook
+  XLSX.utils.book_append_sheet(workbook, inputWorksheet, "Input Stok Awal");
+
+  // ============================================================
+  // SHEET 2: Daftar Produk (Reference)
+  // ============================================================
+  if (products && products.length > 0) {
+    const refHeaders = ["Kode Produk", "Nama Produk"];
+    const refData = products.map((product) => [product.code, product.name]);
+    const refSheetData = [refHeaders, ...refData];
+
+    const refWorksheet = XLSX.utils.aoa_to_sheet(refSheetData);
+    refWorksheet["!cols"] = [
+      { wch: 20 }, // Kode Produk
+      { wch: 50 }, // Nama Produk
+    ];
+
+    XLSX.utils.book_append_sheet(workbook, refWorksheet, "Daftar Produk");
+  }
 
   // Generate buffer
   const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });

@@ -231,29 +231,58 @@ func (s *PurchaseInvoiceService) CreatePurchaseInvoice(
 		paymentTermDays = req.PaymentTermDays
 	}
 
+	// Parse non-goods costs (biaya tambahan)
+	shippingCost := decimal.Zero
+	if req.ShippingCost != "" {
+		shippingCost, err = decimal.NewFromString(req.ShippingCost)
+		if err != nil {
+			return nil, errors.New("invalid shipping cost format")
+		}
+	}
+
+	handlingCost := decimal.Zero
+	if req.HandlingCost != "" {
+		handlingCost, err = decimal.NewFromString(req.HandlingCost)
+		if err != nil {
+			return nil, errors.New("invalid handling cost format")
+		}
+	}
+
+	otherCost := decimal.Zero
+	if req.OtherCost != "" {
+		otherCost, err = decimal.NewFromString(req.OtherCost)
+		if err != nil {
+			return nil, errors.New("invalid other cost format")
+		}
+	}
+
 	var invoice *models.PurchaseInvoice
 
 	// Use transaction for atomic create
 	err = s.db.WithContext(ctx).Set("tenant_id", tenantID).Transaction(func(tx *gorm.DB) error {
 		// 1. Create purchase invoice
 		invoice = &models.PurchaseInvoice{
-			TenantID:        tenantID,
-			CompanyID:       companyID,
-			InvoiceNumber:   invoiceNumber, // Use auto-generated number
-			InvoiceDate:     invoiceDate,
-			DueDate:         dueDate,
-			SupplierID:      req.SupplierID,
-			SupplierName:    supplier.Name,
-			SupplierCode:    &supplier.Code,
-			PurchaseOrderID: req.PurchaseOrderID,
-			GoodsReceiptID:  req.GoodsReceiptID,
-			DiscountAmount:  discountAmount,
-			TaxRate:         taxRate,
-			PaymentTermDays: paymentTermDays,
-			Notes:           req.Notes,
-			Status:          models.PurchaseInvoiceStatusDraft,
-			PaymentStatus:   models.PaymentStatusUnpaid,
-			CreatedBy:       userID,
+			TenantID:             tenantID,
+			CompanyID:            companyID,
+			InvoiceNumber:        invoiceNumber, // Use auto-generated number
+			InvoiceDate:          invoiceDate,
+			DueDate:              dueDate,
+			SupplierID:           req.SupplierID,
+			SupplierName:         supplier.Name,
+			SupplierCode:         &supplier.Code,
+			PurchaseOrderID:      req.PurchaseOrderID,
+			GoodsReceiptID:       req.GoodsReceiptID,
+			DiscountAmount:       discountAmount,
+			TaxRate:              taxRate,
+			PaymentTermDays:      paymentTermDays,
+			Notes:                req.Notes,
+			ShippingCost:         shippingCost,
+			HandlingCost:         handlingCost,
+			OtherCost:            otherCost,
+			OtherCostDescription: req.OtherCostDescription,
+			Status:               models.PurchaseInvoiceStatusDraft,
+			PaymentStatus:        models.PaymentStatusUnpaid,
+			CreatedBy:            userID,
 		}
 
 		if err := tx.Create(invoice).Error; err != nil {
@@ -455,6 +484,35 @@ func (s *PurchaseInvoiceService) UpdatePurchaseInvoice(
 
 	if req.Status != nil {
 		invoice.Status = models.PurchaseInvoiceStatus(*req.Status)
+	}
+
+	// Update non-goods costs (biaya tambahan)
+	if req.ShippingCost != nil {
+		shippingCost, err := decimal.NewFromString(*req.ShippingCost)
+		if err != nil {
+			return nil, errors.New("invalid shipping cost format")
+		}
+		invoice.ShippingCost = shippingCost
+	}
+
+	if req.HandlingCost != nil {
+		handlingCost, err := decimal.NewFromString(*req.HandlingCost)
+		if err != nil {
+			return nil, errors.New("invalid handling cost format")
+		}
+		invoice.HandlingCost = handlingCost
+	}
+
+	if req.OtherCost != nil {
+		otherCost, err := decimal.NewFromString(*req.OtherCost)
+		if err != nil {
+			return nil, errors.New("invalid other cost format")
+		}
+		invoice.OtherCost = otherCost
+	}
+
+	if req.OtherCostDescription != nil {
+		invoice.OtherCostDescription = req.OtherCostDescription
 	}
 
 	invoice.UpdatedBy = &userID

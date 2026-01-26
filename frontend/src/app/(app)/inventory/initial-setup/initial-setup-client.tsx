@@ -22,8 +22,8 @@ import {
   FileSpreadsheet,
   Edit3,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
+  ArrowRight,
+  ArrowLeft,
   Upload,
   Download,
   Plus,
@@ -31,7 +31,10 @@ import {
   AlertCircle,
   DollarSign,
   HelpCircle,
+  Check,
+  ClipboardCheck,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   Card,
   CardContent,
@@ -139,7 +142,6 @@ export function InitialSetupClient({
     isLoading: isLoadingExistingStocks,
     isFetching: isFetchingExistingStocks,
     refetch: refetchExistingStocks,
-    error: existingStocksError,
   } = useListStocksQuery(
     {
       warehouseID: selectedWarehouseId,
@@ -158,10 +160,6 @@ export function InitialSetupClient({
   // Force refetch existing stocks when entering step 3
   useEffect(() => {
     if (currentStep === 3 && selectedWarehouseId) {
-      console.log(
-        "🔄 Step 3 entered, force refetching stocks for warehouse:",
-        selectedWarehouseId
-      );
       refetchExistingStocks();
     }
   }, [currentStep, selectedWarehouseId, refetchExistingStocks]);
@@ -205,7 +203,6 @@ export function InitialSetupClient({
 
     // If no existing stocks data yet, show all products
     if (!existingStocksData?.data) {
-      console.log("⚠️ No existing stocks data, showing all products");
       return productsData.data;
     }
 
@@ -214,20 +211,23 @@ export function InitialSetupClient({
       existingStocksData.data.map((stock) => stock.productID)
     );
 
-    console.log("📊 Available Products Filter Debug:");
-    console.log("  - Total products in system:", productsData.data.length);
-    console.log("  - Existing stocks loaded:", existingStocksData.data.length);
-    console.log("  - Products with stock IDs:", Array.from(productsWithStock));
-    console.log("  - Selected warehouse ID:", selectedWarehouseId);
-
     // Filter out products that already have stock
     const filtered = productsData.data.filter(
       (product) => !productsWithStock.has(product.id)
     );
-    console.log("  - Available products after filter:", filtered.length);
 
     return filtered;
   }, [productsData, existingStocksData, selectedWarehouseId]);
+
+  // Calculate remaining available products (not yet selected in manual input)
+  const remainingAvailableProducts = useMemo(() => {
+    const selectedProductIds = new Set(
+      stockItems.map((item) => item.productId).filter(Boolean)
+    );
+    return availableProducts.filter(
+      (product) => !selectedProductIds.has(product.id)
+    );
+  }, [availableProducts, stockItems]);
 
   // Helper: Add new empty row
   const handleAddRow = () => {
@@ -284,19 +284,23 @@ export function InitialSetupClient({
   // Excel Upload Handlers
   const handleDownloadTemplate = async () => {
     try {
-      const blob = await generateExcelTemplate();
+      // Pass available products to generate template with actual product codes
+      const templateProducts = availableProducts.map((p) => ({
+        code: p.code,
+        name: p.name,
+      }));
+      const blob = await generateExcelTemplate(templateProducts);
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `Template_Stok_Awal_${
+      link.download = `Template_Stok_Awal_${selectedWarehouse?.name || "Gudang"}_${
         new Date().toISOString().split("T")[0]
       }.xlsx`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("Error generating template:", error);
+    } catch {
       setErrors({ template: "Gagal membuat template Excel" });
     }
   };
@@ -327,25 +331,6 @@ export function InitialSetupClient({
       const excelRows = await parseExcelFile(file);
 
       // 2. Validate data with existing stocks
-      console.log("🔍 Debug Query State:");
-      console.log("  - selectedWarehouseId:", selectedWarehouseId);
-      console.log("  - existingStocksData:", existingStocksData);
-      console.log("  - existingStocksError:", existingStocksError);
-      console.log("  - isLoading:", isLoadingExistingStocks);
-      console.log("  - isFetching:", isFetchingExistingStocks);
-      console.log(
-        "  - Validating with existing stocks:",
-        existingStocksData?.data?.length || 0,
-        "items"
-      );
-
-      if (existingStocksError) {
-        console.error(
-          "❌ Error fetching existing stocks:",
-          existingStocksError
-        );
-      }
-
       const result = validateExcelData(
         excelRows,
         productsData?.data || [],
@@ -392,7 +377,6 @@ export function InitialSetupClient({
         setErrors(errorMessages);
       }
     } catch (error) {
-      console.error("Error parsing Excel:", error);
       setErrors({
         upload:
           error instanceof Error ? error.message : "Gagal membaca file Excel",
@@ -544,119 +528,88 @@ export function InitialSetupClient({
 
   // Step 1: Warehouse Selection - Enhanced Design
   const renderWarehouseSelection = () => (
-    <Card className="border-2">
-      <CardHeader className="bg-linear-to-r from-blue-50 to-blue-100/50 dark:from-blue-950 dark:to-blue-900/50">
-        <CardTitle className="flex items-center gap-2 sm:gap-3 text-lg md:text-xl">
-          <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-blue-600 text-white shrink-0">
-            <Building2 className="h-4 w-4 sm:h-5 sm:w-5" />
-          </div>
-          <span>Pilih Gudang</span>
-        </CardTitle>
-        <CardDescription className="text-sm md:text-base mt-2">
-          Pilih gudang yang akan diisi stok awal. Anda dapat setup stok untuk
-          produk yang belum pernah memiliki record.
+    <Card>
+      <CardHeader>
+        <CardTitle>Pilih Gudang</CardTitle>
+        <CardDescription>
+          Pilih gudang untuk setup stok awal. Setiap gudang memiliki inventori terpisah.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4 p-6">
-        {isLoadingWarehouses ? (
-          <LoadingSpinner size="lg" text="Memuat daftar gudang..." />
-        ) : warehousesData?.data && warehousesData.data.length > 0 ? (
-          <>
-            <div className="grid gap-4">
-              {warehousesData.data.map((warehouse) => {
-                const hasStock = statusData?.find(
-                  (s) => s.warehouseId === warehouse.id
-                )?.hasInitialStock;
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="warehouse">
+            Gudang <span className="text-destructive">*</span>
+          </Label>
+          {isLoadingWarehouses ? (
+            <div className="flex items-center gap-2 h-10 px-3 border rounded-md bg-muted">
+              <LoadingSpinner size="sm" />
+              <span className="text-sm text-muted-foreground">Memuat gudang...</span>
+            </div>
+          ) : warehousesData?.data && warehousesData.data.length > 0 ? (
+            <Select
+              value={selectedWarehouseId}
+              onValueChange={setSelectedWarehouseId}
+            >
+              <SelectTrigger
+                id="warehouse"
+                className={cn(
+                  "w-full bg-background",
+                  errors.warehouse && "border-destructive"
+                )}
+              >
+                <SelectValue placeholder="Pilih gudang" />
+              </SelectTrigger>
+              <SelectContent>
+                {warehousesData.data.map((warehouse) => {
+                  const hasStock = statusData?.find(
+                    (s) => s.warehouseId === warehouse.id
+                  )?.hasInitialStock;
 
-                return (
-                  <Card
-                    key={warehouse.id}
-                    className={`cursor-pointer transition-all duration-300 hover:shadow-lg ${
-                      selectedWarehouseId === warehouse.id
-                        ? "border-2 border-blue-600 bg-blue-50/50 shadow-md dark:bg-blue-950/30"
-                        : "border-2 border-transparent hover:border-blue-200"
-                    }`}
-                    onClick={() => setSelectedWarehouseId(warehouse.id)}
-                  >
-                    <CardContent className="p-5">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-start gap-4">
-                          <div
-                            className={`flex h-12 w-12 items-center justify-center rounded-lg transition-colors ${
-                              selectedWarehouseId === warehouse.id
-                                ? "bg-blue-600 text-white"
-                                : "bg-gray-100 text-gray-600"
-                            }`}
+                  return (
+                    <SelectItem key={warehouse.id} value={warehouse.id}>
+                      <div className="flex items-center gap-2">
+                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                        <span>{warehouse.name}</span>
+                        {warehouse.code && (
+                          <span className="text-muted-foreground">
+                            ({warehouse.code})
+                          </span>
+                        )}
+                        {hasStock && (
+                          <Badge
+                            variant="secondary"
+                            className="text-xs bg-amber-100 text-amber-800 border-amber-300 ml-1"
                           >
-                            <Building2 className="h-6 w-6" />
-                          </div>
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-2">
-                              <p className="font-semibold text-lg">
-                                {warehouse.name}
-                              </p>
-                              {hasStock && (
-                                <Badge
-                                  variant="secondary"
-                                  className="text-xs bg-amber-100 text-amber-800 border-amber-300"
-                                >
-                                  <AlertCircle className="mr-1 h-3 w-3" />
-                                  Ada Stok
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="text-sm text-gray-600 font-mono">
-                              {warehouse.code}
-                            </p>
-                            {warehouse.address && (
-                              <p className="text-xs text-muted-foreground max-w-md">
-                                📍 {warehouse.address}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        {selectedWarehouseId === warehouse.id && (
-                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600">
-                            <CheckCircle2 className="h-5 w-5 text-white" />
-                          </div>
+                            Ada Stok
+                          </Badge>
                         )}
                       </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Alert className="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
+              <AlertCircle className="h-4 w-4 text-amber-600" />
+              <AlertDescription className="text-amber-800 dark:text-amber-200">
+                Belum ada gudang aktif. Silakan buat gudang terlebih dahulu di menu{" "}
+                <strong>Master → Gudang</strong>.
+              </AlertDescription>
+            </Alert>
+          )}
+          {errors.warehouse && (
+            <p className="text-sm text-destructive">{errors.warehouse}</p>
+          )}
+        </div>
 
-            {warehouseHasStock && (
-              <Alert className="border-2 border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/30">
-                <AlertCircle className="h-5 w-5 text-blue-600" />
-                <AlertTitle className="text-blue-900 dark:text-blue-100 font-semibold">
-                  💡 Informasi Gudang
-                </AlertTitle>
-                <AlertDescription className="text-blue-800 dark:text-blue-200">
-                  Gudang ini sudah memiliki beberapa produk dengan stok. Setup
-                  stok awal hanya dapat dilakukan untuk produk yang{" "}
-                  <strong>belum pernah memiliki record stok</strong> di gudang
-                  ini. Produk yang sudah ada (termasuk yang quantity 0) tidak
-                  akan muncul dalam daftar.
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {errors.warehouse && (
-              <p className="text-sm text-red-500">{errors.warehouse}</p>
-            )}
-          </>
-        ) : (
-          <Alert className="border-2 border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
-            <AlertCircle className="h-5 w-5 text-amber-600" />
-            <AlertTitle className="text-amber-900 dark:text-amber-100 font-semibold">
-              ⚠️ Tidak Ada Gudang
-            </AlertTitle>
-            <AlertDescription className="text-amber-800 dark:text-amber-200">
-              Belum ada gudang aktif. Silakan buat gudang terlebih dahulu di
-              menu
-              <strong> Master → Gudang</strong>.
+        {warehouseHasStock && selectedWarehouseId && (
+          <Alert className="border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/30">
+            <AlertCircle className="h-4 w-4 text-blue-600" />
+            <AlertDescription className="text-blue-800 dark:text-blue-200">
+              Gudang ini sudah memiliki beberapa produk dengan stok. Setup stok
+              awal hanya dapat dilakukan untuk produk yang{" "}
+              <strong>belum pernah memiliki record stok</strong> di gudang ini.
             </AlertDescription>
           </Alert>
         )}
@@ -664,96 +617,78 @@ export function InitialSetupClient({
     </Card>
   );
 
-  // Step 2: Input Method Selection - Enhanced
+  // Step 2: Input Method Selection
   const renderInputMethodSelection = () => (
-    <Card className="border-2">
-      <CardHeader className="bg-linear-to-r from-blue-50 to-blue-100/50 dark:from-blue-950 dark:to-blue-900/50">
-        <CardTitle className="flex items-center gap-2 sm:gap-3 text-lg md:text-xl">
-          <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-blue-600 text-white shrink-0">
-            <Edit3 className="h-4 w-4 sm:h-5 sm:w-5" />
-          </div>
-          <span>Metode Input</span>
-        </CardTitle>
-        <CardDescription className="text-sm md:text-base mt-2">
-          Pilih cara untuk memasukkan data stok awal. Anda bisa input manual
-          atau import dari Excel.
+    <Card>
+      <CardHeader>
+        <CardTitle>Metode Input</CardTitle>
+        <CardDescription>
+          Pilih cara untuk memasukkan data stok awal. Anda bisa input manual atau import dari Excel.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4 p-6">
-        <div className="grid gap-6 md:grid-cols-2">
+      <CardContent className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-2">
           {/* Manual Entry */}
-          <Card
-            className={`cursor-pointer transition-all duration-300 hover:shadow-lg ${
+          <div
+            className={`cursor-pointer rounded-lg border p-4 transition-all hover:shadow-md ${
               inputMethod === "manual"
-                ? "border-2 border-blue-600 shadow-md"
-                : "border-2 border-transparent hover:border-blue-200"
+                ? "border-primary bg-primary/5"
+                : "border-border hover:border-primary/50"
             }`}
             onClick={() => setInputMethod("manual")}
           >
-            <CardContent className="p-8">
-              <div className="flex flex-col items-center text-center space-y-4">
-                <div
-                  className={`flex h-16 w-16 items-center justify-center rounded-2xl transition-colors ${
-                    inputMethod === "manual" ? "bg-blue-600" : "bg-blue-100"
-                  }`}
-                >
-                  <Edit3
-                    className={`h-8 w-8 ${
-                      inputMethod === "manual" ? "text-white" : "text-blue-600"
-                    }`}
-                  />
-                </div>
-                <div>
-                  <h3 className="font-bold text-lg mb-2">Input Manual</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Masukkan data produk satu per satu melalui form interaktif
-                  </p>
-                </div>
-                {inputMethod === "manual" && (
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-600">
-                    <CheckCircle2 className="h-5 w-5 text-white" />
-                  </div>
-                )}
+            <div className="flex items-center gap-3">
+              <div
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                  inputMethod === "manual"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted"
+                }`}
+              >
+                <Edit3 className="h-5 w-5" />
               </div>
-            </CardContent>
-          </Card>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold">Input Manual</h3>
+                <p className="text-sm text-muted-foreground">
+                  Masukkan data produk satu per satu
+                </p>
+              </div>
+              {inputMethod === "manual" && (
+                <Check className="h-5 w-5 text-primary shrink-0" />
+              )}
+            </div>
+          </div>
 
           {/* Excel Import */}
-          <Card
-            className={`cursor-pointer transition-all duration-300 hover:shadow-lg ${
+          <div
+            className={`cursor-pointer rounded-lg border p-4 transition-all hover:shadow-md ${
               inputMethod === "excel"
-                ? "border-2 border-green-600 shadow-md"
-                : "border-2 border-transparent hover:border-green-200"
+                ? "border-primary bg-primary/5"
+                : "border-border hover:border-primary/50"
             }`}
             onClick={() => setInputMethod("excel")}
           >
-            <CardContent className="p-8">
-              <div className="flex flex-col items-center text-center space-y-4">
-                <div
-                  className={`flex h-16 w-16 items-center justify-center rounded-2xl transition-colors ${
-                    inputMethod === "excel" ? "bg-green-600" : "bg-green-100"
-                  }`}
-                >
-                  <FileSpreadsheet
-                    className={`h-8 w-8 ${
-                      inputMethod === "excel" ? "text-white" : "text-green-600"
-                    }`}
-                  />
-                </div>
-                <div>
-                  <h3 className="font-bold text-lg mb-2">Import Excel</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Upload file Excel dengan format template yang disediakan
-                  </p>
-                </div>
-                {inputMethod === "excel" && (
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-600">
-                    <CheckCircle2 className="h-5 w-5 text-white" />
-                  </div>
-                )}
+            <div className="flex items-center gap-3">
+              <div
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                  inputMethod === "excel"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted"
+                }`}
+              >
+                <FileSpreadsheet className="h-5 w-5" />
               </div>
-            </CardContent>
-          </Card>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold">Import Excel</h3>
+                <p className="text-sm text-muted-foreground">
+                  Upload file Excel dengan template
+                </p>
+              </div>
+              {inputMethod === "excel" && (
+                <Check className="h-5 w-5 text-primary shrink-0" />
+              )}
+            </div>
+          </div>
         </div>
 
         {errors.inputMethod && (
@@ -765,20 +700,14 @@ export function InitialSetupClient({
 
   // Step 3a: Manual Entry - Enhanced
   const renderManualEntry = () => (
-    <Card className="border-2">
-      <CardHeader className="bg-linear-to-r from-blue-50 to-blue-100/50 dark:from-blue-950 dark:to-blue-900/50">
-        <CardTitle className="flex items-center gap-2 sm:gap-3 text-lg md:text-xl">
-          <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-blue-600 text-white shrink-0">
-            <Edit3 className="h-4 w-4 sm:h-5 sm:w-5" />
-          </div>
-          <span>Input Manual</span>
-        </CardTitle>
-        <CardDescription className="text-sm md:text-base">
-          Masukkan data stok untuk gudang:{" "}
-          <strong>{selectedWarehouse?.name}</strong>
+    <Card>
+      <CardHeader>
+        <CardTitle>Input Manual</CardTitle>
+        <CardDescription>
+          Masukkan data stok untuk gudang: <strong>{selectedWarehouse?.name}</strong>
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4 p-6">
+      <CardContent className="space-y-4">
         {/* Warning if pagination might affect results */}
         {existingStocksData?.pagination?.hasMore && (
           <Alert variant="destructive">
@@ -793,19 +722,13 @@ export function InitialSetupClient({
           </Alert>
         )}
 
-        {/* Info about available products - Enhanced */}
-        <Alert className="border-2 border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/30">
-          <AlertCircle className="h-5 w-5 text-blue-600" />
-          <AlertTitle className="text-blue-900 dark:text-blue-100 font-semibold">
-            💡 Produk Tersedia: {availableProducts.length} produk
-          </AlertTitle>
+        {/* Info about available products */}
+        <Alert className="border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/30">
+          <AlertCircle className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-blue-800 dark:text-blue-200">
-            Hanya produk yang <strong>belum pernah memiliki record stok</strong>{" "}
-            di <strong>{selectedWarehouse?.name}</strong> yang dapat dipilih
-            untuk setup stok awal.
-            {availableProducts.length === 0 &&
-              " Semua produk sudah memiliki record stok di gudang ini."}
-            {existingStocksData?.data &&
+            <strong>Produk Tersedia: {availableProducts.length} produk.</strong>{" "}
+            Hanya produk yang belum pernah memiliki record stok di {selectedWarehouse?.name} yang dapat dipilih untuk setup stok awal.
+            {existingStocksData?.data && existingStocksData.data.length > 0 &&
               ` (${existingStocksData.data.length} produk sudah memiliki record stok)`}
           </AlertDescription>
         </Alert>
@@ -814,13 +737,16 @@ export function InitialSetupClient({
         <div className="flex justify-start">
           <Button
             onClick={handleAddRow}
-            size="lg"
-            disabled={availableProducts.length === 0}
-            className="h-11 px-6 bg-blue-600 hover:bg-blue-700"
+            disabled={remainingAvailableProducts.length === 0}
           >
-            <Plus className="mr-2 h-5 w-5" />
+            <Plus className="mr-2 h-4 w-4" />
             Tambah Produk
           </Button>
+          {remainingAvailableProducts.length === 0 && stockItems.length > 0 && (
+            <span className="ml-3 text-sm text-muted-foreground self-center">
+              Semua produk sudah dipilih
+            </span>
+          )}
         </div>
 
         {errors.items && (
@@ -884,7 +810,7 @@ export function InitialSetupClient({
                 {stockItems.map((item, index) => (
                   <TableRow key={item.tempId}>
                     {/* Product Selection */}
-                    <TableCell>
+                    <TableCell className="align-top">
                       <Select
                         value={item.productId}
                         onValueChange={(value) =>
@@ -892,9 +818,10 @@ export function InitialSetupClient({
                         }
                       >
                         <SelectTrigger
-                          className={
-                            errors[`product-${index}`] ? "border-red-500" : ""
-                          }
+                          className={cn(
+                            "w-full",
+                            errors[`product-${index}`] && "border-red-500"
+                          )}
                         >
                           <SelectValue placeholder="Pilih produk..." />
                         </SelectTrigger>
@@ -910,11 +837,34 @@ export function InitialSetupClient({
                               Semua produk sudah memiliki stok di gudang ini
                             </div>
                           ) : (
-                            availableProducts.map((product) => (
-                              <SelectItem key={product.id} value={product.id}>
-                                {product.code} - {product.name}
-                              </SelectItem>
-                            ))
+                            (() => {
+                              // Filter out products already selected in other rows
+                              // But keep the current row's selected product
+                              const filteredProducts = availableProducts.filter(
+                                (product) => {
+                                  const isSelectedInOtherRow = stockItems.some(
+                                    (otherItem) =>
+                                      otherItem.tempId !== item.tempId &&
+                                      otherItem.productId === product.id
+                                  );
+                                  return !isSelectedInOtherRow;
+                                }
+                              );
+
+                              if (filteredProducts.length === 0) {
+                                return (
+                                  <div className="p-2 text-sm text-muted-foreground">
+                                    Semua produk sudah dipilih
+                                  </div>
+                                );
+                              }
+
+                              return filteredProducts.map((product) => (
+                                <SelectItem key={product.id} value={product.id}>
+                                  {product.code} - {product.name}
+                                </SelectItem>
+                              ));
+                            })()
                           )}
                         </SelectContent>
                       </Select>
@@ -926,39 +876,37 @@ export function InitialSetupClient({
                     </TableCell>
 
                     {/* Quantity */}
-                    <TableCell>
-                      <div className="space-y-1">
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={item.quantity}
-                          onChange={(e) =>
-                            handleUpdateRow(
-                              item.tempId,
-                              "quantity",
-                              e.target.value
-                            )
-                          }
-                          placeholder="0"
-                          className={
-                            errors[`quantity-${index}`] ? "border-red-500" : ""
-                          }
-                        />
-                        {item.baseUnit && (
-                          <p className="text-xs text-muted-foreground">
-                            {item.baseUnit}
-                          </p>
-                        )}
-                        {errors[`quantity-${index}`] && (
-                          <p className="text-xs text-red-500">
-                            {errors[`quantity-${index}`]}
-                          </p>
-                        )}
-                      </div>
+                    <TableCell className="align-top">
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={item.quantity}
+                        onChange={(e) =>
+                          handleUpdateRow(
+                            item.tempId,
+                            "quantity",
+                            e.target.value
+                          )
+                        }
+                        placeholder="0"
+                        className={
+                          errors[`quantity-${index}`] ? "border-red-500" : ""
+                        }
+                      />
+                      {item.baseUnit && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {item.baseUnit}
+                        </p>
+                      )}
+                      {errors[`quantity-${index}`] && (
+                        <p className="text-xs text-red-500 mt-1">
+                          {errors[`quantity-${index}`]}
+                        </p>
+                      )}
                     </TableCell>
 
                     {/* Cost Per Unit */}
-                    <TableCell>
+                    <TableCell className="align-top">
                       <Input
                         type="number"
                         step="0.01"
@@ -983,7 +931,7 @@ export function InitialSetupClient({
                     </TableCell>
 
                     {/* Location */}
-                    <TableCell>
+                    <TableCell className="align-top">
                       <Input
                         value={item.location || ""}
                         onChange={(e) =>
@@ -998,7 +946,7 @@ export function InitialSetupClient({
                     </TableCell>
 
                     {/* Minimum Stock */}
-                    <TableCell>
+                    <TableCell className="align-top">
                       <Input
                         type="number"
                         step="0.01"
@@ -1015,7 +963,7 @@ export function InitialSetupClient({
                     </TableCell>
 
                     {/* Maximum Stock */}
-                    <TableCell>
+                    <TableCell className="align-top">
                       <Input
                         type="number"
                         step="0.01"
@@ -1032,7 +980,7 @@ export function InitialSetupClient({
                     </TableCell>
 
                     {/* Notes */}
-                    <TableCell>
+                    <TableCell className="align-top">
                       <Input
                         value={item.notes || ""}
                         onChange={(e) =>
@@ -1043,7 +991,7 @@ export function InitialSetupClient({
                     </TableCell>
 
                     {/* Actions */}
-                    <TableCell>
+                    <TableCell className="align-top">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1075,49 +1023,39 @@ export function InitialSetupClient({
 
   // Step 3b: Excel Import - Enhanced
   const renderExcelImport = () => (
-    <Card className="border-2">
-      <CardHeader className="bg-gradient-to-r from-green-50 to-green-100/50 dark:from-green-950 dark:to-green-900/50">
-        <CardTitle className="flex items-center gap-2 sm:gap-3 text-lg md:text-xl">
-          <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-green-600 text-white flex-shrink-0">
-            <FileSpreadsheet className="h-4 w-4 sm:h-5 sm:w-5" />
-          </div>
-          <span>Import Excel</span>
-        </CardTitle>
-        <CardDescription className="text-sm md:text-base">
-          Upload file Excel untuk gudang:{" "}
-          <strong>{selectedWarehouse?.name}</strong>
+    <Card>
+      <CardHeader>
+        <CardTitle>Import Excel</CardTitle>
+        <CardDescription>
+          Upload file Excel untuk gudang: <strong>{selectedWarehouse?.name}</strong>
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6 p-6">
-        {/* Download Template - Enhanced */}
-        <Alert className="border-2 border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/30">
-          <Download className="h-5 w-5 text-blue-600" />
-          <AlertTitle className="text-blue-900 dark:text-blue-100 font-semibold">
-            📥 Template Excel
-          </AlertTitle>
+      <CardContent className="space-y-6">
+        {/* Download Template */}
+        <Alert className="border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/30">
+          <Download className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-blue-800 dark:text-blue-200">
-            Download template Excel terlebih dahulu dan isi sesuai format yang
-            disediakan.
+            Download template Excel terlebih dahulu dan isi sesuai format yang disediakan.{" "}
             <Button
               variant="link"
-              className="p-0 h-auto ml-2 text-blue-600 hover:text-blue-700 font-semibold"
+              className="p-0 h-auto text-blue-600 hover:text-blue-700 font-medium"
               onClick={handleDownloadTemplate}
             >
-              Download Template →
+              Download Template
             </Button>
           </AlertDescription>
         </Alert>
 
-        {/* Upload Area - Enhanced */}
-        <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 bg-gradient-to-br from-gray-50 to-gray-100/50 dark:from-gray-900 dark:to-gray-950/50 hover:border-green-400 transition-colors">
-          <div className="flex flex-col items-center text-center space-y-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100 dark:bg-green-900">
-              <Upload className="h-8 w-8 text-green-600 dark:text-green-400" />
+        {/* Upload Area */}
+        <div className="border border-dashed border-muted-foreground/25 rounded-lg p-6 hover:border-primary/50 transition-colors">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-muted">
+              <Upload className="h-6 w-6 text-muted-foreground" />
             </div>
-            <div>
-              <h3 className="text-lg font-semibold mb-2">Upload File Excel</h3>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold">Upload File Excel</h3>
               <p className="text-sm text-muted-foreground">
-                Klik tombol di bawah untuk memilih file Excel
+                Format: .xlsx, .xls • Maksimal: 5MB
               </p>
             </div>
             <input
@@ -1139,44 +1077,33 @@ export function InitialSetupClient({
                 isLoadingExistingStocks ||
                 isFetchingExistingStocks
               }
-              size="lg"
-              className="h-11 px-8 bg-green-600 hover:bg-green-700"
             >
               {isUploadingFile ? (
                 <>
-                  <LoadingSpinner className="mr-2 h-5 w-5" />
+                  <LoadingSpinner className="mr-2 h-4 w-4" />
                   Memproses...
                 </>
               ) : isLoadingExistingStocks || isFetchingExistingStocks ? (
                 <>
-                  <LoadingSpinner className="mr-2 h-5 w-5" />
-                  Memuat data stok...
+                  <LoadingSpinner className="mr-2 h-4 w-4" />
+                  Memuat...
                 </>
               ) : (
                 <>
-                  <Upload className="mr-2 h-5 w-5" />
+                  <Upload className="mr-2 h-4 w-4" />
                   Pilih File
                 </>
               )}
             </Button>
-            <p className="text-xs text-muted-foreground font-medium">
-              Format: .xlsx, .xls • Maksimal: 5MB
-            </p>
           </div>
         </div>
 
-        {/* Uploaded File Info - Enhanced */}
+        {/* Uploaded File Info */}
         {uploadedFile && (
-          <Alert className="border-2 border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/30">
-            <FileSpreadsheet className="h-5 w-5 text-green-600" />
-            <AlertTitle className="text-green-900 dark:text-green-100 font-semibold">
-              ✅ File Terpilih
-            </AlertTitle>
+          <Alert className="border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/30">
+            <FileSpreadsheet className="h-4 w-4 text-green-600" />
             <AlertDescription className="text-green-800 dark:text-green-200">
-              <span className="font-medium">{uploadedFile.name}</span>
-              <span className="text-sm ml-2">
-                ({(uploadedFile.size / 1024).toFixed(2)} KB)
-              </span>
+              <strong>File terpilih:</strong> {uploadedFile.name} ({(uploadedFile.size / 1024).toFixed(2)} KB)
             </AlertDescription>
           </Alert>
         )}
@@ -1372,208 +1299,157 @@ export function InitialSetupClient({
     );
 
     return (
-      <Card className="border-2">
-        <CardHeader className="bg-gradient-to-r from-green-50 to-green-100/50 dark:from-green-950 dark:to-green-900/50">
-          <CardTitle className="flex items-center gap-2 sm:gap-3 text-lg md:text-xl">
-            <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-green-600 text-white flex-shrink-0">
-              <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5" />
-            </div>
-            <span>Review & Validasi</span>
-          </CardTitle>
-          <CardDescription className="text-sm md:text-base">
+      <Card>
+        <CardHeader>
+          <CardTitle>Review & Validasi</CardTitle>
+          <CardDescription>
             Periksa kembali data sebelum menyimpan ke sistem
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6 p-6">
-          {/* Summary Cards - Enhanced */}
-          <div className="grid gap-4 md:grid-cols-3">
-            <Card className="border-2 border-blue-100 bg-gradient-to-br from-blue-50 to-blue-100/30 dark:border-blue-900 dark:from-blue-950 dark:to-blue-900/30">
-              <CardContent className="p-6">
-                <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-600 text-white">
-                    <Package className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">
-                      Total Item
-                    </p>
-                    <p className="text-3xl font-bold text-blue-600">
-                      {totalItems}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-2 border-purple-100 bg-gradient-to-br from-purple-50 to-purple-100/30 dark:border-purple-900 dark:from-purple-950 dark:to-purple-900/30">
-              <CardContent className="p-6">
-                <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-purple-600 text-white">
-                    <Package className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">
-                      Total Quantity
-                    </p>
-                    <p className="text-3xl font-bold text-purple-600">
-                      {totalQuantity.toLocaleString("id-ID")}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-2 border-green-100 bg-gradient-to-br from-green-50 to-green-100/30 dark:border-green-900 dark:from-green-950 dark:to-green-900/30">
-              <CardContent className="p-6">
-                <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-green-600 text-white">
-                    <DollarSign className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">
-                      Total Nilai
-                    </p>
-                    <p className="text-2xl font-bold text-green-600">
-                      Rp {totalValue.toLocaleString("id-ID")}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Warehouse Info - Enhanced */}
-          <Card className="border-2 border-blue-100 bg-blue-50/30 dark:border-blue-900 dark:bg-blue-950/30">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-600 text-white">
-                  <Building2 className="h-6 w-6" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Gudang
-                  </p>
-                  <p className="text-lg font-bold">{selectedWarehouse?.name}</p>
-                  <p className="text-sm text-muted-foreground">
-                    Kode: {selectedWarehouse?.code}
-                  </p>
-                </div>
+        <CardContent className="space-y-6">
+          {/* Summary Info - 2 Columns */}
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="flex items-start gap-2">
+              <Building2 className="h-4 w-4 text-muted-foreground mt-0.5" />
+              <div>
+                <span className="text-muted-foreground">Gudang</span>
+                <p className="font-medium">{selectedWarehouse?.name} ({selectedWarehouse?.code})</p>
               </div>
-            </CardContent>
-          </Card>
-
-          <Separator className="my-6" />
-
-          {/* Items List - Enhanced */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Package className="h-5 w-5 text-blue-600" />
-              <Label className="text-base font-semibold">
-                Daftar Produk ({stockItems.length} item)
-              </Label>
             </div>
-            <div className="rounded-lg border-2 overflow-hidden shadow-sm">
-              <Table>
-                <TableHeader className="bg-gray-50 dark:bg-gray-900">
-                  <TableRow>
-                    <TableHead className="font-semibold">Produk</TableHead>
-                    <TableHead className="text-right font-semibold">
-                      Quantity
-                    </TableHead>
-                    <TableHead className="text-right font-semibold">
-                      Harga Beli
-                    </TableHead>
-                    <TableHead className="text-right font-semibold">
-                      Subtotal
-                    </TableHead>
-                    <TableHead className="font-semibold">Lokasi</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {stockItems.map((item, index) => {
-                    const subtotal =
-                      parseFloat(item.quantity || "0") *
-                      parseFloat(item.costPerUnit || "0");
-                    return (
-                      <TableRow
-                        key={item.tempId}
-                        className={
-                          index % 2 === 0
-                            ? "bg-white dark:bg-gray-950"
-                            : "bg-gray-50/50 dark:bg-gray-900/50"
-                        }
-                      >
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900">
-                              <Package className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                            </div>
-                            <div>
-                              <p className="font-semibold">
-                                {item.productName}
-                              </p>
-                              <p className="text-sm text-muted-foreground">
-                                {item.productCode}
-                              </p>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <span className="font-medium">
-                            {parseFloat(item.quantity).toLocaleString("id-ID")}
-                          </span>
-                          <span className="text-sm text-muted-foreground ml-1">
-                            {item.baseUnit}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right font-medium">
-                          Rp{" "}
-                          {parseFloat(item.costPerUnit).toLocaleString("id-ID")}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <span className="font-bold text-green-600">
-                            Rp {subtotal.toLocaleString("id-ID")}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="font-normal">
-                            {item.location || "Tidak ada"}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+            <div className="flex items-start gap-2">
+              {inputMethod === "manual" ? (
+                <Edit3 className="h-4 w-4 text-muted-foreground mt-0.5" />
+              ) : (
+                <FileSpreadsheet className="h-4 w-4 text-muted-foreground mt-0.5" />
+              )}
+              <div>
+                <span className="text-muted-foreground">Metode</span>
+                <p className="font-medium">
+                  {inputMethod === "manual" ? "Input Manual" : "Import Excel"}
+                  {inputMethod === "excel" && uploadedFile && (
+                    <span className="text-muted-foreground font-normal"> ({uploadedFile.name})</span>
+                  )}
+                </p>
+              </div>
             </div>
           </div>
 
-          {/* Notes - Enhanced */}
+          {/* Items List */}
+          <div className="space-y-3">
+            <Label className="text-base font-semibold">
+              Daftar Produk
+            </Label>
+            <div className="rounded-md border overflow-hidden">
+              {/* Scrollable table container for many items */}
+              <div className={cn(
+                "overflow-x-auto",
+                stockItems.length > 10 && "max-h-[500px] overflow-y-auto"
+              )}>
+                <Table>
+                  <TableHeader className="sticky top-0 z-10 bg-background">
+                    <TableRow>
+                      <TableHead className="w-12 text-center">No.</TableHead>
+                      <TableHead>Produk</TableHead>
+                      <TableHead className="text-right">Quantity</TableHead>
+                      <TableHead className="text-right">Harga Beli</TableHead>
+                      <TableHead className="text-right">Subtotal</TableHead>
+                      <TableHead>Lokasi</TableHead>
+                      <TableHead className="text-center">Min</TableHead>
+                      <TableHead className="text-center">Max</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {stockItems.map((item, index) => {
+                      const subtotal =
+                        parseFloat(item.quantity || "0") *
+                        parseFloat(item.costPerUnit || "0");
+                      return (
+                        <TableRow key={item.tempId}>
+                          {/* Row Number */}
+                          <TableCell className="text-center font-medium text-muted-foreground">
+                            {index + 1}
+                          </TableCell>
+                          {/* Product */}
+                          <TableCell>
+                            <div>
+                              <p className="font-medium">{item.productName}</p>
+                              <p className="text-xs text-muted-foreground">{item.productCode}</p>
+                            </div>
+                          </TableCell>
+                          {/* Quantity */}
+                          <TableCell className="text-right">
+                            {parseFloat(item.quantity).toLocaleString("id-ID")}
+                            {item.baseUnit && (
+                              <span className="text-xs text-muted-foreground ml-1">
+                                {item.baseUnit}
+                              </span>
+                            )}
+                          </TableCell>
+                          {/* Cost */}
+                          <TableCell className="text-right">
+                            Rp {parseFloat(item.costPerUnit).toLocaleString("id-ID")}
+                          </TableCell>
+                          {/* Subtotal */}
+                          <TableCell className="text-right font-medium">
+                            Rp {subtotal.toLocaleString("id-ID")}
+                          </TableCell>
+                          {/* Location */}
+                          <TableCell className="text-muted-foreground">
+                            {item.location || "-"}
+                          </TableCell>
+                          {/* Min Stock */}
+                          <TableCell className="text-center text-muted-foreground">
+                            {item.minimumStock
+                              ? parseFloat(item.minimumStock).toLocaleString("id-ID")
+                              : "-"}
+                          </TableCell>
+                          {/* Max Stock */}
+                          <TableCell className="text-center text-muted-foreground">
+                            {item.maximumStock
+                              ? parseFloat(item.maximumStock).toLocaleString("id-ID")
+                              : "-"}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                  {/* Table Footer with Totals */}
+                  <tfoot className="bg-muted/50 border-t sticky bottom-0">
+                    <tr>
+                      <td colSpan={2} className="px-4 py-2 font-semibold text-right text-sm">
+                        TOTAL
+                      </td>
+                      <td className="px-4 py-2 text-right text-sm font-semibold">
+                        {totalQuantity.toLocaleString("id-ID")}
+                      </td>
+                      <td className="px-4 py-2 text-right text-muted-foreground text-sm">
+                        -
+                      </td>
+                      <td className="px-4 py-2 text-right text-sm font-semibold text-green-600">
+                        Rp {totalValue.toLocaleString("id-ID")}
+                      </td>
+                      <td colSpan={3} className="px-4 py-2"></td>
+                    </tr>
+                  </tfoot>
+                </Table>
+              </div>
+            </div>
+          </div>
+
+          {/* Notes */}
           {notes && (
-            <>
-              <Separator className="my-6" />
-              <Card className="border-2 border-amber-100 bg-amber-50/30 dark:border-amber-900 dark:bg-amber-950/30">
-                <CardContent className="p-6">
-                  <div className="flex gap-3">
-                    <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                    <div className="space-y-1">
-                      <Label className="text-base font-semibold">Catatan</Label>
-                      <p className="text-sm text-muted-foreground">{notes}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Catatan</Label>
+              <p className="text-sm text-muted-foreground bg-muted p-3 rounded-md">{notes}</p>
+            </div>
           )}
 
-          {/* Submit Error - Enhanced */}
+          {/* Submit Error */}
           {errors.submit && (
-            <Alert variant="destructive" className="border-2">
-              <AlertCircle className="h-5 w-5" />
-              <AlertTitle className="font-semibold">
-                Terjadi Kesalahan
-              </AlertTitle>
-              <AlertDescription className="text-base">
-                {errors.submit}
-              </AlertDescription>
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Terjadi Kesalahan</AlertTitle>
+              <AlertDescription>{errors.submit}</AlertDescription>
             </Alert>
           )}
         </CardContent>
@@ -1581,59 +1457,34 @@ export function InitialSetupClient({
     );
   };
 
-  // Step 5: Success - Enhanced Celebration
+  // Step 5: Success - Simple Celebration
   const renderSuccess = () => (
-    <Card className="border-2 border-green-200 shadow-xl">
-      <CardContent className="p-12">
-        <div className="flex flex-col items-center text-center space-y-8">
-          {/* Success Animation */}
-          <div className="relative">
-            <div className="absolute inset-0 rounded-full bg-green-400 blur-2xl opacity-30 animate-pulse"></div>
-            <div className="relative rounded-full bg-gradient-to-br from-green-500 to-green-600 p-8 shadow-2xl">
-              <CheckCircle2 className="h-20 w-20 text-white" />
-            </div>
+    <Card className="border-green-200 shadow-lg">
+      <CardContent className="p-8">
+        <div className="flex flex-col items-center text-center space-y-6">
+          {/* Success Icon */}
+          <div className="rounded-full bg-green-100 p-4 dark:bg-green-900/30">
+            <CheckCircle2 className="h-12 w-12 text-green-600" />
           </div>
 
           {/* Success Message */}
-          <div className="space-y-3">
-            <h2 className="text-3xl font-bold bg-gradient-to-r from-green-600 to-green-700 bg-clip-text text-transparent">
-              🎉 Setup Stok Awal Berhasil!
+          <div className="space-y-2">
+            <h2 className="text-2xl font-bold text-green-700">
+              Setup Stok Awal Berhasil!
             </h2>
-            <p className="text-muted-foreground max-w-md text-lg">
-              Data stok awal untuk gudang{" "}
-              <strong className="text-green-700">
-                {selectedWarehouse?.name}
-              </strong>{" "}
-              telah berhasil disimpan ke sistem.
+            <p className="text-muted-foreground">
+              <strong>{stockItems.length} produk</strong> berhasil ditambahkan ke gudang{" "}
+              <strong>{selectedWarehouse?.name}</strong>
             </p>
           </div>
 
-          {/* Stats Summary */}
-          <div className="grid grid-cols-2 gap-6 w-full max-w-md">
-            <div className="rounded-lg border-2 border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-950/30">
-              <p className="text-2xl font-bold text-green-700">
-                {stockItems.length}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Produk Ditambahkan
-              </p>
-            </div>
-            <div className="rounded-lg border-2 border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30">
-              <p className="text-2xl font-bold text-blue-700">
-                {selectedWarehouse?.name.split(" ")[0]}
-              </p>
-              <p className="text-sm text-muted-foreground">Gudang</p>
-            </div>
-          </div>
-
           {/* Action Buttons */}
-          <div className="flex gap-4 pt-4">
+          <div className="flex gap-3 pt-2">
             <Button
               onClick={() => router.push("/inventory/stock")}
-              className="h-12 px-8 text-base font-medium bg-green-600 hover:bg-green-700"
-              size="lg"
+              className="bg-green-600 hover:bg-green-700"
             >
-              <Package className="mr-2 h-5 w-5" />
+              <Package className="mr-2 h-4 w-4" />
               Lihat Stok Barang
             </Button>
             <Button
@@ -1646,10 +1497,8 @@ export function InitialSetupClient({
                 setNotes("");
                 setErrors({});
               }}
-              className="h-12 px-6 text-base font-medium"
-              size="lg"
             >
-              <Building2 className="mr-2 h-5 w-5" />
+              <Building2 className="mr-2 h-4 w-4" />
               Setup Gudang Lain
             </Button>
           </div>
@@ -1678,143 +1527,76 @@ export function InitialSetupClient({
     }
   };
 
+  // Step definitions for the wizard
+  const steps = [
+    { number: 1, icon: Building2, label: "Gudang" },
+    { number: 2, icon: Edit3, label: "Metode" },
+    { number: 3, icon: FileSpreadsheet, label: "Input" },
+    { number: 4, icon: ClipboardCheck, label: "Review" },
+  ];
+
   return (
-    <div className="flex flex-col gap-6 p-4 pt-0 shrink-0">
-      {/* Page Header with Gradient Background */}
-      <div className="relative overflow-hidden rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 p-4 sm:p-6 md:p-8 shadow-lg">
-        <div className="relative z-10 space-y-2">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-lg bg-white/20 backdrop-blur-sm flex-shrink-0">
-              <Package className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white">
-                Setup Stok Awal
-              </h1>
-              <p className="text-blue-100 mt-1 text-xs sm:text-sm">
-                Setup stok pertama kali untuk produk yang belum pernah memiliki
-                record di gudang
-              </p>
-            </div>
-          </div>
+    <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+      {/* Page Header - Simple Style */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-bold tracking-tight">Setup Stok Awal</h1>
+          <p className="text-muted-foreground">
+            Setup stok pertama kali untuk produk yang belum memiliki record di gudang
+          </p>
         </div>
-        {/* Decorative circles - hidden on mobile */}
-        <div className="absolute -right-10 -top-10 h-24 w-24 sm:h-32 sm:w-32 md:h-40 md:w-40 rounded-full bg-white/10"></div>
-        <div className="absolute -bottom-10 -left-10 h-24 w-24 sm:h-32 sm:w-32 md:h-40 md:w-40 rounded-full bg-white/10"></div>
       </div>
 
-      {/* Wizard Steps Indicator - Responsive */}
+      {/* Step Indicator - Line Connector Style */}
       {currentStep !== 5 && (
-        <Card className="border-2 shadow-md">
-          <CardContent className="p-4 md:p-6">
-            {/* Mobile: Compact Horizontal Steps */}
-            <div className="md:hidden">
-              <div className="flex items-center justify-center mb-3">
-                {[
-                  { step: 1, label: "Pilih Gudang", icon: Building2 },
-                  { step: 2, label: "Metode Input", icon: Edit3 },
-                  { step: 3, label: "Input Data", icon: FileSpreadsheet },
-                  { step: 4, label: "Review", icon: CheckCircle2 },
-                ].map((item, index) => (
-                  <div key={item.step} className="flex items-center">
-                    <div className="flex flex-col items-center gap-1">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-center gap-2">
+              {steps.map((step) => {
+                const StepIcon = step.icon;
+                return (
+                  <div key={step.number} className="flex items-center gap-2">
+                    <div className="flex flex-col items-center gap-1.5">
                       <div
-                        className={`flex h-8 w-8 items-center justify-center rounded-full border-2 font-semibold transition-all duration-300 ${
-                          currentStep >= item.step
-                            ? "border-blue-600 bg-blue-600 text-white shadow-md"
-                            : "border-gray-300 bg-white text-gray-400"
-                        }`}
+                        className={cn(
+                          "flex h-10 w-10 items-center justify-center rounded-full transition-colors",
+                          step.number === currentStep
+                            ? "bg-primary text-primary-foreground"
+                            : step.number < currentStep
+                            ? "bg-green-500 text-white"
+                            : "bg-muted text-muted-foreground"
+                        )}
                       >
-                        {currentStep > item.step ? (
-                          <CheckCircle2 className="h-4 w-4" />
+                        {step.number < currentStep ? (
+                          <Check className="h-5 w-5" />
                         ) : (
-                          <item.icon className="h-4 w-4" />
+                          <StepIcon className="h-5 w-5" />
                         )}
                       </div>
-                      <p
-                        className={`text-[10px] font-semibold text-center ${
-                          currentStep >= item.step
-                            ? "text-blue-600"
-                            : "text-gray-500"
-                        }`}
+                      <span
+                        className={cn(
+                          "text-xs font-medium transition-colors",
+                          step.number === currentStep
+                            ? "text-primary"
+                            : step.number < currentStep
+                            ? "text-green-600 dark:text-green-500"
+                            : "text-muted-foreground"
+                        )}
                       >
-                        {item.label}
-                      </p>
+                        {step.label}
+                      </span>
                     </div>
-                    {index < 3 && (
-                      <ChevronRight
-                        className={`mx-2 h-4 w-4 flex-shrink-0 transition-colors duration-300 ${
-                          currentStep > item.step
-                            ? "text-blue-600"
-                            : "text-gray-300"
-                        }`}
+                    {step.number < 4 && (
+                      <div
+                        className={cn(
+                          "h-0.5 w-8 sm:w-12 transition-colors mb-4",
+                          step.number < currentStep ? "bg-green-500" : "bg-muted"
+                        )}
                       />
                     )}
                   </div>
-                ))}
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-muted-foreground">
-                  Langkah {currentStep} dari 4
-                </p>
-              </div>
-            </div>
-
-            {/* Desktop: Full Steps with Labels */}
-            <div className="hidden md:flex items-center justify-center">
-              {[
-                { step: 1, label: "Pilih Gudang", icon: Building2 },
-                { step: 2, label: "Metode Input", icon: Edit3 },
-                { step: 3, label: "Input Data", icon: FileSpreadsheet },
-                { step: 4, label: "Review", icon: CheckCircle2 },
-              ].map((item, index) => (
-                <div key={item.step} className="flex items-center">
-                  <div className="flex flex-col items-center gap-2">
-                    <div
-                      className={`flex h-12 w-12 items-center justify-center rounded-full border-2 font-semibold transition-all duration-300 ${
-                        currentStep >= item.step
-                          ? "border-blue-600 bg-blue-600 text-white shadow-lg shadow-blue-200"
-                          : "border-gray-300 bg-white text-gray-400"
-                      }`}
-                    >
-                      {currentStep > item.step ? (
-                        <CheckCircle2 className="h-6 w-6" />
-                      ) : (
-                        <item.icon className="h-5 w-5" />
-                      )}
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <p
-                        className={`text-xs font-semibold ${
-                          currentStep >= item.step
-                            ? "text-blue-600"
-                            : "text-gray-500"
-                        }`}
-                      >
-                        Step {item.step}
-                      </p>
-                      <p
-                        className={`text-sm font-medium ${
-                          currentStep >= item.step
-                            ? "text-gray-900"
-                            : "text-gray-500"
-                        }`}
-                      >
-                        {item.label}
-                      </p>
-                    </div>
-                  </div>
-                  {index < 3 && (
-                    <ChevronRight
-                      className={`mx-4 md:mx-6 lg:mx-8 h-6 w-6 md:h-7 md:w-7 lg:h-8 lg:w-8 flex-shrink-0 transition-colors duration-300 ${
-                        currentStep > item.step
-                          ? "text-blue-600"
-                          : "text-gray-300"
-                      }`}
-                    />
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>
@@ -1823,60 +1605,46 @@ export function InitialSetupClient({
       {/* Step Content */}
       {renderStepContent()}
 
-      {/* Navigation Buttons - Enhanced */}
+      {/* Navigation Buttons */}
       {currentStep !== 5 && (
-        <Card className="border-2 shadow-md bg-gradient-to-r from-gray-50 to-white dark:from-gray-900 dark:to-gray-950">
-          <CardContent className="p-4 sm:p-6">
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-0">
-              <Button
-                variant="outline"
-                onClick={handleBack}
-                disabled={currentStep === 1 || isSubmitting}
-                className="h-10 sm:h-12 px-4 sm:px-6 text-sm sm:text-base font-medium hover:bg-gray-100 w-full sm:w-auto"
-              >
-                <ChevronLeft className="mr-2 h-4 w-4 sm:h-5 sm:w-5" />
-                Kembali
-              </Button>
+        <div className="flex justify-between items-center">
+          <Button
+            variant="outline"
+            onClick={handleBack}
+            disabled={currentStep === 1 || isSubmitting}
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Kembali
+          </Button>
 
-              <div className="text-xs sm:text-sm text-muted-foreground font-medium order-first sm:order-none">
-                Langkah {currentStep} dari 4
-              </div>
-
-              {currentStep < 4 ? (
-                <Button
-                  onClick={handleNext}
-                  disabled={isSubmitting || hasValidationConflicts}
-                  className={`h-10 sm:h-12 px-6 sm:px-8 text-sm sm:text-base font-medium bg-blue-600 hover:bg-blue-700 w-full sm:w-auto ${
-                    hasValidationConflicts
-                      ? "opacity-50 cursor-not-allowed"
-                      : ""
-                  }`}
-                >
-                  Selanjutnya
-                  <ChevronRight className="ml-2 h-4 w-4 sm:h-5 sm:w-5" />
-                </Button>
+          {currentStep < 4 ? (
+            <Button
+              onClick={handleNext}
+              disabled={isSubmitting || hasValidationConflicts}
+            >
+              Selanjutnya
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          ) : (
+            <Button
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {isSubmitting ? (
+                <>
+                  <LoadingSpinner size="sm" className="mr-2" />
+                  Menyimpan...
+                </>
               ) : (
-                <Button
-                  onClick={handleSubmit}
-                  disabled={isSubmitting}
-                  className="h-10 sm:h-12 px-6 sm:px-8 text-sm sm:text-base font-medium bg-green-600 hover:bg-green-700 w-full sm:w-auto"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <LoadingSpinner size="sm" className="mr-2" />
-                      Menyimpan...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="mr-2 h-4 w-4 sm:h-5 sm:w-5" />
-                      Simpan Setup Stok Awal
-                    </>
-                  )}
-                </Button>
+                <>
+                  <Check className="mr-2 h-4 w-4" />
+                  Simpan Setup Stok Awal
+                </>
               )}
-            </div>
-          </CardContent>
-        </Card>
+            </Button>
+          )}
+        </div>
       )}
     </div>
   );

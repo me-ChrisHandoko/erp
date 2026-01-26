@@ -19,6 +19,7 @@ import type {
   UpdatePurchaseOrderRequest,
   ConfirmPurchaseOrderRequest,
   CancelPurchaseOrderRequest,
+  ShortClosePurchaseOrderRequest,
   PurchaseOrderFilters,
 } from "@/types/purchase-order.types";
 import type { ApiSuccessResponse } from "@/types/api";
@@ -214,6 +215,29 @@ export const purchaseOrderApi = createApi({
         { type: "PurchaseOrderList", id: "LIST" },
       ],
     }),
+
+    /**
+     * Short Close Purchase Order (SAP DCI Model)
+     * POST /api/v1/purchase-orders/:id/short-close
+     * Closes PO even if not fully delivered
+     * Requires OWNER or ADMIN role
+     */
+    shortClosePurchaseOrder: builder.mutation<
+      PurchaseOrderResponse,
+      { id: string; data: ShortClosePurchaseOrderRequest }
+    >({
+      query: ({ id, data }) => ({
+        url: `/purchase-orders/${id}/short-close`,
+        method: "POST",
+        body: data,
+      }),
+      transformResponse: (response: ApiSuccessResponse<PurchaseOrderResponse>) =>
+        response.data,
+      invalidatesTags: (result, error, { id }) => [
+        { type: "PurchaseOrder", id },
+        { type: "PurchaseOrderList", id: "LIST" },
+      ],
+    }),
   }),
 });
 
@@ -229,4 +253,5 @@ export const {
   useConfirmPurchaseOrderMutation,
   useCompletePurchaseOrderMutation,
   useCancelPurchaseOrderMutation,
+  useShortClosePurchaseOrderMutation,
 } = purchaseOrderApi;

@@ -18,7 +18,12 @@ type CreatePurchaseInvoiceRequest struct {
 	TaxRate         string                            `json:"taxRate" binding:"omitempty"`        // decimal as string, default 11
 	PaymentTermDays int                               `json:"paymentTermDays" binding:"omitempty,min=0,max=365"`
 	Notes           *string                           `json:"notes" binding:"omitempty"`
-	Items           []CreatePurchaseInvoiceItemRequest `json:"items" binding:"required,min=1,dive"`
+	// Non-Goods Costs (Biaya Tambahan)
+	ShippingCost         string  `json:"shippingCost" binding:"omitempty"`         // Biaya Pengiriman / Ongkir
+	HandlingCost         string  `json:"handlingCost" binding:"omitempty"`         // Biaya Handling / Bongkar Muat
+	OtherCost            string  `json:"otherCost" binding:"omitempty"`            // Biaya Lain-lain
+	OtherCostDescription *string `json:"otherCostDescription" binding:"omitempty"` // Keterangan Biaya Lain-lain
+	Items                []CreatePurchaseInvoiceItemRequest `json:"items" binding:"required,min=1,dive"`
 }
 
 // CreatePurchaseInvoiceItemRequest represents purchase invoice item creation request
@@ -45,6 +50,11 @@ type UpdatePurchaseInvoiceRequest struct {
 	PaymentTermDays *int    `json:"paymentTermDays" binding:"omitempty,min=0,max=365"`
 	Notes           *string `json:"notes" binding:"omitempty"`
 	Status          *string `json:"status" binding:"omitempty,oneof=DRAFT SUBMITTED APPROVED REJECTED PAID CANCELLED"`
+	// Non-Goods Costs (Biaya Tambahan)
+	ShippingCost         *string `json:"shippingCost" binding:"omitempty"`         // Biaya Pengiriman / Ongkir
+	HandlingCost         *string `json:"handlingCost" binding:"omitempty"`         // Biaya Handling / Bongkar Muat
+	OtherCost            *string `json:"otherCost" binding:"omitempty"`            // Biaya Lain-lain
+	OtherCostDescription *string `json:"otherCostDescription" binding:"omitempty"` // Keterangan Biaya Lain-lain
 }
 
 // ApprovePurchaseInvoiceRequest represents approval request
@@ -108,6 +118,12 @@ type PurchaseInvoiceResponse struct {
 	TotalAmount     string                            `json:"totalAmount"`     // decimal as string
 	PaidAmount      string                            `json:"paidAmount"`      // decimal as string
 	RemainingAmount string                            `json:"remainingAmount"` // decimal as string
+	// Non-Goods Costs (Biaya Tambahan)
+	ShippingCost         string  `json:"shippingCost"`                       // Biaya Pengiriman / Ongkir
+	HandlingCost         string  `json:"handlingCost"`                       // Biaya Handling / Bongkar Muat
+	OtherCost            string  `json:"otherCost"`                          // Biaya Lain-lain
+	OtherCostDescription *string `json:"otherCostDescription,omitempty"`     // Keterangan Biaya Lain-lain
+	TotalNonGoodsCost    string  `json:"totalNonGoodsCost"`                  // Total Biaya Tambahan (computed)
 	PaymentTermDays int                               `json:"paymentTermDays"`
 	Status          string                            `json:"status"`
 	PaymentStatus   string                            `json:"paymentStatus"`

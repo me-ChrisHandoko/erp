@@ -137,7 +137,7 @@ func AutoMigrateAuth(db *gorm.DB) error {
 // Phase 4: Supporting modules (InventoryMovement, StockOpname, StockTransfer, InventoryAdjustment, CashTransaction, System)
 // CRITICAL: Order matters - parent tables before child tables
 func AutoMigratePhase4(db *gorm.DB) error {
-	return db.AutoMigrate(
+	if err := db.AutoMigrate(
 		// Inventory tracking
 		&models.InventoryMovement{},
 
@@ -159,5 +159,16 @@ func AutoMigratePhase4(db *gorm.DB) error {
 		// System configuration & audit
 		&models.Setting{},
 		&models.AuditLog{},
-	)
+
+		// Procurement settings (SAP Model)
+		&models.DeliveryTolerance{},
+	); err != nil {
+		return err
+	}
+
+	// Drop FK constraint on delivery_tolerances.product_id to allow empty string for COMPANY/CATEGORY levels
+	// This is needed because we use empty string pattern for unique index instead of NULL
+	db.Exec("ALTER TABLE IF EXISTS delivery_tolerances DROP CONSTRAINT IF EXISTS fk_delivery_tolerances_product")
+
+	return nil
 }

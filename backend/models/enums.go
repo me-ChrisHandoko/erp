@@ -117,10 +117,21 @@ const (
 type PurchaseOrderStatus string
 
 const (
-	PurchaseOrderStatusDraft     PurchaseOrderStatus = "DRAFT"     // Belum dikonfirmasi
-	PurchaseOrderStatusConfirmed PurchaseOrderStatus = "CONFIRMED" // Dikonfirmasi, menunggu barang
-	PurchaseOrderStatusCompleted PurchaseOrderStatus = "COMPLETED" // Selesai (barang diterima)
-	PurchaseOrderStatusCancelled PurchaseOrderStatus = "CANCELLED" // Dibatalkan
+	PurchaseOrderStatusDraft       PurchaseOrderStatus = "DRAFT"        // Belum dikonfirmasi
+	PurchaseOrderStatusConfirmed   PurchaseOrderStatus = "CONFIRMED"    // Dikonfirmasi, menunggu barang
+	PurchaseOrderStatusCompleted   PurchaseOrderStatus = "COMPLETED"    // Selesai (barang diterima lengkap)
+	PurchaseOrderStatusShortClosed PurchaseOrderStatus = "SHORT_CLOSED" // Ditutup meski tidak lengkap (SAP DCI model)
+	PurchaseOrderStatusCancelled   PurchaseOrderStatus = "CANCELLED"    // Dibatalkan
+)
+
+// RejectionDisposition - Disposition for rejected goods (Odoo+M3 model)
+type RejectionDisposition string
+
+const (
+	RejectionDispositionPendingReplacement RejectionDisposition = "PENDING_REPLACEMENT" // Menunggu pengiriman ulang dari supplier
+	RejectionDispositionCreditRequested    RejectionDisposition = "CREDIT_REQUESTED"    // Request credit note dari supplier
+	RejectionDispositionReturned           RejectionDisposition = "RETURNED"            // Dikembalikan ke supplier
+	RejectionDispositionWrittenOff         RejectionDisposition = "WRITTEN_OFF"         // Dihapusbukukan sebagai loss
 )
 
 // PaymentStatus - Invoice payment status
@@ -179,6 +190,7 @@ const (
 	MovementTypeReturn     MovementType = "RETURN"     // Return dari customer
 	MovementTypeDamaged    MovementType = "DAMAGED"    // Barang rusak
 	MovementTypeTransfer   MovementType = "TRANSFER"   // Transfer antar gudang
+	MovementTypeInitial    MovementType = "INITIAL"    // Initial stock setup
 )
 
 // StockOpnameStatus - Physical count workflow

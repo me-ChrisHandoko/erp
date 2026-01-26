@@ -20,6 +20,8 @@ import type {
   InspectGoodsRequest,
   AcceptGoodsRequest,
   RejectGoodsRequest,
+  UpdateRejectionDispositionRequest,
+  ResolveDispositionRequest,
   GoodsReceiptFilters,
 } from "@/types/goods-receipt.types";
 import type { ApiSuccessResponse } from "@/types/api";
@@ -227,6 +229,54 @@ export const goodsReceiptApi = createApi({
         { type: "GoodsReceiptList", id: "LIST" },
       ],
     }),
+
+    // ==================== Rejection Disposition (Odoo+M3 Model) ====================
+
+    /**
+     * Update Rejection Disposition
+     * PUT /api/v1/goods-receipts/:id/items/:itemId/disposition
+     * Sets what happens to rejected items
+     * Requires OWNER or ADMIN role
+     */
+    updateRejectionDisposition: builder.mutation<
+      GoodsReceiptResponse,
+      { goodsReceiptId: string; itemId: string; data: UpdateRejectionDispositionRequest }
+    >({
+      query: ({ goodsReceiptId, itemId, data }) => ({
+        url: `/goods-receipts/${goodsReceiptId}/items/${itemId}/disposition`,
+        method: "PUT",
+        body: data,
+      }),
+      transformResponse: (response: ApiSuccessResponse<GoodsReceiptResponse>) =>
+        response.data,
+      invalidatesTags: (result, error, { goodsReceiptId }) => [
+        { type: "GoodsReceipt", id: goodsReceiptId },
+        { type: "GoodsReceiptList", id: "LIST" },
+      ],
+    }),
+
+    /**
+     * Resolve Disposition
+     * POST /api/v1/goods-receipts/:id/items/:itemId/resolve-disposition
+     * Marks disposition as resolved (e.g., replacement received, credit applied)
+     * Requires OWNER or ADMIN role
+     */
+    resolveDisposition: builder.mutation<
+      GoodsReceiptResponse,
+      { goodsReceiptId: string; itemId: string; data?: ResolveDispositionRequest }
+    >({
+      query: ({ goodsReceiptId, itemId, data }) => ({
+        url: `/goods-receipts/${goodsReceiptId}/items/${itemId}/resolve-disposition`,
+        method: "POST",
+        body: data || {},
+      }),
+      transformResponse: (response: ApiSuccessResponse<GoodsReceiptResponse>) =>
+        response.data,
+      invalidatesTags: (result, error, { goodsReceiptId }) => [
+        { type: "GoodsReceipt", id: goodsReceiptId },
+        { type: "GoodsReceiptList", id: "LIST" },
+      ],
+    }),
   }),
 });
 
@@ -243,4 +293,7 @@ export const {
   useInspectGoodsMutation,
   useAcceptGoodsMutation,
   useRejectGoodsMutation,
+  // Rejection Disposition (Odoo+M3 Model)
+  useUpdateRejectionDispositionMutation,
+  useResolveDispositionMutation,
 } = goodsReceiptApi;

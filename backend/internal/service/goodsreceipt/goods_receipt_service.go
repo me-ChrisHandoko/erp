@@ -3,6 +3,7 @@ package goodsreceipt
 import (
 	"context"
 	"fmt"
+	"log"
 	"math"
 	"time"
 
@@ -11,20 +12,117 @@ import (
 	"gorm.io/gorm"
 
 	"backend/internal/dto"
+	"backend/internal/service/audit"
+	"backend/internal/service/deliverytolerance"
 	"backend/models"
 	pkgerrors "backend/pkg/errors"
 )
 
 // GoodsReceiptService - Business logic for goods receipt management
 type GoodsReceiptService struct {
-	db *gorm.DB
+	db               *gorm.DB
+	auditService     *audit.AuditService
+	toleranceService *deliverytolerance.DeliveryToleranceService
 }
 
 // NewGoodsReceiptService creates a new goods receipt service instance
-func NewGoodsReceiptService(db *gorm.DB) *GoodsReceiptService {
+func NewGoodsReceiptService(db *gorm.DB, auditService *audit.AuditService, toleranceService *deliverytolerance.DeliveryToleranceService) *GoodsReceiptService {
 	return &GoodsReceiptService{
-		db: db,
+		db:               db,
+		auditService:     auditService,
+		toleranceService: toleranceService,
 	}
+}
+
+// ToleranceValidationResult holds the result of tolerance validation
+type ToleranceValidationResult struct {
+	IsValid              bool
+	EffectiveTolerance   *decimal.Decimal // Under tolerance percentage
+	OverTolerance        *decimal.Decimal // Over tolerance percentage
+	UnlimitedOver        bool
+	ResolvedFrom         string // PRODUCT, CATEGORY, COMPANY, DEFAULT
+	MinAllowedQty        decimal.Decimal
+	MaxAllowedQty        decimal.Decimal
+	DeviationPercent     decimal.Decimal
+	ViolationType        string // "UNDER", "OVER", ""
+	ValidationMessage    string
+}
+
+// validateDeliveryTolerance checks if received quantity is within configured tolerance
+func (s *GoodsReceiptService) validateDeliveryTolerance(ctx context.Context, tenantID, companyID, productID string, orderedQty, receivedQty decimal.Decimal) (*ToleranceValidationResult, error) {
+	result := &ToleranceValidationResult{
+		IsValid:       true,
+		ResolvedFrom:  "DEFAULT",
+		UnlimitedOver: false,
+	}
+
+	// Default tolerance: 0% (no tolerance)
+	defaultTolerance := decimal.Zero
+	result.EffectiveTolerance = &defaultTolerance
+	result.OverTolerance = &defaultTolerance
+
+	// Try to get effective tolerance from service
+	if s.toleranceService != nil {
+		effectiveTol, err := s.toleranceService.GetEffectiveTolerance(ctx, tenantID, companyID, productID)
+		if err != nil {
+			// Log warning but continue with default tolerance
+			log.Printf("Warning: Failed to get effective tolerance for product %s: %v", productID, err)
+		} else if effectiveTol != nil {
+			underTol, _ := decimal.NewFromString(effectiveTol.UnderDeliveryTolerance)
+			overTol, _ := decimal.NewFromString(effectiveTol.OverDeliveryTolerance)
+			result.EffectiveTolerance = &underTol
+			result.OverTolerance = &overTol
+			result.UnlimitedOver = effectiveTol.UnlimitedOverDelivery
+			result.ResolvedFrom = effectiveTol.ResolvedFrom
+		}
+	}
+
+	// Calculate allowed quantity range
+	hundred := decimal.NewFromInt(100)
+
+	// Min allowed = orderedQty * (1 - underTolerance/100)
+	underFactor := hundred.Sub(*result.EffectiveTolerance).Div(hundred)
+	result.MinAllowedQty = orderedQty.Mul(underFactor)
+
+	// Max allowed = orderedQty * (1 + overTolerance/100) unless unlimited
+	if result.UnlimitedOver {
+		// Set a very large number for unlimited over delivery
+		result.MaxAllowedQty = decimal.NewFromFloat(math.MaxFloat64)
+	} else {
+		overFactor := hundred.Add(*result.OverTolerance).Div(hundred)
+		result.MaxAllowedQty = orderedQty.Mul(overFactor)
+	}
+
+	// Calculate deviation percentage
+	if orderedQty.IsPositive() {
+		deviation := receivedQty.Sub(orderedQty)
+		result.DeviationPercent = deviation.Div(orderedQty).Mul(hundred)
+	}
+
+	// Check if received quantity is within tolerance
+	if receivedQty.LessThan(result.MinAllowedQty) {
+		result.IsValid = false
+		result.ViolationType = "UNDER"
+		result.ValidationMessage = fmt.Sprintf(
+			"Jumlah diterima (%s) kurang dari batas toleransi bawah (%s). Toleransi under-delivery: %s%%, dari: %s",
+			receivedQty.String(),
+			result.MinAllowedQty.Round(2).String(),
+			result.EffectiveTolerance.String(),
+			result.ResolvedFrom,
+		)
+	} else if !result.UnlimitedOver && receivedQty.GreaterThan(result.MaxAllowedQty) {
+		result.IsValid = false
+		result.ViolationType = "OVER"
+		result.ValidationMessage = fmt.Sprintf(
+			"Jumlah diterima (%s) melebihi batas toleransi atas (%s). Toleransi over-delivery: %s%%, dari: %s",
+			receivedQty.String(),
+			result.MaxAllowedQty.Round(2).String(),
+			result.OverTolerance.String(),
+			result.ResolvedFrom,
+		)
+	}
+
+	return result, nil
 }
 
 // ============================================================================
@@ -32,7 +130,7 @@ func NewGoodsReceiptService(db *gorm.DB) *GoodsReceiptService {
 // ============================================================================
 
 // CreateGoodsReceipt creates a new goods receipt from a purchase order
-func (s *GoodsReceiptService) CreateGoodsReceipt(ctx context.Context, tenantID, companyID, userID string, req *dto.CreateGoodsReceiptRequest) (*models.GoodsReceipt, error) {
+func (s *GoodsReceiptService) CreateGoodsReceipt(ctx context.Context, tenantID, companyID, userID string, req *dto.CreateGoodsReceiptRequest, ipAddress, userAgent string) (*models.GoodsReceipt, error) {
 	// Parse GRN date
 	grnDate, err := time.Parse("2006-01-02", req.GRNDate)
 	if err != nil {
@@ -54,9 +152,10 @@ func (s *GoodsReceiptService) CreateGoodsReceipt(ctx context.Context, tenantID, 
 		return nil, pkgerrors.NewBadRequestError("purchase order must be in CONFIRMED status to create goods receipt")
 	}
 
-	// Load purchase order items for validation
+	// Load purchase order items for validation (with Product for audit log)
 	var poItems []models.PurchaseOrderItem
 	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+		Preload("Product").
 		Where("purchase_order_id = ?", purchaseOrder.ID).
 		Find(&poItems).Error; err != nil {
 		return nil, fmt.Errorf("failed to load purchase order items: %w", err)
@@ -92,6 +191,7 @@ func (s *GoodsReceiptService) CreateGoodsReceipt(ctx context.Context, tenantID, 
 			SupplierInvoice:  req.SupplierInvoice,
 			SupplierDONumber: req.SupplierDONumber,
 			Notes:            req.Notes,
+			ItemCount:        len(req.Items),
 		}
 
 		if err := tx.Create(goodsReceipt).Error; err != nil {
@@ -135,6 +235,30 @@ func (s *GoodsReceiptService) CreateGoodsReceipt(ctx context.Context, tenantID, 
 			receivedQty, err := decimal.NewFromString(itemReq.ReceivedQty)
 			if err != nil || receivedQty.LessThan(decimal.Zero) {
 				return pkgerrors.NewBadRequestError("invalid receivedQty")
+			}
+
+			// Validate: cannot receive more than remaining qty (defense-in-depth)
+			// remainingQty = orderedQty - alreadyReceivedQty
+			remainingQty := poItem.Quantity.Sub(poItem.ReceivedQty)
+			if receivedQty.GreaterThan(remainingQty) {
+				return pkgerrors.NewBadRequestError(fmt.Sprintf(
+					"received qty (%s) exceeds remaining qty (%s) for PO item",
+					receivedQty.String(), remainingQty.String(),
+				))
+			}
+
+			// Validate delivery tolerance (SAP Model)
+			// Check if received quantity is within configured tolerance for this product
+			toleranceResult, toleranceErr := s.validateDeliveryTolerance(ctx, tenantID, companyID, poItem.ProductID, remainingQty, receivedQty)
+			if toleranceErr != nil {
+				log.Printf("Warning: Tolerance validation error for product %s: %v", poItem.ProductID, toleranceErr)
+				// Continue without tolerance validation if there's an error
+			} else if toleranceResult != nil && !toleranceResult.IsValid {
+				return pkgerrors.NewBadRequestError(fmt.Sprintf(
+					"Toleransi pengiriman tidak valid untuk produk %s: %s",
+					product.Name,
+					toleranceResult.ValidationMessage,
+				))
 			}
 
 			acceptedQty := receivedQty
@@ -198,6 +322,96 @@ func (s *GoodsReceiptService) CreateGoodsReceipt(ctx context.Context, tenantID, 
 
 	if err != nil {
 		return nil, err
+	}
+
+	// Audit logging - log goods receipt creation
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		// Build items detail for audit log (struct to preserve JSON field order)
+		type auditItemDetail struct {
+			ProductID       string  `json:"product_id"`
+			ProductCode     string  `json:"product_code"`
+			ProductName     string  `json:"product_name"`
+			ProductUnitID   *string `json:"product_unit_id,omitempty"`
+			BatchNumber     *string `json:"batch_number,omitempty"`
+			ManufactureDate *string `json:"manufacture_date,omitempty"`
+			ExpiryDate      *string `json:"expiry_date,omitempty"`
+			ReceivedQty     string  `json:"received_qty"`
+			AcceptedQty     *string `json:"accepted_qty,omitempty"`
+			RejectedQty     *string `json:"rejected_qty,omitempty"`
+			Notes           *string `json:"notes,omitempty"`
+		}
+
+		itemsDetail := make([]auditItemDetail, len(req.Items))
+		for i, item := range req.Items {
+			// Get product info from PO item map
+			productCode := ""
+			productName := ""
+			if poItem, exists := poItemMap[item.PurchaseOrderItemID]; exists {
+				productCode = poItem.Product.Code
+				productName = poItem.Product.Name
+			}
+
+			itemsDetail[i] = auditItemDetail{
+				ProductID:       item.ProductID,
+				ProductCode:     productCode,
+				ProductName:     productName,
+				ProductUnitID:   item.ProductUnitID,
+				BatchNumber:     item.BatchNumber,
+				ManufactureDate: item.ManufactureDate,
+				ExpiryDate:      item.ExpiryDate,
+				ReceivedQty:     item.ReceivedQty,
+				Notes:           item.Notes,
+			}
+			if item.AcceptedQty != "" {
+				itemsDetail[i].AcceptedQty = &item.AcceptedQty
+			}
+			if item.RejectedQty != "" {
+				itemsDetail[i].RejectedQty = &item.RejectedQty
+			}
+		}
+
+		// Struct to preserve JSON field order
+		type auditNewValues struct {
+			GRNNumber        string            `json:"grn_number"`
+			GRNDate          string            `json:"grn_date"`
+			PurchaseOrderID  string            `json:"purchase_order_id"`
+			SupplierID       string            `json:"supplier_id"`
+			WarehouseID      string            `json:"warehouse_id"`
+			SupplierInvoice  *string           `json:"supplier_invoice,omitempty"`
+			SupplierDONumber *string           `json:"supplier_do_number,omitempty"`
+			Notes            *string           `json:"notes,omitempty"`
+			Status           string            `json:"status"`
+			ItemCount        int               `json:"item_count"`
+			Items            []auditItemDetail `json:"items"`
+		}
+
+		newValues := auditNewValues{
+			GRNNumber:        goodsReceipt.GRNNumber,
+			GRNDate:          goodsReceipt.GRNDate.Format("2006-01-02"),
+			PurchaseOrderID:  goodsReceipt.PurchaseOrderID,
+			SupplierID:       goodsReceipt.SupplierID,
+			WarehouseID:      goodsReceipt.WarehouseID,
+			SupplierInvoice:  goodsReceipt.SupplierInvoice,
+			SupplierDONumber: goodsReceipt.SupplierDONumber,
+			Notes:            goodsReceipt.Notes,
+			Status:           string(goodsReceipt.Status),
+			ItemCount:        len(req.Items),
+			Items:            itemsDetail,
+		}
+
+		if err := s.auditService.LogGoodsReceiptCreated(ctx, auditCtx, goodsReceipt.ID, newValues); err != nil {
+			log.Printf("WARNING: Failed to create audit log for goods receipt created: %v", err)
+		}
 	}
 
 	// Reload with relations
@@ -268,7 +482,11 @@ func (s *GoodsReceiptService) ListGoodsReceipts(ctx context.Context, tenantID, c
 	// Apply filters
 	if query.Search != "" {
 		searchPattern := "%" + query.Search + "%"
-		baseQuery = baseQuery.Where("grn_number LIKE ?", searchPattern)
+		// Search by GRN number or PO number (via subquery)
+		baseQuery = baseQuery.Where(
+			"grn_number LIKE ? OR purchase_order_id IN (SELECT id FROM purchase_orders WHERE po_number LIKE ? AND company_id = ?)",
+			searchPattern, searchPattern, companyID,
+		)
 	}
 
 	if query.Status != nil {
@@ -385,10 +603,11 @@ func (s *GoodsReceiptService) loadGoodsReceiptRelations(ctx context.Context, ten
 		return fmt.Errorf("failed to load warehouse: %w", err)
 	}
 
-	// Load items with product info
+	// Load items with product info and disposition resolver
 	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
 		Preload("Product").
 		Preload("ProductUnit").
+		Preload("DispositionResolver").
 		Where("goods_receipt_id = ?", gr.ID).
 		Find(&gr.Items).Error; err != nil {
 		return fmt.Errorf("failed to load items: %w", err)
@@ -436,7 +655,9 @@ func (s *GoodsReceiptService) UpdateGoodsReceipt(ctx context.Context, tenantID, 
 			goodsReceipt.Notes = req.Notes
 		}
 
-		if err := tx.Save(goodsReceipt).Error; err != nil {
+		if err := tx.Model(goodsReceipt).
+			Select("grn_date", "supplier_invoice", "supplier_do_number", "notes", "updated_at").
+			Updates(goodsReceipt).Error; err != nil {
 			return fmt.Errorf("failed to update goods receipt: %w", err)
 		}
 
@@ -538,7 +759,7 @@ func (s *GoodsReceiptService) DeleteGoodsReceipt(ctx context.Context, tenantID, 
 // ============================================================================
 
 // ReceiveGoods marks goods as received (PENDING → RECEIVED)
-func (s *GoodsReceiptService) ReceiveGoods(ctx context.Context, tenantID, companyID, goodsReceiptID, userID string, req *dto.ReceiveGoodsRequest) (*models.GoodsReceipt, error) {
+func (s *GoodsReceiptService) ReceiveGoods(ctx context.Context, tenantID, companyID, goodsReceiptID, userID string, req *dto.ReceiveGoodsRequest, ipAddress, userAgent string) (*models.GoodsReceipt, error) {
 	goodsReceipt, err := s.GetGoodsReceiptByID(ctx, tenantID, companyID, goodsReceiptID)
 	if err != nil {
 		return nil, err
@@ -548,23 +769,56 @@ func (s *GoodsReceiptService) ReceiveGoods(ctx context.Context, tenantID, compan
 		return nil, pkgerrors.NewBadRequestError("goods receipt must be in PENDING status")
 	}
 
+	// Capture old status for audit
+	oldStatus := string(goodsReceipt.Status)
+
 	now := time.Now()
 	goodsReceipt.Status = models.GoodsReceiptStatusReceived
 	goodsReceipt.ReceivedBy = &userID
 	goodsReceipt.ReceivedAt = &now
 	if req != nil && req.Notes != nil {
-		goodsReceipt.Notes = req.Notes
+		goodsReceipt.ReceiveNotes = req.Notes
 	}
 
-	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).Save(goodsReceipt).Error; err != nil {
+	if err := s.db.WithContext(ctx).Set("tenant_id", tenantID).
+		Model(goodsReceipt).
+		Select("status", "received_by", "received_at", "receive_notes", "updated_at").
+		Updates(goodsReceipt).Error; err != nil {
 		return nil, fmt.Errorf("failed to update goods receipt status: %w", err)
+	}
+
+	// Audit logging - only log status change
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		oldValues := map[string]any{
+			"status": oldStatus,
+		}
+
+		newValues := map[string]any{
+			"grn_number":    goodsReceipt.GRNNumber,
+			"status":        string(goodsReceipt.Status),
+			"receive_notes": goodsReceipt.ReceiveNotes,
+		}
+
+		if err := s.auditService.LogGoodsReceiptReceived(ctx, auditCtx, goodsReceipt.ID, oldValues, newValues); err != nil {
+			log.Printf("WARNING: Failed to create audit log for goods receipt received: %v", err)
+		}
 	}
 
 	return s.GetGoodsReceiptByID(ctx, tenantID, companyID, goodsReceiptID)
 }
 
 // InspectGoods marks goods as inspected (RECEIVED → INSPECTED)
-func (s *GoodsReceiptService) InspectGoods(ctx context.Context, tenantID, companyID, goodsReceiptID, userID string, req *dto.InspectGoodsRequest) (*models.GoodsReceipt, error) {
+func (s *GoodsReceiptService) InspectGoods(ctx context.Context, tenantID, companyID, goodsReceiptID, userID string, req *dto.InspectGoodsRequest, ipAddress, userAgent string) (*models.GoodsReceipt, error) {
 	goodsReceipt, err := s.GetGoodsReceiptByID(ctx, tenantID, companyID, goodsReceiptID)
 	if err != nil {
 		return nil, err
@@ -572,6 +826,28 @@ func (s *GoodsReceiptService) InspectGoods(ctx context.Context, tenantID, compan
 
 	if goodsReceipt.Status != models.GoodsReceiptStatusReceived {
 		return nil, pkgerrors.NewBadRequestError("goods receipt must be in RECEIVED status")
+	}
+
+	// Capture old status for audit
+	oldStatus := string(goodsReceipt.Status)
+
+	// Capture old item states for audit
+	type oldItemState struct {
+		ID          string `json:"id"`
+		ProductID   string `json:"product_id"`
+		ReceivedQty string `json:"received_qty"`
+		AcceptedQty string `json:"accepted_qty"`
+		RejectedQty string `json:"rejected_qty"`
+	}
+	oldItemStates := make([]oldItemState, len(goodsReceipt.Items))
+	for i, item := range goodsReceipt.Items {
+		oldItemStates[i] = oldItemState{
+			ID:          item.ID,
+			ProductID:   item.ProductID,
+			ReceivedQty: item.ReceivedQty.String(),
+			AcceptedQty: item.AcceptedQty.String(),
+			RejectedQty: item.RejectedQty.String(),
+		}
 	}
 
 	err = s.db.WithContext(ctx).Set("tenant_id", tenantID).Transaction(func(tx *gorm.DB) error {
@@ -612,21 +888,84 @@ func (s *GoodsReceiptService) InspectGoods(ctx context.Context, tenantID, compan
 		goodsReceipt.InspectedBy = &userID
 		goodsReceipt.InspectedAt = &now
 		if req != nil && req.Notes != nil {
-			goodsReceipt.Notes = req.Notes
+			goodsReceipt.InspectionNotes = req.Notes
 		}
 
-		return tx.Save(goodsReceipt).Error
+		return tx.Model(goodsReceipt).
+			Select("status", "inspected_by", "inspected_at", "inspection_notes", "updated_at").
+			Updates(goodsReceipt).Error
 	})
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect goods: %w", err)
 	}
 
-	return s.GetGoodsReceiptByID(ctx, tenantID, companyID, goodsReceiptID)
+	// Reload goods receipt to get updated items
+	updatedGoodsReceipt, err := s.GetGoodsReceiptByID(ctx, tenantID, companyID, goodsReceiptID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Audit logging - include items detail
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		// Build new item states for audit log
+		type newItemState struct {
+			ID              string  `json:"id"`
+			ProductID       string  `json:"product_id"`
+			ProductName     string  `json:"product_name,omitempty"`
+			ReceivedQty     string  `json:"received_qty"`
+			AcceptedQty     string  `json:"accepted_qty"`
+			RejectedQty     string  `json:"rejected_qty"`
+			RejectionReason *string `json:"rejection_reason,omitempty"`
+			QualityNote     *string `json:"quality_note,omitempty"`
+		}
+		newItemStates := make([]newItemState, len(updatedGoodsReceipt.Items))
+		for i, item := range updatedGoodsReceipt.Items {
+			newItemStates[i] = newItemState{
+				ID:              item.ID,
+				ProductID:       item.ProductID,
+				ProductName:     item.Product.Name,
+				ReceivedQty:     item.ReceivedQty.String(),
+				AcceptedQty:     item.AcceptedQty.String(),
+				RejectedQty:     item.RejectedQty.String(),
+				RejectionReason: item.RejectionReason,
+				QualityNote:     item.QualityNote,
+			}
+		}
+
+		oldValues := map[string]any{
+			"status": oldStatus,
+			"items":  oldItemStates,
+		}
+
+		newValues := map[string]any{
+			"grn_number":       updatedGoodsReceipt.GRNNumber,
+			"status":           string(updatedGoodsReceipt.Status),
+			"inspection_notes": updatedGoodsReceipt.InspectionNotes,
+			"item_count":       len(updatedGoodsReceipt.Items),
+			"items":            newItemStates,
+		}
+
+		if err := s.auditService.LogGoodsReceiptInspected(ctx, auditCtx, updatedGoodsReceipt.ID, oldValues, newValues); err != nil {
+			log.Printf("WARNING: Failed to create audit log for goods receipt inspected: %v", err)
+		}
+	}
+
+	return updatedGoodsReceipt, nil
 }
 
 // AcceptGoods accepts goods and updates stock (INSPECTED → ACCEPTED)
-func (s *GoodsReceiptService) AcceptGoods(ctx context.Context, tenantID, companyID, goodsReceiptID, userID string, req *dto.AcceptGoodsRequest) (*models.GoodsReceipt, error) {
+func (s *GoodsReceiptService) AcceptGoods(ctx context.Context, tenantID, companyID, goodsReceiptID, userID string, req *dto.AcceptGoodsRequest, ipAddress, userAgent string) (*models.GoodsReceipt, error) {
 	goodsReceipt, err := s.GetGoodsReceiptByID(ctx, tenantID, companyID, goodsReceiptID)
 	if err != nil {
 		return nil, err
@@ -635,6 +974,13 @@ func (s *GoodsReceiptService) AcceptGoods(ctx context.Context, tenantID, company
 	if goodsReceipt.Status != models.GoodsReceiptStatusInspected {
 		return nil, pkgerrors.NewBadRequestError("goods receipt must be in INSPECTED status")
 	}
+
+	// Capture old status for audit
+	oldStatus := string(goodsReceipt.Status)
+
+	// Track if PO was auto-completed for audit logging
+	var poCompleted bool
+	var poNumber string
 
 	err = s.db.WithContext(ctx).Set("tenant_id", tenantID).Transaction(func(tx *gorm.DB) error {
 		// Update warehouse stock for each accepted item
@@ -671,22 +1017,44 @@ func (s *GoodsReceiptService) AcceptGoods(ctx context.Context, tenantID, company
 					}
 				}
 
-				// Create ProductBatch record for batch-tracked products
+				// Create or update ProductBatch record for batch-tracked products
 				if product.IsBatchTracked && item.BatchNumber != nil && *item.BatchNumber != "" {
-					batch := models.ProductBatch{
-						ID:               uuid.New().String(),
-						BatchNumber:      *item.BatchNumber,
-						ProductID:        item.ProductID,
-						WarehouseStockID: stock.ID,
-						ManufactureDate:  item.ManufactureDate,
-						ExpiryDate:       item.ExpiryDate,
-						Quantity:         item.AcceptedQty,
-						GoodsReceiptID:   &goodsReceipt.ID,
-						ReceiptDate:      time.Now(),
-						Status:           "AVAILABLE",
-					}
-					if err := tx.Create(&batch).Error; err != nil {
-						return fmt.Errorf("failed to create product batch: %w", err)
+					// Check if batch already exists for this product and batch number
+					var existingBatch models.ProductBatch
+					err := tx.Where("product_id = ? AND batch_number = ?", item.ProductID, *item.BatchNumber).
+						First(&existingBatch).Error
+
+					if err == gorm.ErrRecordNotFound {
+						// Create new batch
+						qualityStatus := "GOOD"
+						batch := models.ProductBatch{
+							ID:               uuid.New().String(),
+							BatchNumber:      *item.BatchNumber,
+							ProductID:        item.ProductID,
+							WarehouseStockID: stock.ID,
+							ManufactureDate:  item.ManufactureDate,
+							ExpiryDate:       item.ExpiryDate,
+							Quantity:         item.AcceptedQty,
+							GoodsReceiptID:   &goodsReceipt.ID,
+							ReceiptDate:      time.Now(),
+							Status:           "AVAILABLE",
+							QualityStatus:    &qualityStatus,
+						}
+						if err := tx.Create(&batch).Error; err != nil {
+							return fmt.Errorf("failed to create product batch: %w", err)
+						}
+					} else if err != nil {
+						return fmt.Errorf("failed to check existing batch: %w", err)
+					} else {
+						// Update existing batch quantity
+						existingBatch.Quantity = existingBatch.Quantity.Add(item.AcceptedQty)
+						// Update expiry date if provided and newer
+						if item.ExpiryDate != nil && (existingBatch.ExpiryDate == nil || item.ExpiryDate.After(*existingBatch.ExpiryDate)) {
+							existingBatch.ExpiryDate = item.ExpiryDate
+						}
+						if err := tx.Save(&existingBatch).Error; err != nil {
+							return fmt.Errorf("failed to update product batch quantity: %w", err)
+						}
 					}
 				}
 
@@ -696,6 +1064,40 @@ func (s *GoodsReceiptService) AcceptGoods(ctx context.Context, tenantID, company
 					Update("received_qty", gorm.Expr("received_qty + ?", item.AcceptedQty)).Error; err != nil {
 					return fmt.Errorf("failed to update PO item received qty: %w", err)
 				}
+			}
+		}
+
+		// Check if all PO items are fully received and auto-complete the PO
+		var po models.PurchaseOrder
+		if err := tx.Where("id = ?", goodsReceipt.PurchaseOrderID).First(&po).Error; err != nil {
+			return fmt.Errorf("failed to load purchase order: %w", err)
+		}
+
+		if po.Status == models.PurchaseOrderStatusConfirmed {
+			// Load all PO items to check if fully received
+			var poItems []models.PurchaseOrderItem
+			if err := tx.Where("purchase_order_id = ?", po.ID).Find(&poItems).Error; err != nil {
+				return fmt.Errorf("failed to load PO items: %w", err)
+			}
+
+			// Check if all items are fully received (received_qty >= quantity)
+			allFullyReceived := true
+			for _, poItem := range poItems {
+				if poItem.ReceivedQty.LessThan(poItem.Quantity) {
+					allFullyReceived = false
+					break
+				}
+			}
+
+			// If all items are fully received, update PO status to COMPLETED
+			if allFullyReceived {
+				if err := tx.Model(&models.PurchaseOrder{}).
+					Where("id = ?", po.ID).
+					Update("status", models.PurchaseOrderStatusCompleted).Error; err != nil {
+					return fmt.Errorf("failed to update PO status to COMPLETED: %w", err)
+				}
+				poCompleted = true
+				poNumber = po.PONumber
 			}
 		}
 
@@ -715,21 +1117,64 @@ func (s *GoodsReceiptService) AcceptGoods(ctx context.Context, tenantID, company
 		}
 
 		if req != nil && req.Notes != nil {
-			goodsReceipt.Notes = req.Notes
+			goodsReceipt.AcceptanceNotes = req.Notes
 		}
 
-		return tx.Save(goodsReceipt).Error
+		return tx.Model(goodsReceipt).
+			Select("status", "acceptance_notes", "updated_at").
+			Updates(goodsReceipt).Error
 	})
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to accept goods: %w", err)
 	}
 
+	// Audit logging - only log status change
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		oldValues := map[string]any{
+			"status": oldStatus,
+		}
+
+		newValues := map[string]any{
+			"grn_number":       goodsReceipt.GRNNumber,
+			"status":           string(goodsReceipt.Status),
+			"acceptance_notes": goodsReceipt.AcceptanceNotes,
+		}
+
+		if err := s.auditService.LogGoodsReceiptAccepted(ctx, auditCtx, goodsReceipt.ID, oldValues, newValues); err != nil {
+			log.Printf("WARNING: Failed to create audit log for goods receipt accepted: %v", err)
+		}
+
+		// Log PO completion if it was auto-completed
+		if poCompleted {
+			poOldValues := map[string]any{
+				"status": string(models.PurchaseOrderStatusConfirmed),
+			}
+			poNewValues := map[string]any{
+				"po_number": poNumber,
+				"status":    string(models.PurchaseOrderStatusCompleted),
+			}
+			if err := s.auditService.LogPurchaseOrderCompleted(ctx, auditCtx, goodsReceipt.PurchaseOrderID, poOldValues, poNewValues); err != nil {
+				log.Printf("WARNING: Failed to create audit log for PO auto-completed: %v", err)
+			}
+		}
+	}
+
 	return s.GetGoodsReceiptByID(ctx, tenantID, companyID, goodsReceiptID)
 }
 
 // RejectGoods rejects goods (INSPECTED → REJECTED)
-func (s *GoodsReceiptService) RejectGoods(ctx context.Context, tenantID, companyID, goodsReceiptID, userID string, req *dto.RejectGoodsRequest) (*models.GoodsReceipt, error) {
+func (s *GoodsReceiptService) RejectGoods(ctx context.Context, tenantID, companyID, goodsReceiptID, userID string, req *dto.RejectGoodsRequest, ipAddress, userAgent string) (*models.GoodsReceipt, error) {
 	goodsReceipt, err := s.GetGoodsReceiptByID(ctx, tenantID, companyID, goodsReceiptID)
 	if err != nil {
 		return nil, err
@@ -738,6 +1183,9 @@ func (s *GoodsReceiptService) RejectGoods(ctx context.Context, tenantID, company
 	if goodsReceipt.Status != models.GoodsReceiptStatusInspected {
 		return nil, pkgerrors.NewBadRequestError("goods receipt must be in INSPECTED status")
 	}
+
+	// Capture old status for audit
+	oldStatus := string(goodsReceipt.Status)
 
 	// Update all items as rejected
 	err = s.db.WithContext(ctx).Set("tenant_id", tenantID).Transaction(func(tx *gorm.DB) error {
@@ -752,13 +1200,199 @@ func (s *GoodsReceiptService) RejectGoods(ctx context.Context, tenantID, company
 
 		goodsReceipt.Status = models.GoodsReceiptStatusRejected
 		notes := req.RejectionReason
-		goodsReceipt.Notes = &notes
+		goodsReceipt.RejectionNotes = &notes
 
-		return tx.Save(goodsReceipt).Error
+		return tx.Model(goodsReceipt).
+			Select("status", "rejection_notes", "updated_at").
+			Updates(goodsReceipt).Error
 	})
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to reject goods: %w", err)
+	}
+
+	// Audit logging - only log status change
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		oldValues := map[string]any{
+			"status": oldStatus,
+		}
+
+		newValues := map[string]any{
+			"grn_number":       goodsReceipt.GRNNumber,
+			"status":           string(goodsReceipt.Status),
+			"rejection_notes":  goodsReceipt.RejectionNotes,
+			"rejection_reason": req.RejectionReason,
+		}
+
+		if err := s.auditService.LogGoodsReceiptRejected(ctx, auditCtx, goodsReceipt.ID, oldValues, newValues); err != nil {
+			log.Printf("WARNING: Failed to create audit log for goods receipt rejected: %v", err)
+		}
+	}
+
+	return s.GetGoodsReceiptByID(ctx, tenantID, companyID, goodsReceiptID)
+}
+
+// ============================================================================
+// REJECTION DISPOSITION MANAGEMENT (Odoo+M3 Model)
+// ============================================================================
+
+// UpdateRejectionDisposition updates the rejection disposition for a goods receipt item
+// This tracks what will happen to rejected items: PENDING_REPLACEMENT, CREDIT_REQUESTED, RETURNED, WRITTEN_OFF
+func (s *GoodsReceiptService) UpdateRejectionDisposition(ctx context.Context, tenantID, companyID, goodsReceiptID, itemID, userID string, req *dto.UpdateRejectionDispositionRequest, ipAddress, userAgent string) (*models.GoodsReceipt, error) {
+	// Get goods receipt
+	goodsReceipt, err := s.GetGoodsReceiptByID(ctx, tenantID, companyID, goodsReceiptID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Find the item
+	var targetItem *models.GoodsReceiptItem
+	for i := range goodsReceipt.Items {
+		if goodsReceipt.Items[i].ID == itemID {
+			targetItem = &goodsReceipt.Items[i]
+			break
+		}
+	}
+
+	if targetItem == nil {
+		return nil, pkgerrors.NewNotFoundError("goods receipt item not found")
+	}
+
+	// Validate item has rejected quantity
+	if targetItem.RejectedQty.IsZero() {
+		return nil, pkgerrors.NewBadRequestError("can only set disposition for items with rejected quantity")
+	}
+
+	// Parse disposition
+	disposition := models.RejectionDisposition(req.RejectionDisposition)
+
+	// Update the item
+	err = s.db.WithContext(ctx).Set("tenant_id", tenantID).Transaction(func(tx *gorm.DB) error {
+		targetItem.RejectionDisposition = &disposition
+		targetItem.DispositionNotes = req.DispositionNotes
+
+		return tx.Model(targetItem).
+			Select("rejection_disposition", "disposition_notes", "updated_at").
+			Updates(targetItem).Error
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to update rejection disposition: %w", err)
+	}
+
+	// Audit logging
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		newValues := map[string]any{
+			"grn_number":            goodsReceipt.GRNNumber,
+			"item_id":               itemID,
+			"product_id":            targetItem.ProductID,
+			"rejection_disposition": string(disposition),
+			"disposition_notes":     req.DispositionNotes,
+		}
+
+		if err := s.auditService.LogGoodsReceiptDispositionUpdated(ctx, auditCtx, goodsReceiptID, nil, newValues); err != nil {
+			log.Printf("WARNING: Failed to create audit log for rejection disposition update: %v", err)
+		}
+	}
+
+	return s.GetGoodsReceiptByID(ctx, tenantID, companyID, goodsReceiptID)
+}
+
+// ResolveDisposition marks a rejection disposition as resolved
+// This is called when the supplier has sent replacement, credit note has been received, goods returned, or written off
+func (s *GoodsReceiptService) ResolveDisposition(ctx context.Context, tenantID, companyID, goodsReceiptID, itemID, userID string, req *dto.ResolveDispositionRequest, ipAddress, userAgent string) (*models.GoodsReceipt, error) {
+	// Get goods receipt
+	goodsReceipt, err := s.GetGoodsReceiptByID(ctx, tenantID, companyID, goodsReceiptID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Find the item
+	var targetItem *models.GoodsReceiptItem
+	for i := range goodsReceipt.Items {
+		if goodsReceipt.Items[i].ID == itemID {
+			targetItem = &goodsReceipt.Items[i]
+			break
+		}
+	}
+
+	if targetItem == nil {
+		return nil, pkgerrors.NewNotFoundError("goods receipt item not found")
+	}
+
+	// Validate item has disposition set
+	if targetItem.RejectionDisposition == nil {
+		return nil, pkgerrors.NewBadRequestError("no rejection disposition set for this item")
+	}
+
+	// Validate disposition is not already resolved
+	if targetItem.DispositionResolvedAt != nil {
+		return nil, pkgerrors.NewBadRequestError("disposition has already been resolved")
+	}
+
+	// Update the item
+	now := time.Now()
+	err = s.db.WithContext(ctx).Set("tenant_id", tenantID).Transaction(func(tx *gorm.DB) error {
+		targetItem.DispositionResolvedAt = &now
+		targetItem.DispositionResolvedBy = &userID
+		if req.DispositionResolvedNotes != nil {
+			targetItem.DispositionResolvedNotes = req.DispositionResolvedNotes
+		}
+
+		return tx.Model(targetItem).
+			Select("disposition_resolved_at", "disposition_resolved_by", "disposition_resolved_notes", "updated_at").
+			Updates(targetItem).Error
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve disposition: %w", err)
+	}
+
+	// Audit logging
+	if s.auditService != nil {
+		requestID := uuid.New().String()
+		auditCtx := &audit.AuditContext{
+			TenantID:  &tenantID,
+			CompanyID: &companyID,
+			UserID:    &userID,
+			RequestID: &requestID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+		}
+
+		newValues := map[string]any{
+			"grn_number":                 goodsReceipt.GRNNumber,
+			"item_id":                    itemID,
+			"product_id":                 targetItem.ProductID,
+			"rejection_disposition":      string(*targetItem.RejectionDisposition),
+			"disposition_resolved_at":    now.Format(time.RFC3339),
+			"disposition_resolved_by":    userID,
+			"disposition_resolved_notes": targetItem.DispositionResolvedNotes,
+		}
+
+		if err := s.auditService.LogGoodsReceiptDispositionResolved(ctx, auditCtx, goodsReceiptID, nil, newValues); err != nil {
+			log.Printf("WARNING: Failed to create audit log for disposition resolved: %v", err)
+		}
 	}
 
 	return s.GetGoodsReceiptByID(ctx, tenantID, companyID, goodsReceiptID)
@@ -785,6 +1419,11 @@ func (s *GoodsReceiptService) MapToResponse(gr *models.GoodsReceipt, includeItem
 		SupplierInvoice:  gr.SupplierInvoice,
 		SupplierDONumber: gr.SupplierDONumber,
 		Notes:            gr.Notes,
+		ReceiveNotes:     gr.ReceiveNotes,
+		InspectionNotes:  gr.InspectionNotes,
+		AcceptanceNotes:  gr.AcceptanceNotes,
+		RejectionNotes:   gr.RejectionNotes,
+		ItemCount:        gr.ItemCount, // From database field
 		CreatedAt:        gr.CreatedAt,
 		UpdatedAt:        gr.UpdatedAt,
 	}
@@ -820,24 +1459,37 @@ func (s *GoodsReceiptService) MapToResponse(gr *models.GoodsReceipt, includeItem
 	if includeItems && len(gr.Items) > 0 {
 		response.Items = make([]dto.GoodsReceiptItemResponse, len(gr.Items))
 		for i, item := range gr.Items {
+			// Map rejection disposition fields
+			var rejectionDisposition *string
+			if item.RejectionDisposition != nil {
+				disposition := string(*item.RejectionDisposition)
+				rejectionDisposition = &disposition
+			}
+
 			response.Items[i] = dto.GoodsReceiptItemResponse{
-				ID:                  item.ID,
-				GoodsReceiptID:      item.GoodsReceiptID,
-				PurchaseOrderItemID: item.PurchaseOrderItemID,
-				ProductID:           item.ProductID,
-				ProductUnitID:       item.ProductUnitID,
-				BatchNumber:         item.BatchNumber,
-				ManufactureDate:     item.ManufactureDate,
-				ExpiryDate:          item.ExpiryDate,
-				OrderedQty:          item.OrderedQty.String(),
-				ReceivedQty:         item.ReceivedQty.String(),
-				AcceptedQty:         item.AcceptedQty.String(),
-				RejectedQty:         item.RejectedQty.String(),
-				RejectionReason:     item.RejectionReason,
-				QualityNote:         item.QualityNote,
-				Notes:               item.Notes,
-				CreatedAt:           item.CreatedAt,
-				UpdatedAt:           item.UpdatedAt,
+				ID:                    item.ID,
+				GoodsReceiptID:        item.GoodsReceiptID,
+				PurchaseOrderItemID:   item.PurchaseOrderItemID,
+				ProductID:             item.ProductID,
+				ProductUnitID:         item.ProductUnitID,
+				BatchNumber:           item.BatchNumber,
+				ManufactureDate:       item.ManufactureDate,
+				ExpiryDate:            item.ExpiryDate,
+				OrderedQty:            item.OrderedQty.String(),
+				ReceivedQty:           item.ReceivedQty.String(),
+				AcceptedQty:           item.AcceptedQty.String(),
+				RejectedQty:           item.RejectedQty.String(),
+				RejectionReason:       item.RejectionReason,
+				RejectionDisposition:  rejectionDisposition,
+				DispositionResolved:      item.DispositionResolvedAt != nil,
+				DispositionResolvedAt:    item.DispositionResolvedAt,
+				DispositionResolvedBy:    item.DispositionResolvedBy,
+				DispositionNotes:         item.DispositionNotes,
+				DispositionResolvedNotes: item.DispositionResolvedNotes,
+				QualityNote:              item.QualityNote,
+				Notes:                 item.Notes,
+				CreatedAt:             item.CreatedAt,
+				UpdatedAt:             item.UpdatedAt,
 			}
 
 			// Map product with tracking flags
@@ -858,6 +1510,15 @@ func (s *GoodsReceiptService) MapToResponse(gr *models.GoodsReceipt, includeItem
 					ID:             item.ProductUnit.ID,
 					UnitName:       item.ProductUnit.UnitName,
 					ConversionRate: item.ProductUnit.ConversionRate.String(),
+				}
+			}
+
+			// Map disposition resolver (user who resolved rejected goods disposition)
+			if item.DispositionResolver != nil && item.DispositionResolver.ID != "" {
+				response.Items[i].DispositionResolver = &dto.UserBasicResponse{
+					ID:       item.DispositionResolver.ID,
+					Email:    item.DispositionResolver.Email,
+					FullName: item.DispositionResolver.FullName,
 				}
 			}
 		}

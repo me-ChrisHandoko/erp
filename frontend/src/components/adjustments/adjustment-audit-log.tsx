@@ -69,7 +69,7 @@ const adjustmentActionLabels: Record<string, string> = {
 };
 
 function getAdjustmentActionLabel(action: string): string {
-  return adjustmentActionLabels[action] || getActionLabel(action);
+  return adjustmentActionLabels[action] || getActionLabel(action as import("@/types/audit").AuditAction);
 }
 
 export function AdjustmentAuditLog({ adjustmentId }: AdjustmentAuditLogProps) {

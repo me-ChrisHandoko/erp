@@ -11,7 +11,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   FileText,
   Building2,
@@ -19,9 +19,11 @@ import {
   Package,
   Save,
   AlertCircle,
-  Plus,
   Trash2,
   DollarSign,
+  Truck,
+  HandCoins,
+  ReceiptText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,9 +49,16 @@ import {
 } from "@/components/ui/table";
 import { useCreatePurchaseInvoiceMutation } from "@/store/services/purchaseInvoiceApi";
 import { useListSuppliersQuery } from "@/store/services/supplierApi";
-import { useListPurchaseOrdersQuery } from "@/store/services/purchaseOrderApi";
+import { useListPurchaseOrdersQuery, useGetPurchaseOrderQuery } from "@/store/services/purchaseOrderApi";
+import { useListGoodsReceiptsQuery, useGetGoodsReceiptQuery } from "@/store/services/goodsReceiptApi";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import type { CreatePurchaseInvoiceRequest } from "@/types/purchase-invoice.types";
+import {
+  PURCHASE_ORDER_STATUS_LABELS,
+  PURCHASE_ORDER_STATUS_COLORS,
+  type PurchaseOrderStatus
+} from "@/types/purchase-order.types";
 
 interface CreateInvoiceFormProps {
   onSuccess?: (invoiceId: string) => void;
@@ -86,8 +95,15 @@ export function CreateInvoiceForm({
     dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0], // 30 days from now
     purchaseOrderId: "",
     purchaseOrderNumber: "",
+    goodsReceiptId: "",
+    goodsReceiptNumber: "",
     notes: "",
     taxPercentage: "11", // Default PPN 11%
+    // Biaya non-barang (header level)
+    shippingCost: "0", // Biaya Pengiriman/Ongkir
+    handlingCost: "0", // Biaya Handling
+    otherCost: "0", // Biaya Lain-lain
+    otherCostDescription: "", // Deskripsi Biaya Lain-lain
   });
 
   // Fetch active suppliers for dropdown
@@ -97,22 +113,102 @@ export function CreateInvoiceForm({
   });
   const suppliers = suppliersData?.data || [];
 
-  // Fetch POs filtered by selected supplier
+  // Invoiceable PO statuses - POs that can have invoices created
+  const INVOICEABLE_STATUSES: PurchaseOrderStatus[] = ["CONFIRMED", "COMPLETED", "SHORT_CLOSED"];
+
+  // Fetch POs filtered by selected supplier (fetch all, filter on frontend)
   const { data: purchaseOrdersData, isFetching: isLoadingPOs } = useListPurchaseOrdersQuery(
     {
       supplierId: formData.supplierId,
-      status: "CONFIRMED", // Only show confirmed POs
       pageSize: 100
     },
     {
       skip: !formData.supplierId // Only fetch when supplier is selected
     }
   );
-  const purchaseOrders = purchaseOrdersData?.data || [];
+  // Filter to only show invoiceable POs (CONFIRMED, COMPLETED, SHORT_CLOSED)
+  const purchaseOrders = (purchaseOrdersData?.data || []).filter(po =>
+    INVOICEABLE_STATUSES.includes(po.status as PurchaseOrderStatus)
+  );
+
+  // Fetch Goods Receipts for the selected PO (fetch all, filter on frontend)
+  const { data: goodsReceiptsData, isFetching: isLoadingGRs } = useListGoodsReceiptsQuery(
+    {
+      purchaseOrderId: formData.purchaseOrderId,
+      pageSize: 100
+    },
+    {
+      skip: !formData.purchaseOrderId // Only fetch when PO is selected
+    }
+  );
+  // Filter to only show GRNs that have accepted items (ACCEPTED or PARTIAL status)
+  const goodsReceipts = (goodsReceiptsData?.data || []).filter(gr =>
+    gr.status === "ACCEPTED" || gr.status === "PARTIAL"
+  );
+
+  // Fetch selected PO details for auto-populate
+  const { data: selectedPOData } = useGetPurchaseOrderQuery(
+    formData.purchaseOrderId,
+    { skip: !formData.purchaseOrderId }
+  );
+
+  // Fetch selected GRN details (with items) for auto-populate
+  const { data: selectedGRData } = useGetGoodsReceiptQuery(
+    formData.goodsReceiptId,
+    { skip: !formData.goodsReceiptId }
+  );
 
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+
+  // Auto-populate items from GRN when GRN data is loaded
+  useEffect(() => {
+    if (selectedGRData && selectedGRData.items && selectedGRData.items.length > 0 && items.length === 0) {
+      const newItems: InvoiceItem[] = selectedGRData.items
+        .filter(item => parseFloat(item.acceptedQty) > 0)
+        .map((item, index) => {
+          // Get unit price from PO if available
+          const poItem = selectedPOData?.items?.find(
+            poi => poi.productId === item.productId
+          );
+          const unitPrice = poItem?.unitPrice || "0";
+          const qty = parseFloat(item.acceptedQty || "0");
+          const price = parseFloat(unitPrice);
+          const discPct = parseFloat(poItem?.discountPct || "0");
+          const taxPct = parseFloat(formData.taxPercentage);
+
+          const subtotal = qty * price;
+          const discount = (subtotal * discPct) / 100;
+          const taxableAmount = subtotal - discount;
+          const tax = (taxableAmount * taxPct) / 100;
+          const total = taxableAmount + tax;
+
+          return {
+            id: `item-${Date.now()}-${index}`,
+            productId: item.productId,
+            productCode: item.product?.code || "",
+            productName: item.product?.name || "",
+            quantity: item.acceptedQty,
+            unitId: item.productUnitId || "",
+            unitName: item.productUnit?.unitName || item.product?.baseUnit || "PCS",
+            unitPrice: unitPrice,
+            discountPercent: poItem?.discountPct || "0",
+            discountAmount: discount.toFixed(2),
+            taxPercent: formData.taxPercentage,
+            taxAmount: tax.toFixed(2),
+            totalAmount: total.toFixed(2),
+          };
+        });
+
+      if (newItems.length > 0) {
+        setItems(newItems);
+        toast.success("Items Ditambahkan", {
+          description: `${newItems.length} item dari GRN telah ditambahkan ke faktur`,
+        });
+      }
+    }
+  }, [selectedGRData, selectedPOData, formData.taxPercentage]);
 
   const handleChange = (field: string, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -136,27 +232,10 @@ export function CreateInvoiceForm({
     }).format(num);
   };
 
-  // Add new item row
-  const handleAddItem = () => {
-    const newItem: InvoiceItem = {
-      id: `item-${Date.now()}`,
-      productId: "",
-      productCode: "",
-      productName: "",
-      quantity: "1",
-      unitId: "", // UUID of the product unit - will be populated when product is selected
-      unitName: "PCS",
-      unitPrice: "0",
-      discountPercent: "0",
-      discountAmount: "0",
-      taxPercent: formData.taxPercentage,
-      taxAmount: "0",
-      totalAmount: "0",
-    };
-    setItems([...items, newItem]);
-  };
+  // Note: Items are auto-populated from GRN only (GRN Wajib mode)
+  // No manual item addition allowed
 
-  // Remove item row
+  // Remove item row (still allowed for adjustments)
   const handleRemoveItem = (itemId: string) => {
     setItems(items.filter((item) => item.id !== itemId));
   };
@@ -192,28 +271,42 @@ export function CreateInvoiceForm({
     );
   };
 
-  // Calculate totals
+  // Calculate totals including non-goods costs
   const calculateTotals = () => {
+    // Items subtotal (before discount)
     const subtotal = items.reduce((sum, item) => {
       const qty = parseFloat(item.quantity || "0");
       const price = parseFloat(item.unitPrice || "0");
       return sum + qty * price;
     }, 0);
 
+    // Total discount from items
     const totalDiscount = items.reduce((sum, item) => {
       return sum + parseFloat(item.discountAmount || "0");
     }, 0);
 
+    // Total tax from items
     const totalTax = items.reduce((sum, item) => {
       return sum + parseFloat(item.taxAmount || "0");
     }, 0);
 
-    const total = subtotal - totalDiscount + totalTax;
+    // Non-goods costs (header level)
+    const shippingCost = parseFloat(formData.shippingCost || "0");
+    const handlingCost = parseFloat(formData.handlingCost || "0");
+    const otherCost = parseFloat(formData.otherCost || "0");
+    const totalNonGoodsCost = shippingCost + handlingCost + otherCost;
+
+    // Grand total = subtotal - discount + tax + non-goods costs
+    const total = subtotal - totalDiscount + totalTax + totalNonGoodsCost;
 
     return {
       subtotal,
       totalDiscount,
       totalTax,
+      shippingCost,
+      handlingCost,
+      otherCost,
+      totalNonGoodsCost,
       total,
     };
   };
@@ -226,6 +319,10 @@ export function CreateInvoiceForm({
     // Required fields
     if (!formData.supplierId.trim()) {
       newErrors.supplierId = "Supplier wajib dipilih";
+    }
+    // GRN is required (GRN Wajib mode)
+    if (!formData.goodsReceiptId) {
+      newErrors.goodsReceiptId = "Penerimaan Barang (GRN) wajib dipilih";
     }
     // invoiceNumber is auto-generated by backend, no validation needed
     if (!formData.invoiceDate) {
@@ -293,6 +390,7 @@ export function CreateInvoiceForm({
         dueDate: formData.dueDate,
         supplierId: formData.supplierId,
         purchaseOrderId: formData.purchaseOrderId || undefined,
+        goodsReceiptId: formData.goodsReceiptId || undefined,
         discountAmount: totals.totalDiscount > 0 ? totals.totalDiscount.toString() : undefined,
         taxRate: formData.taxPercentage,
         notes: formData.notes || undefined,
@@ -352,11 +450,17 @@ export function CreateInvoiceForm({
                 value={formData.supplierId}
                 onValueChange={(value) => {
                   handleChange("supplierId", value);
-                  // Clear PO selection when supplier changes
+                  // Clear PO and GRN selection when supplier changes
                   if (formData.purchaseOrderId) {
                     handleChange("purchaseOrderId", "");
                     handleChange("purchaseOrderNumber", "");
                   }
+                  if (formData.goodsReceiptId) {
+                    handleChange("goodsReceiptId", "");
+                    handleChange("goodsReceiptNumber", "");
+                  }
+                  // Clear items when supplier changes
+                  setItems([]);
                 }}
               >
                 <SelectTrigger
@@ -415,6 +519,12 @@ export function CreateInvoiceForm({
                   if (selectedPO) {
                     handleChange("purchaseOrderNumber", selectedPO.poNumber);
                   }
+                  // Clear GRN and items when PO changes
+                  if (formData.goodsReceiptId) {
+                    handleChange("goodsReceiptId", "");
+                    handleChange("goodsReceiptNumber", "");
+                  }
+                  setItems([]);
                 }}
                 disabled={!formData.supplierId}
               >
@@ -426,22 +536,99 @@ export function CreateInvoiceForm({
                         : isLoadingPOs
                         ? "Memuat PO..."
                         : purchaseOrders.length === 0
-                        ? "Tidak ada PO untuk supplier ini"
-                        : "Pilih PO (opsional)..."
+                        ? "Tidak ada PO yang bisa diinvoice"
+                        : "Pilih PO..."
                     }
                   />
                 </SelectTrigger>
                 <SelectContent>
                   {purchaseOrders.map((po) => (
                     <SelectItem key={po.id} value={po.id}>
-                      {po.poNumber} - {new Date(po.poDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      <div className="flex items-center gap-2">
+                        <span>{po.poNumber}</span>
+                        <Badge
+                          variant="secondary"
+                          className={`text-xs ${PURCHASE_ORDER_STATUS_COLORS[po.status as PurchaseOrderStatus]}`}
+                        >
+                          {PURCHASE_ORDER_STATUS_LABELS[po.status as PurchaseOrderStatus]}
+                        </Badge>
+                        <span className="text-muted-foreground">
+                          {new Date(po.poDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        </span>
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                PO akan difilter berdasarkan supplier yang dipilih
+                Menampilkan PO dengan status: Dikonfirmasi, Selesai, atau Ditutup Sebagian
               </p>
+            </div>
+
+            {/* Goods Receipt Reference */}
+            <div className="space-y-2">
+              <Label htmlFor="goodsReceipt" className="text-sm font-medium">
+                Referensi Penerimaan Barang (GRN)
+              </Label>
+              <Select
+                value={formData.goodsReceiptId}
+                onValueChange={(value) => {
+                  const selectedGR = goodsReceipts.find(gr => gr.id === value);
+                  handleChange("goodsReceiptId", value);
+                  if (selectedGR) {
+                    handleChange("goodsReceiptNumber", selectedGR.grnNumber);
+                  }
+                  // Clear items when GRN changes - will be repopulated by useEffect
+                  setItems([]);
+                }}
+                disabled={!formData.purchaseOrderId}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue
+                    placeholder={
+                      !formData.purchaseOrderId
+                        ? "Pilih PO terlebih dahulu"
+                        : isLoadingGRs
+                        ? "Memuat GRN..."
+                        : goodsReceipts.length === 0
+                        ? "Tidak ada GRN yang sudah diterima"
+                        : "Pilih GRN untuk auto-populate items..."
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {goodsReceipts.map((gr) => (
+                    <SelectItem key={gr.id} value={gr.id}>
+                      <div className="flex items-center gap-2">
+                        <span>{gr.grnNumber}</span>
+                        <Badge
+                          variant="secondary"
+                          className={gr.status === "ACCEPTED" ? "bg-green-100 text-green-800" : "bg-orange-100 text-orange-800"}
+                        >
+                          {gr.status === "ACCEPTED" ? "Diterima" : "Sebagian"}
+                        </Badge>
+                        <span className="text-muted-foreground">
+                          {new Date(gr.grnDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          ({gr.itemCount} item)
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.goodsReceiptId && (
+                <p className="flex items-center gap-1 text-sm text-destructive">
+                  <AlertCircle className="h-3 w-3" />
+                  {errors.goodsReceiptId}
+                </p>
+              )}
+              {!errors.goodsReceiptId && (
+                <p className="text-xs text-muted-foreground">
+                  Pilih GRN untuk otomatis mengisi items berdasarkan barang yang sudah diterima
+                </p>
+              )}
             </div>
 
             {/* Invoice Date */}
@@ -518,25 +705,110 @@ export function CreateInvoiceForm({
         </CardContent>
       </Card>
 
+      {/* Additional Costs (Non-Goods Costs) */}
+      <Card className="border-2">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ReceiptText className="h-5 w-5" />
+            Biaya Tambahan
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Biaya non-barang seperti ongkir, handling, dan biaya lainnya
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {/* Shipping Cost */}
+            <div className="space-y-2">
+              <Label htmlFor="shippingCost" className="text-sm font-medium">
+                <div className="flex items-center gap-2">
+                  <Truck className="h-4 w-4" />
+                  Biaya Pengiriman
+                </div>
+              </Label>
+              <Input
+                id="shippingCost"
+                type="number"
+                min="0"
+                step="1000"
+                value={formData.shippingCost}
+                onChange={(e) => handleChange("shippingCost", e.target.value)}
+                placeholder="0"
+                className="text-right"
+              />
+              <p className="text-xs text-muted-foreground">Ongkos kirim dari supplier</p>
+            </div>
+
+            {/* Handling Cost */}
+            <div className="space-y-2">
+              <Label htmlFor="handlingCost" className="text-sm font-medium">
+                <div className="flex items-center gap-2">
+                  <HandCoins className="h-4 w-4" />
+                  Biaya Handling
+                </div>
+              </Label>
+              <Input
+                id="handlingCost"
+                type="number"
+                min="0"
+                step="1000"
+                value={formData.handlingCost}
+                onChange={(e) => handleChange("handlingCost", e.target.value)}
+                placeholder="0"
+                className="text-right"
+              />
+              <p className="text-xs text-muted-foreground">Biaya bongkar muat</p>
+            </div>
+
+            {/* Other Cost */}
+            <div className="space-y-2">
+              <Label htmlFor="otherCost" className="text-sm font-medium">
+                <div className="flex items-center gap-2">
+                  <DollarSign className="h-4 w-4" />
+                  Biaya Lain-lain
+                </div>
+              </Label>
+              <Input
+                id="otherCost"
+                type="number"
+                min="0"
+                step="1000"
+                value={formData.otherCost}
+                onChange={(e) => handleChange("otherCost", e.target.value)}
+                placeholder="0"
+                className="text-right"
+              />
+              <p className="text-xs text-muted-foreground">Biaya tambahan lainnya</p>
+            </div>
+
+            {/* Other Cost Description - Only show if other cost > 0 */}
+            {parseFloat(formData.otherCost || "0") > 0 && (
+              <div className="space-y-2 sm:col-span-3">
+                <Label htmlFor="otherCostDescription" className="text-sm font-medium">
+                  Keterangan Biaya Lain-lain
+                </Label>
+                <Input
+                  id="otherCostDescription"
+                  value={formData.otherCostDescription}
+                  onChange={(e) => handleChange("otherCostDescription", e.target.value)}
+                  placeholder="Jelaskan biaya lain-lain..."
+                />
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Invoice Items */}
       <Card className="border-2">
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Package className="h-5 w-5" />
-              Item Faktur
-            </CardTitle>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleAddItem}
-              disabled={isLoading}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Tambah Item
-            </Button>
-          </div>
+          <CardTitle className="flex items-center gap-2">
+            <Package className="h-5 w-5" />
+            Item Faktur
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Items otomatis terisi dari Penerimaan Barang (GRN) yang dipilih
+          </p>
         </CardHeader>
         <CardContent>
           {errors.items && (
@@ -549,8 +821,13 @@ export function CreateInvoiceForm({
           {items.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <Package className="mx-auto h-12 w-12 mb-4 opacity-50" />
-              <p>Belum ada item dalam faktur</p>
-              <p className="text-sm">Klik "Tambah Item" untuk menambahkan produk</p>
+              <p className="font-medium">Belum ada item dalam faktur</p>
+              <p className="text-sm mt-1">
+                {!formData.goodsReceiptId
+                  ? "Pilih Penerimaan Barang (GRN) untuk mengisi items secara otomatis"
+                  : "Items akan terisi otomatis dari GRN yang dipilih"
+                }
+              </p>
             </div>
           ) : (
             <div className="rounded-md border overflow-x-auto">
@@ -669,8 +946,9 @@ export function CreateInvoiceForm({
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
+              {/* Items Subtotal */}
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Subtotal:</span>
+                <span className="text-muted-foreground">Subtotal Barang:</span>
                 <span className="font-mono">{formatCurrency(totals.subtotal)}</span>
               </div>
               {totals.totalDiscount > 0 && (
@@ -685,9 +963,51 @@ export function CreateInvoiceForm({
                 <span className="text-muted-foreground">PPN:</span>
                 <span className="font-mono">{formatCurrency(totals.totalTax)}</span>
               </div>
+
+              {/* Non-Goods Costs Section */}
+              {totals.totalNonGoodsCost > 0 && (
+                <>
+                  <Separator />
+                  <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Biaya Tambahan
+                  </div>
+                  {totals.shippingCost > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground flex items-center gap-1">
+                        <Truck className="h-3 w-3" />
+                        Biaya Pengiriman:
+                      </span>
+                      <span className="font-mono">{formatCurrency(totals.shippingCost)}</span>
+                    </div>
+                  )}
+                  {totals.handlingCost > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground flex items-center gap-1">
+                        <HandCoins className="h-3 w-3" />
+                        Biaya Handling:
+                      </span>
+                      <span className="font-mono">{formatCurrency(totals.handlingCost)}</span>
+                    </div>
+                  )}
+                  {totals.otherCost > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground flex items-center gap-1">
+                        <DollarSign className="h-3 w-3" />
+                        Biaya Lain-lain:
+                      </span>
+                      <span className="font-mono">{formatCurrency(totals.otherCost)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-sm font-medium">
+                    <span className="text-muted-foreground">Total Biaya Tambahan:</span>
+                    <span className="font-mono">{formatCurrency(totals.totalNonGoodsCost)}</span>
+                  </div>
+                </>
+              )}
+
               <Separator />
               <div className="flex justify-between items-center rounded-lg bg-muted/50 p-4">
-                <span className="text-lg font-bold">Total:</span>
+                <span className="text-lg font-bold">Total Faktur:</span>
                 <span className="text-2xl font-bold text-blue-600">
                   {formatCurrency(totals.total)}
                 </span>

@@ -13,6 +13,7 @@ import (
 	"backend/internal/service/auth"
 	"backend/internal/service/company"
 	"backend/internal/service/customer"
+	"backend/internal/service/deliverytolerance"
 	"backend/internal/service/document"
 	"backend/internal/service/goodsreceipt"
 	"backend/internal/service/inventoryadjustment"
@@ -413,6 +414,9 @@ func setupProtectedRoutes(
 			// GET endpoints - all authenticated users can view
 			warehouseStockGroup.GET("", warehouseHandler.ListWarehouseStocks)
 
+			// POST endpoint - OWNER/ADMIN only (initial stock setup)
+			warehouseStockGroup.POST("/initial-setup", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), warehouseHandler.CreateInitialStock)
+
 			// PUT endpoint - OWNER/ADMIN only (update stock settings, not quantity)
 			warehouseStockGroup.PUT("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), warehouseHandler.UpdateWarehouseStock)
 		}
@@ -508,7 +512,7 @@ func setupProtectedRoutes(
 		// PURCHASE ORDER MANAGEMENT ROUTES (PHASE 3 - Procurement)
 		// Reference: Purchase order management for procurement workflow
 		// ============================================================================
-		purchaseOrderService := purchase.NewPurchaseOrderService(db, docNumberGen)
+		purchaseOrderService := purchase.NewPurchaseOrderService(db, docNumberGen, auditService)
 		purchaseOrderHandler := handler.NewPurchaseOrderHandler(purchaseOrderService)
 
 		purchaseOrderGroup := businessProtected.Group("/purchase-orders")
@@ -527,13 +531,20 @@ func setupProtectedRoutes(
 			purchaseOrderGroup.POST("/:id/confirm", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseOrderHandler.ConfirmPurchaseOrder)
 			purchaseOrderGroup.POST("/:id/complete", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseOrderHandler.CompletePurchaseOrder)
 			purchaseOrderGroup.POST("/:id/cancel", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseOrderHandler.CancelPurchaseOrder)
+			purchaseOrderGroup.POST("/:id/short-close", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseOrderHandler.ShortClosePurchaseOrder)
 		}
+
+		// ============================================================================
+		// DELIVERY TOLERANCE SERVICE (Used by Goods Receipt for validation)
+		// Reference: Hierarchical tolerance configuration for under/over delivery
+		// ============================================================================
+		deliveryToleranceService := deliverytolerance.NewDeliveryToleranceService(db, auditService)
 
 		// ============================================================================
 		// GOODS RECEIPT MANAGEMENT ROUTES (PHASE 3 - Procurement)
 		// Reference: Goods receipt (penerimaan barang) management for procurement workflow
 		// ============================================================================
-		goodsReceiptService := goodsreceipt.NewGoodsReceiptService(db)
+		goodsReceiptService := goodsreceipt.NewGoodsReceiptService(db, auditService, deliveryToleranceService)
 		goodsReceiptHandler := handler.NewGoodsReceiptHandler(goodsReceiptService)
 
 		goodsReceiptGroup := businessProtected.Group("/goods-receipts")
@@ -553,6 +564,31 @@ func setupProtectedRoutes(
 			goodsReceiptGroup.POST("/:id/inspect", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), goodsReceiptHandler.InspectGoods)
 			goodsReceiptGroup.POST("/:id/accept", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), goodsReceiptHandler.AcceptGoods)
 			goodsReceiptGroup.POST("/:id/reject", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), goodsReceiptHandler.RejectGoods)
+
+			// Rejection disposition management (Odoo+M3 Model) - OWNER/ADMIN only
+			goodsReceiptGroup.PUT("/:id/items/:itemId/disposition", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), goodsReceiptHandler.UpdateRejectionDisposition)
+			goodsReceiptGroup.POST("/:id/items/:itemId/resolve-disposition", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), goodsReceiptHandler.ResolveDisposition)
+		}
+
+		// ============================================================================
+		// DELIVERY TOLERANCE SETTINGS ROUTES (SAP Model)
+		// Reference: Hierarchical tolerance configuration for under/over delivery
+		// Note: deliveryToleranceService already created above for GoodsReceiptService
+		// ============================================================================
+		deliveryToleranceHandler := handler.NewDeliveryToleranceHandler(deliveryToleranceService)
+
+		deliveryToleranceGroup := businessProtected.Group("/delivery-tolerances")
+		deliveryToleranceGroup.Use(middleware.CompanyContextMiddleware(db))
+		{
+			// GET endpoints - all authenticated users can view
+			deliveryToleranceGroup.GET("", deliveryToleranceHandler.ListDeliveryTolerances)
+			deliveryToleranceGroup.GET("/effective", deliveryToleranceHandler.GetEffectiveTolerance) // Get effective tolerance for a product
+			deliveryToleranceGroup.GET("/:id", deliveryToleranceHandler.GetDeliveryTolerance)
+
+			// POST/PUT/DELETE endpoints - OWNER/ADMIN only
+			deliveryToleranceGroup.POST("", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), deliveryToleranceHandler.CreateDeliveryTolerance)
+			deliveryToleranceGroup.PUT("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), deliveryToleranceHandler.UpdateDeliveryTolerance)
+			deliveryToleranceGroup.DELETE("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), deliveryToleranceHandler.DeleteDeliveryTolerance)
 		}
 
 		// ============================================================================

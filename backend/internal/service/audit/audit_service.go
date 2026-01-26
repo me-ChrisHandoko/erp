@@ -1926,6 +1926,86 @@ func (s *AuditService) LogWarehouseStockUpdated(
 	return db.Create(auditLog).Error
 }
 
+// LogInitialStockCreated logs when initial stock is created for a warehouse
+func (s *AuditService) LogInitialStockCreated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	warehouseID string,
+	stockData interface{},
+	totalItems, createdStocks, updatedStocks int,
+) error {
+	newValuesJSON, _ := json.Marshal(stockData)
+	newValuesStr := string(newValuesJSON)
+	entityType := "WAREHOUSE_STOCK"
+
+	notes := fmt.Sprintf("Initial stock setup for warehouse. Total items: %d, Created: %d, Updated: %d",
+		totalItems,
+		createdStocks,
+		updatedStocks,
+	)
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "INITIAL_STOCK_CREATED",
+		EntityType: &entityType,
+		EntityID:   &warehouseID,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogInitialStockOperationFailed logs when an initial stock operation fails
+func (s *AuditService) LogInitialStockOperationFailed(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	warehouseID string,
+	errorMsg string,
+	requestData interface{},
+) error {
+	entityType := "WAREHOUSE_STOCK"
+	notes := fmt.Sprintf("Initial stock setup failed: %s", errorMsg)
+
+	var newValuesStr *string
+	if requestData != nil {
+		requestJSON, _ := json.Marshal(requestData)
+		reqStr := string(requestJSON)
+		newValuesStr = &reqStr
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "INITIAL_STOCK_FAILED",
+		EntityType: &entityType,
+		EntityID:   &warehouseID,
+		NewValues:  newValuesStr,
+		Status:     StatusFailed,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
 // ==================== Inventory Adjustment Audit Methods ====================
 
 // LogInventoryAdjustmentCreated logs when an inventory adjustment is created
@@ -2159,6 +2239,643 @@ func (s *AuditService) LogInventoryAdjustmentOperationFailed(
 		EntityType: &entityType,
 		EntityID:   &adjustmentID,
 		Status:     StatusFailed,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// ==================== Purchase Order Audit Methods ====================
+
+// LogPurchaseOrderCreated logs when a purchase order is created
+func (s *AuditService) LogPurchaseOrderCreated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	purchaseOrderID string,
+	purchaseOrderData interface{},
+) error {
+	newValuesJSON, _ := json.Marshal(purchaseOrderData)
+	newValuesStr := string(newValuesJSON)
+	entityType := "PURCHASE_ORDER"
+
+	poNumber := getFieldValue(purchaseOrderData, "PONumber", "po_number")
+	notes := "Purchase order created (→ DRAFT)"
+	if poNumber != "" {
+		notes = fmt.Sprintf("Purchase order %s created (→ DRAFT)", poNumber)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "PURCHASE_ORDER_CREATED",
+		EntityType: &entityType,
+		EntityID:   &purchaseOrderID,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogPurchaseOrderUpdated logs when a purchase order is updated
+func (s *AuditService) LogPurchaseOrderUpdated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	purchaseOrderID string,
+	oldValues interface{},
+	newValues interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "PURCHASE_ORDER"
+
+	poNumber := getFieldValue(newValues, "PONumber", "po_number")
+	notes := "Purchase order updated"
+	if poNumber != "" {
+		notes = fmt.Sprintf("Purchase order %s updated", poNumber)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "PURCHASE_ORDER_UPDATED",
+		EntityType: &entityType,
+		EntityID:   &purchaseOrderID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogPurchaseOrderDeleted logs when a purchase order is deleted
+func (s *AuditService) LogPurchaseOrderDeleted(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	purchaseOrderID string,
+	purchaseOrderData interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(purchaseOrderData)
+	oldValuesStr := string(oldValuesJSON)
+	entityType := "PURCHASE_ORDER"
+
+	notes := fmt.Sprintf("Purchase order deleted: %s", purchaseOrderID)
+	// Extract po_number from struct or map
+	poNumber := getFieldValue(purchaseOrderData, "PONumber", "po_number")
+	if poNumber != "" {
+		notes = fmt.Sprintf("Purchase order deleted: %s (ID: %s)", poNumber, purchaseOrderID)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "PURCHASE_ORDER_DELETED",
+		EntityType: &entityType,
+		EntityID:   &purchaseOrderID,
+		OldValues:  &oldValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogPurchaseOrderConfirmed logs when a purchase order is confirmed (DRAFT -> CONFIRMED)
+func (s *AuditService) LogPurchaseOrderConfirmed(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	purchaseOrderID string,
+	oldValues map[string]interface{},
+	newValues interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "PURCHASE_ORDER"
+
+	notes := "Purchase order confirmed (DRAFT → CONFIRMED)"
+	poNumber := getFieldValue(newValues, "PONumber", "po_number")
+	if poNumber != "" {
+		notes = fmt.Sprintf("Purchase order %s confirmed (DRAFT → CONFIRMED)", poNumber)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "PURCHASE_ORDER_CONFIRMED",
+		EntityType: &entityType,
+		EntityID:   &purchaseOrderID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogPurchaseOrderCompleted logs when a purchase order is completed (CONFIRMED -> COMPLETED)
+func (s *AuditService) LogPurchaseOrderCompleted(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	purchaseOrderID string,
+	oldValues map[string]interface{},
+	newValues interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "PURCHASE_ORDER"
+
+	notes := "Purchase order completed (CONFIRMED → COMPLETED)"
+	poNumber := getFieldValue(newValues, "PONumber", "po_number")
+	if poNumber != "" {
+		notes = fmt.Sprintf("Purchase order %s completed (CONFIRMED → COMPLETED)", poNumber)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "PURCHASE_ORDER_COMPLETED",
+		EntityType: &entityType,
+		EntityID:   &purchaseOrderID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogPurchaseOrderCancelled logs when a purchase order is cancelled
+func (s *AuditService) LogPurchaseOrderCancelled(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	purchaseOrderID string,
+	oldValues map[string]interface{},
+	newValues interface{},
+	reason string,
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "PURCHASE_ORDER"
+
+	notes := fmt.Sprintf("Purchase order cancelled. Reason: %s", reason)
+	poNumber := getFieldValue(newValues, "PONumber", "po_number")
+	if poNumber != "" {
+		notes = fmt.Sprintf("Purchase order %s cancelled. Reason: %s", poNumber, reason)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "PURCHASE_ORDER_CANCELLED",
+		EntityType: &entityType,
+		EntityID:   &purchaseOrderID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogPurchaseOrderShortClosed logs when a purchase order is short closed (SAP DCI model)
+func (s *AuditService) LogPurchaseOrderShortClosed(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	purchaseOrderID string,
+	oldValues map[string]interface{},
+	newValues interface{},
+	reason string,
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "PURCHASE_ORDER"
+
+	notes := fmt.Sprintf("Purchase order short closed. Reason: %s", reason)
+	poNumber := getFieldValue(newValues, "PONumber", "po_number")
+	if poNumber != "" {
+		notes = fmt.Sprintf("Purchase order %s short closed. Reason: %s", poNumber, reason)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "PURCHASE_ORDER_SHORT_CLOSED",
+		EntityType: &entityType,
+		EntityID:   &purchaseOrderID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogPurchaseOrderOperationFailed logs when a purchase order operation fails
+func (s *AuditService) LogPurchaseOrderOperationFailed(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	action string,
+	purchaseOrderID string,
+	errorMsg string,
+) error {
+	entityType := "PURCHASE_ORDER"
+	notes := fmt.Sprintf("Operation failed: %s", errorMsg)
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     action,
+		EntityType: &entityType,
+		EntityID:   &purchaseOrderID,
+		Status:     StatusFailed,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// ============================================================================
+// GOODS RECEIPT AUDIT LOGGING
+// ============================================================================
+
+// LogGoodsReceiptCreated logs when a new goods receipt is created from PO
+func (s *AuditService) LogGoodsReceiptCreated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	goodsReceiptID string,
+	newValues interface{},
+) error {
+	newValuesJSON, _ := json.Marshal(newValues)
+	newValuesStr := string(newValuesJSON)
+	entityType := "GOODS_RECEIPT"
+
+	grnNumber := getFieldValue(newValues, "GRNNumber", "grn_number")
+	notes := "Goods receipt created (→ PENDING)"
+	if grnNumber != "" {
+		notes = fmt.Sprintf("Goods receipt %s created (→ PENDING)", grnNumber)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "GOODS_RECEIPT_CREATED",
+		EntityType: &entityType,
+		EntityID:   &goodsReceiptID,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogGoodsReceiptReceived logs when goods are received (PENDING → RECEIVED)
+func (s *AuditService) LogGoodsReceiptReceived(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	goodsReceiptID string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "GOODS_RECEIPT"
+
+	grnNumber := getFieldValue(newValues, "GRNNumber", "grn_number")
+	notes := "Goods receipt received (PENDING → RECEIVED)"
+	if grnNumber != "" {
+		notes = fmt.Sprintf("Goods receipt %s received (PENDING → RECEIVED)", grnNumber)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "GOODS_RECEIPT_RECEIVED",
+		EntityType: &entityType,
+		EntityID:   &goodsReceiptID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogGoodsReceiptInspected logs when goods are inspected (RECEIVED → INSPECTED)
+func (s *AuditService) LogGoodsReceiptInspected(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	goodsReceiptID string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "GOODS_RECEIPT"
+
+	grnNumber := getFieldValue(newValues, "GRNNumber", "grn_number")
+	notes := "Goods receipt inspected (RECEIVED → INSPECTED)"
+	if grnNumber != "" {
+		notes = fmt.Sprintf("Goods receipt %s inspected (RECEIVED → INSPECTED)", grnNumber)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "GOODS_RECEIPT_INSPECTED",
+		EntityType: &entityType,
+		EntityID:   &goodsReceiptID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogGoodsReceiptAccepted logs when goods are accepted (INSPECTED → ACCEPTED/PARTIAL)
+func (s *AuditService) LogGoodsReceiptAccepted(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	goodsReceiptID string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "GOODS_RECEIPT"
+
+	newStatus := "ACCEPTED"
+	if status, ok := newValues["status"].(string); ok {
+		newStatus = status
+	}
+	grnNumber := getFieldValue(newValues, "GRNNumber", "grn_number")
+	notes := fmt.Sprintf("Goods receipt accepted (INSPECTED → %s)", newStatus)
+	if grnNumber != "" {
+		notes = fmt.Sprintf("Goods receipt %s accepted (INSPECTED → %s)", grnNumber, newStatus)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "GOODS_RECEIPT_ACCEPTED",
+		EntityType: &entityType,
+		EntityID:   &goodsReceiptID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogGoodsReceiptRejected logs when goods are rejected (INSPECTED → REJECTED)
+func (s *AuditService) LogGoodsReceiptRejected(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	goodsReceiptID string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "GOODS_RECEIPT"
+
+	grnNumber := getFieldValue(newValues, "GRNNumber", "grn_number")
+	notes := "Goods receipt rejected (INSPECTED → REJECTED)"
+	if grnNumber != "" {
+		notes = fmt.Sprintf("Goods receipt %s rejected (INSPECTED → REJECTED)", grnNumber)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "GOODS_RECEIPT_REJECTED",
+		EntityType: &entityType,
+		EntityID:   &goodsReceiptID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogGoodsReceiptDispositionUpdated logs when a rejection disposition is set/updated for a goods receipt item
+func (s *AuditService) LogGoodsReceiptDispositionUpdated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	goodsReceiptID string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "GOODS_RECEIPT_ITEM"
+
+	grnNumber := getFieldValue(newValues, "GRNNumber", "grn_number")
+	disposition := getFieldValue(newValues, "RejectionDisposition", "rejection_disposition")
+	notes := fmt.Sprintf("Rejection disposition set to %s", disposition)
+	if grnNumber != "" {
+		notes = fmt.Sprintf("Rejection disposition for GRN %s item set to %s", grnNumber, disposition)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "GOODS_RECEIPT_DISPOSITION_UPDATED",
+		EntityType: &entityType,
+		EntityID:   &goodsReceiptID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogGoodsReceiptDispositionResolved logs when a rejection disposition is marked as resolved
+func (s *AuditService) LogGoodsReceiptDispositionResolved(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	goodsReceiptID string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "GOODS_RECEIPT_ITEM"
+
+	grnNumber := getFieldValue(newValues, "GRNNumber", "grn_number")
+	disposition := getFieldValue(newValues, "RejectionDisposition", "rejection_disposition")
+	notes := fmt.Sprintf("Rejection disposition %s resolved", disposition)
+	if grnNumber != "" {
+		notes = fmt.Sprintf("Rejection disposition %s for GRN %s resolved", disposition, grnNumber)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "GOODS_RECEIPT_DISPOSITION_RESOLVED",
+		EntityType: &entityType,
+		EntityID:   &goodsReceiptID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
 		IPAddress:  auditCtx.IPAddress,
 		UserAgent:  auditCtx.UserAgent,
 		Notes:      &notes,

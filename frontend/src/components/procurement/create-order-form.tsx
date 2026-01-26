@@ -10,17 +10,24 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useSelector } from "react-redux";
 import {
-  Plus,
-  Trash2,
   Save,
   AlertCircle,
   Building,
   Warehouse,
   Calendar,
   ShoppingCart,
+  AlertTriangle,
+  Wallet,
+  Package,
+  Receipt,
+  Tag,
+  Percent,
+  DollarSign,
 } from "lucide-react";
+import { selectActiveCompany } from "@/store/slices/companySlice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,32 +41,29 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { useCreatePurchaseOrderMutation } from "@/store/services/purchaseOrderApi";
 import { useListSuppliersQuery } from "@/store/services/supplierApi";
 import { useListWarehousesQuery } from "@/store/services/warehouseApi";
-import { useListProductsQuery } from "@/store/services/productApi";
+import {
+  PurchaseOrderItemsManager,
+  type PurchaseOrderItem,
+} from "@/components/procurement/purchase-order-items-manager";
 import type {
   CreatePurchaseOrderRequest,
   CreatePurchaseOrderItemRequest,
 } from "@/types/purchase-order.types";
 import { formatCurrency } from "@/types/purchase-order.types";
-
-interface LineItem {
-  id: string;
-  productId: string;
-  productName: string;
-  productCode: string;
-  productUnit: string;
-  quantity: string;
-  unitPrice: string;
-  discountPct: string;
-  subtotal: number;
-  notes: string;
-  // Price comparison data
-  baseCost: number; // HPP from product
-  supplierPrice: number; // Price from supplier relationship
-}
 
 interface CreateOrderFormProps {
   onSuccess?: (orderId: string) => void;
@@ -68,103 +72,104 @@ interface CreateOrderFormProps {
 
 export function CreateOrderForm({ onSuccess, onCancel }: CreateOrderFormProps) {
   const [createOrder, { isLoading }] = useCreatePurchaseOrderMutation();
+  const activeCompany = useSelector(selectActiveCompany);
 
   // Form state
   const [supplierId, setSupplierId] = useState("");
   const [warehouseId, setWarehouseId] = useState("");
   const [poDate, setPoDate] = useState(new Date().toISOString().split("T")[0]);
   const [expectedDeliveryAt, setExpectedDeliveryAt] = useState("");
+  const [discountAmount, setDiscountAmount] = useState("0");
   const [notes, setNotes] = useState("");
-  const [lineItems, setLineItems] = useState<LineItem[]>([]);
+  const [lineItems, setLineItems] = useState<PurchaseOrderItem[]>([]);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Discount mode: 'nominal' or 'percentage'
+  const [discountMode, setDiscountMode] = useState<'nominal' | 'percentage'>('nominal');
+  const [discountPercentage, setDiscountPercentage] = useState<string>("0");
+
+  // Supplier change confirmation state
+  const [showSupplierChangeDialog, setShowSupplierChangeDialog] = useState(false);
+  const [pendingSupplierId, setPendingSupplierId] = useState<string>("");
 
   // Fetch suppliers and warehouses for dropdowns
   const { data: suppliersData } = useListSuppliersQuery({ isActive: true, pageSize: 100 });
   const { data: warehousesData } = useListWarehousesQuery({ isActive: true, pageSize: 100 });
 
-  // Fetch products filtered by selected supplier (skip if no supplier selected)
-  const { data: productsData, isFetching: isLoadingProducts } = useListProductsQuery(
-    { isActive: true, supplierId: supplierId, pageSize: 100 },
-    { skip: !supplierId }
-  );
-
-  // Clear line items when supplier changes
+  // Handle supplier change with confirmation if items exist
   const handleSupplierChange = (newSupplierId: string) => {
-    setSupplierId(newSupplierId);
-    // Clear line items since products are supplier-specific
-    if (lineItems.length > 0) {
-      setLineItems([]);
+    // If supplier is being changed and there are items, show confirmation
+    if (supplierId && lineItems.length > 0 && newSupplierId !== supplierId) {
+      setPendingSupplierId(newSupplierId);
+      setShowSupplierChangeDialog(true);
+    } else {
+      // No items or same supplier, just update
+      setSupplierId(newSupplierId);
     }
   };
 
-  // Calculate totals
+  // Confirm supplier change and clear items
+  const handleConfirmSupplierChange = () => {
+    setSupplierId(pendingSupplierId);
+    setLineItems([]); // Clear all items since products are supplier-specific
+    setShowSupplierChangeDialog(false);
+    setPendingSupplierId("");
+  };
+
+  // Cancel supplier change
+  const handleCancelSupplierChange = () => {
+    setShowSupplierChangeDialog(false);
+    setPendingSupplierId("");
+  };
+
+  // Handle discount preset selection
+  const handleDiscountPreset = (percentage: number) => {
+    setDiscountMode('percentage');
+    setDiscountPercentage(percentage.toString());
+    const itemsSubtotal = lineItems.reduce((sum, item) => sum + item.subtotal, 0);
+    const discountValue = (itemsSubtotal * percentage) / 100;
+    setDiscountAmount(discountValue.toFixed(2));
+  };
+
+  // Toggle discount mode
+  const handleToggleDiscountMode = () => {
+    if (discountMode === 'nominal') {
+      // Switch to percentage: calculate percentage from current nominal
+      const itemsSubtotal = lineItems.reduce((sum, item) => sum + item.subtotal, 0);
+      const currentDiscount = parseFloat(discountAmount) || 0;
+      const percentage = itemsSubtotal > 0 ? (currentDiscount / itemsSubtotal) * 100 : 0;
+      setDiscountPercentage(percentage.toFixed(2));
+      setDiscountMode('percentage');
+    } else {
+      // Switch to nominal: keep current discount value
+      setDiscountMode('nominal');
+    }
+  };
+
+  // Handle percentage input change
+  const handleDiscountPercentageChange = (value: string) => {
+    setDiscountPercentage(value);
+    const itemsSubtotal = lineItems.reduce((sum, item) => sum + item.subtotal, 0);
+    const percentage = parseFloat(value) || 0;
+    const discountValue = (itemsSubtotal * percentage) / 100;
+    setDiscountAmount(discountValue.toFixed(2));
+  };
+
+  // Calculate totals with discount and tax
   const subtotal = lineItems.reduce((sum, item) => sum + item.subtotal, 0);
-  const totalAmount = subtotal; // Can add tax/discount later
+  const discount = parseFloat(discountAmount) || 0;
+  const afterDiscount = subtotal - discount;
 
-  const addLineItem = () => {
-    const newItem: LineItem = {
-      id: `item-${Date.now()}`,
-      productId: "",
-      productName: "",
-      productCode: "",
-      productUnit: "",
-      quantity: "1",
-      unitPrice: "0",
-      discountPct: "0",
-      subtotal: 0,
-      notes: "",
-      baseCost: 0,
-      supplierPrice: 0,
-    };
-    setLineItems([...lineItems, newItem]);
-  };
-
-  const removeLineItem = (id: string) => {
-    setLineItems(lineItems.filter((item) => item.id !== id));
-  };
-
-  const updateLineItem = (id: string, field: keyof LineItem, value: string) => {
-    setLineItems((prev) =>
-      prev.map((item) => {
-        if (item.id !== id) return item;
-
-        const updated = { ...item, [field]: value };
-
-        // If product changed, update product info
-        if (field === "productId" && productsData?.data) {
-          const product = productsData.data.find((p) => p.id === value);
-          if (product) {
-            updated.productName = product.name;
-            updated.productCode = product.code;
-            updated.productUnit = product.baseUnit;
-
-            // Store base cost (HPP) for comparison
-            updated.baseCost = parseFloat(product.baseCost) || 0;
-
-            // Find supplier-specific price, fallback to base cost
-            const supplierInfo = product.suppliers?.find(
-              (s) => s.supplierId === supplierId
-            );
-            const supplierPriceValue = supplierInfo?.supplierPrice
-              ? parseFloat(supplierInfo.supplierPrice)
-              : 0;
-            updated.supplierPrice = supplierPriceValue;
-            updated.unitPrice = supplierInfo?.supplierPrice || product.baseCost;
-          }
-        }
-
-        // Recalculate subtotal
-        const qty = parseFloat(updated.quantity) || 0;
-        const price = parseFloat(updated.unitPrice) || 0;
-        const discPct = parseFloat(updated.discountPct) || 0;
-        const discAmount = (qty * price * discPct) / 100;
-        updated.subtotal = qty * price - discAmount;
-
-        return updated;
-      })
-    );
-  };
+  // Tax calculation based on company PKP status
+  // If company is not PKP, tax rate should be 0% regardless of ppnRate value
+  // Tax is calculated after discount (DPP = subtotal - discount)
+  let taxRate = 0;
+  if (activeCompany?.isPKP) {
+    taxRate = activeCompany.ppnRate ? activeCompany.ppnRate / 100 : 0.11;
+  }
+  const taxAmount = afterDiscount * taxRate;
+  const totalAmount = afterDiscount + taxAmount;
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -226,6 +231,7 @@ export function CreateOrderForm({ onSuccess, onCancel }: CreateOrderFormProps) {
         warehouseId,
         poDate,
         expectedDeliveryAt: expectedDeliveryAt || undefined,
+        discountAmount: discountAmount || undefined,
         notes: notes || undefined,
         items,
       };
@@ -252,21 +258,6 @@ export function CreateOrderForm({ onSuccess, onCancel }: CreateOrderFormProps) {
 
   const suppliers = suppliersData?.data || [];
   const warehouses = warehousesData?.data || [];
-  const products = productsData?.data || [];
-
-  // Helper function to calculate and format price difference
-  const getPriceDifference = (currentPrice: number, baseCost: number) => {
-    if (baseCost === 0) return null;
-    const diff = currentPrice - baseCost;
-    const pct = (diff / baseCost) * 100;
-    return {
-      diff,
-      pct,
-      isHigher: diff > 0,
-      isLower: diff < 0,
-      isSame: diff === 0,
-    };
-  };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -275,7 +266,7 @@ export function CreateOrderForm({ onSuccess, onCancel }: CreateOrderFormProps) {
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center gap-2 text-lg">
             <ShoppingCart className="h-5 w-5" />
-            Informasi Purchase Order
+            Informasi Pesanan Pembelian
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -387,19 +378,7 @@ export function CreateOrderForm({ onSuccess, onCancel }: CreateOrderFormProps) {
       {/* Line Items */}
       <Card className="border-2">
         <CardHeader className="pb-4">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg">Item Produk</CardTitle>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={addLineItem}
-              disabled={!supplierId || isLoadingProducts}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Tambah Item
-            </Button>
-          </div>
+          <CardTitle className="text-lg">Item Produk</CardTitle>
         </CardHeader>
         <CardContent>
           {errors.items && (
@@ -409,243 +388,212 @@ export function CreateOrderForm({ onSuccess, onCancel }: CreateOrderFormProps) {
             </p>
           )}
 
+          <PurchaseOrderItemsManager
+            items={lineItems}
+            onChange={setLineItems}
+            supplierId={supplierId}
+            disabled={isLoading}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Financial Summary Card */}
+      <Card className="border-2">
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Wallet className="h-5 w-5" />
+            Ringkasan Keuangan
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
           {lineItems.length === 0 ? (
+            /* Empty State */
             <div className="text-center py-8 text-muted-foreground">
-              <ShoppingCart className="mx-auto h-12 w-12 mb-4 opacity-50" />
-              {!supplierId ? (
-                <>
-                  <p>Pilih supplier terlebih dahulu</p>
-                  <p className="text-sm">Produk akan ditampilkan berdasarkan supplier yang dipilih</p>
-                </>
-              ) : isLoadingProducts ? (
-                <>
-                  <p>Memuat produk...</p>
-                  <p className="text-sm">Sedang mengambil daftar produk dari supplier</p>
-                </>
-              ) : products.length === 0 ? (
-                <>
-                  <p>Tidak ada produk untuk supplier ini</p>
-                  <p className="text-sm">Hubungkan produk dengan supplier terlebih dahulu di Master Produk</p>
-                </>
-              ) : (
-                <>
-                  <p>Belum ada item produk</p>
-                  <p className="text-sm">Klik "Tambah Item" untuk menambahkan produk</p>
-                </>
-              )}
+              <Wallet className="h-12 w-12 mx-auto mb-3 opacity-20" />
+              <p className="text-sm font-medium">Belum ada item ditambahkan</p>
+              <p className="text-xs mt-1">
+                Tambahkan produk terlebih dahulu untuk melihat ringkasan
+              </p>
             </div>
           ) : (
-            <div className="space-y-4">
-              {lineItems.map((item, index) => (
-                <div
-                  key={item.id}
-                  className="grid gap-4 p-4 border rounded-lg bg-muted/30"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-muted-foreground">
-                      Item #{index + 1}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeLineItem(item.id)}
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+            <>
+              {/* Subtotal with Item Count */}
+              <div className="flex justify-between items-center text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <Package className="h-4 w-4" />
+                  <span className="text-sm">
+                    Subtotal ({lineItems.length} item)
+                  </span>
+                </div>
+                <span className="font-medium text-foreground">
+                  {formatCurrency(subtotal)}
+                </span>
+              </div>
+
+              {/* Discount */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center text-destructive">
+                  <div className="flex items-center gap-2">
+                    <Tag className="h-4 w-4" />
+                    <span className="text-sm">Diskon</span>
                   </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
-                    {/* Product */}
-                    <div className="space-y-2 sm:col-span-2">
-                      <Label>
-                        Produk <span className="text-destructive">*</span>
-                      </Label>
-                      <Select
-                        value={item.productId}
-                        onValueChange={(value) =>
-                          updateLineItem(item.id, "productId", value)
-                        }
-                        disabled={!supplierId || isLoadingProducts}
+                  <div className="flex flex-col items-end gap-1">
+                    <div className="flex items-center gap-2">
+                      {/* Toggle Mode Button */}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleToggleDiscountMode}
+                        className="h-7 px-2"
                       >
-                        <SelectTrigger
-                          className={`w-full ${
-                            errors[`item_${index}_product`]
-                              ? "border-destructive"
-                              : ""
-                          }`}
-                        >
-                          <SelectValue
-                            placeholder={
-                              !supplierId
-                                ? "Pilih supplier terlebih dahulu"
-                                : isLoadingProducts
-                                  ? "Memuat produk..."
-                                  : products.length === 0
-                                    ? "Tidak ada produk untuk supplier ini"
-                                    : "Pilih produk..."
-                            }
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {products.map((product) => (
-                            <SelectItem key={product.id} value={product.id}>
-                              {product.code} - {product.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {item.productUnit && (
-                        <p className="text-xs text-muted-foreground">
-                          Satuan: {item.productUnit}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Quantity */}
-                    <div className="space-y-2">
-                      <Label>
-                        Kuantitas <span className="text-destructive">*</span>
-                      </Label>
-                      <Input
-                        type="number"
-                        step="0.001"
-                        min="0"
-                        value={item.quantity}
-                        onChange={(e) =>
-                          updateLineItem(item.id, "quantity", e.target.value)
-                        }
-                        className={
-                          errors[`item_${index}_qty`] ? "border-destructive" : ""
-                        }
-                      />
-                    </div>
-
-                    {/* Unit Price */}
-                    <div className="space-y-2">
-                      <Label>
-                        Harga Satuan <span className="text-destructive">*</span>
-                      </Label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                          Rp
+                        {discountMode === 'nominal' ? (
+                          <Percent className="h-3 w-3" />
+                        ) : (
+                          <DollarSign className="h-3 w-3" />
+                        )}
+                      </Button>
+                      {/* Input Field */}
+                      <div className="relative w-32">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                          {discountMode === 'nominal' ? 'Rp' : '%'}
                         </span>
                         <Input
                           type="number"
                           step="0.01"
                           min="0"
-                          value={item.unitPrice}
-                          onChange={(e) =>
-                            updateLineItem(item.id, "unitPrice", e.target.value)
-                          }
-                          className={`pl-10 ${
-                            errors[`item_${index}_price`]
-                              ? "border-destructive"
-                              : ""
-                          }`}
+                          max={discountMode === 'percentage' ? 100 : undefined}
+                          value={discountMode === 'nominal' ? discountAmount : discountPercentage}
+                          onChange={(e) => {
+                            if (discountMode === 'nominal') {
+                              setDiscountAmount(e.target.value);
+                            } else {
+                              handleDiscountPercentageChange(e.target.value);
+                            }
+                          }}
+                          className="pl-8 text-right h-9 transition-all duration-200"
+                          placeholder="0"
                         />
                       </div>
-                      {/* Price Comparison Info */}
-                      {item.productId && item.baseCost > 0 && (
-                        <div className="text-xs space-y-0.5 pt-1">
-                          {item.supplierPrice > 0 && (
-                            <p className="text-muted-foreground">
-                              Harga Supplier: {formatCurrency(item.supplierPrice)}
-                            </p>
-                          )}
-                          <p className="text-muted-foreground">
-                            HPP: {formatCurrency(item.baseCost)}
-                          </p>
-                          {(() => {
-                            const currentPrice = parseFloat(item.unitPrice) || 0;
-                            const priceInfo = getPriceDifference(currentPrice, item.baseCost);
-                            if (!priceInfo) return null;
-
-                            if (priceInfo.isSame) {
-                              return (
-                                <p className="text-blue-600 dark:text-blue-400 font-medium">
-                                  ≈ Sama dengan HPP
-                                </p>
-                              );
-                            } else if (priceInfo.isLower) {
-                              return (
-                                <p className="text-green-600 dark:text-green-400 font-medium">
-                                  ✓ Hemat {Math.abs(priceInfo.pct).toFixed(1)}% dari HPP
-                                </p>
-                              );
-                            } else {
-                              return (
-                                <p className="text-amber-600 dark:text-amber-400 font-medium">
-                                  ⚠ Lebih mahal {priceInfo.pct.toFixed(1)}% dari HPP
-                                </p>
-                              );
-                            }
-                          })()}
-                        </div>
-                      )}
                     </div>
-
-                    {/* Discount */}
-                    <div className="space-y-2">
-                      <Label>Diskon (%)</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="100"
-                        value={item.discountPct}
-                        onChange={(e) =>
-                          updateLineItem(item.id, "discountPct", e.target.value)
-                        }
-                      />
-                    </div>
-
-                    {/* Subtotal */}
-                    <div className="space-y-2">
-                      <Label>Subtotal</Label>
-                      <div className="h-10 flex items-center px-3 bg-muted rounded-md font-medium">
-                        {formatCurrency(item.subtotal)}
+                    {/* Discount Breakdown */}
+                    {parseFloat(discountAmount) > 0 && (
+                      <div className="text-xs text-muted-foreground transition-all duration-300">
+                        {discountMode === 'nominal' ? (
+                          // Show percentage when in nominal mode
+                          (() => {
+                            const percentage = subtotal > 0 ? (parseFloat(discountAmount) / subtotal) * 100 : 0;
+                            return `(${percentage.toFixed(2)}% dari subtotal)`;
+                          })()
+                        ) : (
+                          // Show nominal when in percentage mode
+                          `= ${formatCurrency(discountAmount)}`
+                        )}
                       </div>
-                    </div>
-
-                    {/* Notes */}
-                    <div className="space-y-2 sm:col-span-2">
-                      <Label>Catatan Item</Label>
-                      <Input
-                        value={item.notes}
-                        onChange={(e) =>
-                          updateLineItem(item.id, "notes", e.target.value)
-                        }
-                        placeholder="Catatan untuk item ini..."
-                      />
-                    </div>
+                    )}
                   </div>
                 </div>
-              ))}
-            </div>
+                {/* Preset Buttons - Show only in percentage mode */}
+                {discountMode === 'percentage' && (
+                  <div className="flex gap-1 justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDiscountPreset(5)}
+                      className="h-6 px-2 text-xs"
+                    >
+                      5%
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDiscountPreset(10)}
+                      className="h-6 px-2 text-xs"
+                    >
+                      10%
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDiscountPreset(15)}
+                      className="h-6 px-2 text-xs"
+                    >
+                      15%
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {/* Tax (PPN) with breakdown */}
+              <div className="flex justify-between items-center text-amber-600 dark:text-amber-500">
+                <div className="flex items-center gap-2">
+                  <Receipt className="h-4 w-4" />
+                  <span className="text-sm">
+                    PPN ({activeCompany?.isPKP ? (activeCompany?.ppnRate ?? 11) : 0}%)
+                  </span>
+                </div>
+                <div className="text-right">
+                  <div className="font-medium text-foreground transition-all duration-300">
+                    {formatCurrency(taxAmount)}
+                  </div>
+                  <div className="text-xs text-muted-foreground transition-all duration-300">
+                    dari {formatCurrency(afterDiscount)}
+                  </div>
+                  {!activeCompany?.isPKP && (
+                    <p className="text-xs text-muted-foreground">
+                      Perusahaan non-PKP
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Total with Highlight */}
+              <div className="bg-primary/10 -mx-6 -mb-6 px-6 py-4 rounded-b-lg">
+                <div className="flex justify-between items-center">
+                  <span className="text-base font-bold">Total Pesanan</span>
+                  <span className="text-2xl font-bold text-primary">
+                    {formatCurrency(totalAmount)}
+                  </span>
+                </div>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
 
-      {/* Summary */}
-      {lineItems.length > 0 && (
-        <Card className="border-2 bg-muted/30">
-          <CardContent className="pt-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  {lineItems.length} item produk
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm text-muted-foreground">Total</p>
-                <p className="text-2xl font-bold">{formatCurrency(totalAmount)}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Supplier Change Confirmation Dialog */}
+      <AlertDialog open={showSupplierChangeDialog} onOpenChange={setShowSupplierChangeDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Konfirmasi Ganti Supplier
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Anda sudah menambahkan {lineItems.length} item produk. Jika mengganti supplier,
+              semua item yang sudah ditambahkan akan dihapus karena produk bersifat spesifik per supplier.
+              <br /><br />
+              Apakah Anda yakin ingin mengganti supplier?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelSupplierChange}>
+              Batal
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmSupplierChange}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              Ya, Ganti Supplier
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Form Actions */}
       <div className="flex justify-end gap-3 pt-2">

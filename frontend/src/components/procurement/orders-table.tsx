@@ -342,18 +342,16 @@ export function OrdersTable({
                           </DropdownMenuItem>
                         )}
 
-                        {/* Cancel - Only for DRAFT or CONFIRMED */}
-                        {canCancel &&
-                          (order.status === "DRAFT" ||
-                            order.status === "CONFIRMED") && (
-                            <DropdownMenuItem
-                              onClick={() => handleCancelClick(order)}
-                              className="cursor-pointer text-red-600"
-                            >
-                              <XCircle className="mr-2 h-4 w-4" />
-                              Batalkan PO
-                            </DropdownMenuItem>
-                          )}
+                        {/* Cancel - Only for DRAFT (CONFIRMED requires detail page to check active GRN) */}
+                        {canCancel && order.status === "DRAFT" && (
+                          <DropdownMenuItem
+                            onClick={() => handleCancelClick(order)}
+                            className="cursor-pointer text-red-600"
+                          >
+                            <XCircle className="mr-2 h-4 w-4" />
+                            Batalkan PO
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>

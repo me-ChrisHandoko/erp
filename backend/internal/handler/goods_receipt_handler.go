@@ -57,8 +57,12 @@ func (h *GoodsReceiptHandler) CreateGoodsReceipt(c *gin.Context) {
 		return
 	}
 
+	// Get IP and User-Agent for audit
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	// Create goods receipt
-	goodsReceipt, err := h.goodsReceiptService.CreateGoodsReceipt(c.Request.Context(), tenantID.(string), companyID.(string), userIDStr, &req)
+	goodsReceipt, err := h.goodsReceiptService.CreateGoodsReceipt(c.Request.Context(), tenantID.(string), companyID.(string), userIDStr, &req, ipAddress, userAgent)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -298,8 +302,12 @@ func (h *GoodsReceiptHandler) ReceiveGoods(c *gin.Context) {
 	var req dto.ReceiveGoodsRequest
 	c.ShouldBindJSON(&req)
 
+	// Get IP and User-Agent for audit
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	// Receive goods
-	goodsReceipt, err := h.goodsReceiptService.ReceiveGoods(c.Request.Context(), tenantID.(string), companyID.(string), goodsReceiptID, userIDStr, &req)
+	goodsReceipt, err := h.goodsReceiptService.ReceiveGoods(c.Request.Context(), tenantID.(string), companyID.(string), goodsReceiptID, userIDStr, &req, ipAddress, userAgent)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -353,8 +361,12 @@ func (h *GoodsReceiptHandler) InspectGoods(c *gin.Context) {
 	var req dto.InspectGoodsRequest
 	c.ShouldBindJSON(&req)
 
+	// Get IP and User-Agent for audit
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	// Inspect goods
-	goodsReceipt, err := h.goodsReceiptService.InspectGoods(c.Request.Context(), tenantID.(string), companyID.(string), goodsReceiptID, userIDStr, &req)
+	goodsReceipt, err := h.goodsReceiptService.InspectGoods(c.Request.Context(), tenantID.(string), companyID.(string), goodsReceiptID, userIDStr, &req, ipAddress, userAgent)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -408,8 +420,12 @@ func (h *GoodsReceiptHandler) AcceptGoods(c *gin.Context) {
 	var req dto.AcceptGoodsRequest
 	c.ShouldBindJSON(&req)
 
+	// Get IP and User-Agent for audit
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	// Accept goods
-	goodsReceipt, err := h.goodsReceiptService.AcceptGoods(c.Request.Context(), tenantID.(string), companyID.(string), goodsReceiptID, userIDStr, &req)
+	goodsReceipt, err := h.goodsReceiptService.AcceptGoods(c.Request.Context(), tenantID.(string), companyID.(string), goodsReceiptID, userIDStr, &req, ipAddress, userAgent)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -466,8 +482,12 @@ func (h *GoodsReceiptHandler) RejectGoods(c *gin.Context) {
 		return
 	}
 
+	// Get IP and User-Agent for audit
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	// Reject goods
-	goodsReceipt, err := h.goodsReceiptService.RejectGoods(c.Request.Context(), tenantID.(string), companyID.(string), goodsReceiptID, userIDStr, &req)
+	goodsReceipt, err := h.goodsReceiptService.RejectGoods(c.Request.Context(), tenantID.(string), companyID.(string), goodsReceiptID, userIDStr, &req, ipAddress, userAgent)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			c.JSON(appErr.StatusCode, appErr)
@@ -484,6 +504,146 @@ func (h *GoodsReceiptHandler) RejectGoods(c *gin.Context) {
 		"success": true,
 		"data":    response,
 		"message": "Goods rejected successfully",
+	})
+}
+
+// ============================================================================
+// REJECTION DISPOSITION MANAGEMENT (Odoo+M3 Model)
+// ============================================================================
+
+// UpdateRejectionDisposition handles PUT /api/v1/goods-receipts/:id/items/:itemId/disposition
+func (h *GoodsReceiptHandler) UpdateRejectionDisposition(c *gin.Context) {
+	// Get tenant ID from context
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
+	// Get company ID from context
+	companyID, exists := c.Get("company_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Company context not found. Please set X-Company-ID header."))
+		return
+	}
+
+	// Get user ID from JWT middleware
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
+	// Get goods receipt ID and item ID from path
+	goodsReceiptID := c.Param("id")
+	if goodsReceiptID == "" {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Goods Receipt ID is required"))
+		return
+	}
+
+	itemID := c.Param("itemId")
+	if itemID == "" {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Item ID is required"))
+		return
+	}
+
+	// Parse request body
+	var req dto.UpdateRejectionDispositionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.handleValidationError(c, err)
+		return
+	}
+
+	// Get IP and User-Agent for audit
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
+	// Update rejection disposition
+	goodsReceipt, err := h.goodsReceiptService.UpdateRejectionDisposition(c.Request.Context(), tenantID.(string), companyID.(string), goodsReceiptID, itemID, userIDStr, &req, ipAddress, userAgent)
+	if err != nil {
+		if appErr, ok := err.(*pkgerrors.AppError); ok {
+			c.JSON(appErr.StatusCode, appErr)
+			return
+		}
+		c.JSON(http.StatusInternalServerError, pkgerrors.NewInternalError(err))
+		return
+	}
+
+	// Map to response DTO
+	response := h.goodsReceiptService.MapToResponse(goodsReceipt, true)
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    response,
+		"message": "Rejection disposition updated successfully",
+	})
+}
+
+// ResolveDisposition handles POST /api/v1/goods-receipts/:id/items/:itemId/resolve-disposition
+func (h *GoodsReceiptHandler) ResolveDisposition(c *gin.Context) {
+	// Get tenant ID from context
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Tenant context not found."))
+		return
+	}
+
+	// Get company ID from context
+	companyID, exists := c.Get("company_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Company context not found. Please set X-Company-ID header."))
+		return
+	}
+
+	// Get user ID from JWT middleware
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
+	// Get goods receipt ID and item ID from path
+	goodsReceiptID := c.Param("id")
+	if goodsReceiptID == "" {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Goods Receipt ID is required"))
+		return
+	}
+
+	itemID := c.Param("itemId")
+	if itemID == "" {
+		c.JSON(http.StatusBadRequest, pkgerrors.NewBadRequestError("Item ID is required"))
+		return
+	}
+
+	// Parse request body (optional notes)
+	var req dto.ResolveDispositionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.handleValidationError(c, err)
+		return
+	}
+
+	// Get IP and User-Agent for audit
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
+	// Resolve disposition
+	goodsReceipt, err := h.goodsReceiptService.ResolveDisposition(c.Request.Context(), tenantID.(string), companyID.(string), goodsReceiptID, itemID, userIDStr, &req, ipAddress, userAgent)
+	if err != nil {
+		if appErr, ok := err.(*pkgerrors.AppError); ok {
+			c.JSON(appErr.StatusCode, appErr)
+			return
+		}
+		c.JSON(http.StatusInternalServerError, pkgerrors.NewInternalError(err))
+		return
+	}
+
+	// Map to response DTO
+	response := h.goodsReceiptService.MapToResponse(goodsReceipt, true)
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    response,
+		"message": "Rejection disposition resolved successfully",
 	})
 }
 

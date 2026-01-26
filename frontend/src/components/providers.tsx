@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { Provider } from "react-redux";
 import { useDispatch, useSelector } from "react-redux";
 import { store, RootState } from "@/store";
-import { setCredentials } from "@/store/slices/authSlice";
+import { setCredentials, logout } from "@/store/slices/authSlice";
 import { useGetCurrentUserQuery } from "@/store/services/authApi";
 import { jwtDecode } from "jwt-decode";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
@@ -308,7 +308,33 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
 
             setTokenRestored(true); // Trigger getCurrentUser query
           } else {
-            console.log("[Auth] No valid refresh token cookie found");
+            // Handle specific error cases
+            let errorMessage = "Session expired";
+            try {
+              const errorData = await response.json();
+              const errorCode = errorData?.error?.code;
+              const errorMsg = errorData?.error?.message || "";
+
+              console.log("[Auth] Refresh token error:", errorCode, errorMsg);
+
+              // Check if token was revoked (user logged in from another session)
+              if (errorCode === "AUTHENTICATION_ERROR" && errorMsg.includes("revoked")) {
+                errorMessage = "Sesi Anda telah berakhir karena login dari perangkat lain. Silakan login kembali.";
+                console.log("[Auth] Token was revoked - clearing stale auth state");
+              } else if (response.status === 401) {
+                errorMessage = "Sesi Anda telah berakhir. Silakan login kembali.";
+              }
+            } catch {
+              console.log("[Auth] Could not parse error response");
+            }
+
+            // Clear stale localStorage token to prevent loops
+            localStorage.removeItem("accessToken");
+
+            // Dispatch logout with reason so user sees message on login page
+            dispatch(logout({ reason: errorMessage }));
+
+            console.log("[Auth] Cleared stale auth state, user needs to re-login");
           }
         } catch (error) {
           console.log("[Auth] Failed to restore from refresh token:", error);

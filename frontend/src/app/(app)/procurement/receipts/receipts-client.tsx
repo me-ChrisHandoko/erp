@@ -12,7 +12,9 @@
 
 import { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
-import { Search, PackageCheck, Calendar } from "lucide-react";
+import { Search, PackageCheck } from "lucide-react";
+import { format } from "date-fns";
+import { type DateRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -25,10 +27,16 @@ import {
 } from "@/components/ui/select";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { ErrorDisplay } from "@/components/shared/error-display";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { useListGoodsReceiptsQuery } from "@/store/services/goodsReceiptApi";
+import { useListSuppliersQuery } from "@/store/services/supplierApi";
+import { useListWarehousesQuery } from "@/store/services/warehouseApi";
 import { GoodsReceiptsTable } from "@/components/goods-receipts/goods-receipts-table";
+import { Badge } from "@/components/ui/badge";
 import {
   GOODS_RECEIPT_STATUS_OPTIONS,
+  getGoodsReceiptStatusColor,
   type GoodsReceiptFilters,
   type GoodsReceiptListResponse,
   type GoodsReceiptStatus,
@@ -45,10 +53,13 @@ export function ReceiptsClient({ initialData }: ReceiptsClientProps) {
   const [statusFilter, setStatusFilter] = useState<
     GoodsReceiptStatus | undefined
   >(undefined);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+  const [supplierFilter, setSupplierFilter] = useState<string | undefined>(undefined);
+  const [warehouseFilter, setWarehouseFilter] = useState<string | undefined>(undefined);
   const [filters, setFilters] = useState<GoodsReceiptFilters>({
     page: 1,
     pageSize: 20,
-    sortBy: "createdAt",
+    sortBy: "grnDate", // Changed from createdAt to grnDate for better UX
     sortOrder: "desc",
   });
 
@@ -56,6 +67,38 @@ export function ReceiptsClient({ initialData }: ReceiptsClientProps) {
   const activeCompanyId = useSelector(
     (state: RootState) => state.company.activeCompany?.id
   );
+
+  // Fetch suppliers for filter dropdown
+  const { data: suppliersData } = useListSuppliersQuery(
+    { pageSize: 100, sortBy: "name", sortOrder: "asc" },
+    { skip: !activeCompanyId }
+  );
+
+  // Fetch warehouses for filter dropdown
+  const { data: warehousesData } = useListWarehousesQuery(
+    { pageSize: 100, sortBy: "name", sortOrder: "asc" },
+    { skip: !activeCompanyId }
+  );
+
+  // Transform suppliers to combobox options
+  const supplierOptions: ComboboxOption[] = [
+    { value: "", label: "Semua Supplier" },
+    ...(suppliersData?.data?.map((supplier) => ({
+      value: supplier.id,
+      label: supplier.name,
+      searchLabel: `${supplier.code} ${supplier.name}`,
+    })) || []),
+  ];
+
+  // Transform warehouses to combobox options
+  const warehouseOptions: ComboboxOption[] = [
+    { value: "", label: "Semua Gudang" },
+    ...(warehousesData?.data?.map((warehouse) => ({
+      value: warehouse.id,
+      label: warehouse.name,
+      searchLabel: `${warehouse.code} ${warehouse.name}`,
+    })) || []),
+  ];
 
   // Debounce search input (wait 500ms after user stops typing)
   useEffect(() => {
@@ -72,6 +115,10 @@ export function ReceiptsClient({ initialData }: ReceiptsClientProps) {
     ...filters,
     search: debouncedSearch || undefined,
     status: statusFilter,
+    dateFrom: dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
+    dateTo: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined,
+    supplierId: supplierFilter || undefined,
+    warehouseId: warehouseFilter || undefined,
   };
 
   const {
@@ -130,6 +177,21 @@ export function ReceiptsClient({ initialData }: ReceiptsClientProps) {
     setFilters((prev) => ({ ...prev, page: 1 }));
   };
 
+  const handleDateRangeChange = (range: DateRange | undefined) => {
+    setDateRange(range);
+    setFilters((prev) => ({ ...prev, page: 1 }));
+  };
+
+  const handleSupplierFilterChange = (value: string) => {
+    setSupplierFilter(value || undefined);
+    setFilters((prev) => ({ ...prev, page: 1 }));
+  };
+
+  const handleWarehouseFilterChange = (value: string) => {
+    setWarehouseFilter(value || undefined);
+    setFilters((prev) => ({ ...prev, page: 1 }));
+  };
+
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
       {/* Page title and actions */}
@@ -144,13 +206,48 @@ export function ReceiptsClient({ initialData }: ReceiptsClientProps) {
         </div>
       </div>
 
+      {/* Status Filter Chips */}
+      <div className="flex flex-wrap gap-2">
+        <Badge
+          variant={!statusFilter ? "default" : "outline"}
+          className={`cursor-pointer transition-colors ${
+            !statusFilter
+              ? "bg-primary hover:bg-primary/90"
+              : "hover:bg-muted"
+          }`}
+          onClick={() => handleStatusFilterChange(undefined)}
+        >
+          Semua
+        </Badge>
+        {GOODS_RECEIPT_STATUS_OPTIONS.map((option) => (
+          <Badge
+            key={option.value}
+            variant={statusFilter === option.value ? "default" : "outline"}
+            className={`cursor-pointer transition-colors ${
+              statusFilter === option.value
+                ? getGoodsReceiptStatusColor(option.value as GoodsReceiptStatus)
+                : "hover:bg-muted"
+            }`}
+            onClick={() =>
+              handleStatusFilterChange(
+                statusFilter === option.value
+                  ? undefined
+                  : (option.value as GoodsReceiptStatus)
+              )
+            }
+          >
+            {option.label}
+          </Badge>
+        ))}
+      </div>
+
       {/* Goods Receipts table with search and filters */}
       <Card className="shadow-sm">
         <CardContent>
           {/* Search and Filters Row */}
-          <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
             {/* Search */}
-            <div className="relative flex-1">
+            <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Cari nomor GRN atau nomor PO..."
@@ -159,6 +256,36 @@ export function ReceiptsClient({ initialData }: ReceiptsClientProps) {
                 className="pl-9"
               />
             </div>
+
+            {/* Date Range Filter */}
+            <DateRangePicker
+              value={dateRange}
+              onChange={handleDateRangeChange}
+              placeholder="Pilih rentang tanggal"
+              className="w-full sm:w-auto"
+            />
+
+            {/* Supplier Filter */}
+            <Combobox
+              options={supplierOptions}
+              value={supplierFilter || ""}
+              onValueChange={handleSupplierFilterChange}
+              placeholder="Semua Supplier"
+              searchPlaceholder="Cari supplier..."
+              emptyMessage="Supplier tidak ditemukan"
+              className="w-full sm:w-[180px]"
+            />
+
+            {/* Warehouse Filter */}
+            <Combobox
+              options={warehouseOptions}
+              value={warehouseFilter || ""}
+              onValueChange={handleWarehouseFilterChange}
+              placeholder="Semua Gudang"
+              searchPlaceholder="Cari gudang..."
+              emptyMessage="Gudang tidak ditemukan"
+              className="w-full sm:w-[180px]"
+            />
 
             {/* Status Filter */}
             <Select
@@ -183,7 +310,7 @@ export function ReceiptsClient({ initialData }: ReceiptsClientProps) {
             </Select>
 
             {/* Clear Filters Button */}
-            {(statusFilter || search) && (
+            {(statusFilter || search || dateRange || supplierFilter || warehouseFilter) && (
               <Button
                 variant="outline"
                 size="sm"
@@ -191,6 +318,9 @@ export function ReceiptsClient({ initialData }: ReceiptsClientProps) {
                   setSearch("");
                   setDebouncedSearch("");
                   setStatusFilter(undefined);
+                  setDateRange(undefined);
+                  setSupplierFilter(undefined);
+                  setWarehouseFilter(undefined);
                   setFilters((prev) => ({ ...prev, page: 1 }));
                 }}
                 className="w-full sm:w-auto"

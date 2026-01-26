@@ -162,3 +162,35 @@ type WarehouseStockStatusListResponse struct {
 	Success    bool                           `json:"success"`
 	Warehouses []WarehouseStockStatusResponse `json:"warehouses"`
 }
+
+// ============================================================================
+// INITIAL STOCK SETUP DTOs
+// ============================================================================
+
+// InitialStockItem - Single item in initial stock setup
+type InitialStockItem struct {
+	ProductID    string  `json:"productId" binding:"required"`
+	Quantity     string  `json:"quantity" binding:"required"`
+	CostPerUnit  string  `json:"costPerUnit" binding:"required"`
+	Location     *string `json:"location,omitempty"`
+	MinimumStock *string `json:"minimumStock,omitempty"`
+	MaximumStock *string `json:"maximumStock,omitempty"`
+	Notes        *string `json:"notes,omitempty"`
+}
+
+// InitialStockSetupRequest - Request to create initial warehouse stocks
+type InitialStockSetupRequest struct {
+	WarehouseID string             `json:"warehouseId" binding:"required"`
+	Items       []InitialStockItem `json:"items" binding:"required,min=1,dive"`
+	Notes       *string            `json:"notes,omitempty"`
+}
+
+// InitialStockSetupResponse - Response after initial stock setup
+type InitialStockSetupResponse struct {
+	Success       bool   `json:"success"`
+	Message       string `json:"message"`
+	TotalItems    int    `json:"totalItems"`
+	TotalValue    string `json:"totalValue"`
+	CreatedStocks int    `json:"createdStocks"`
+	UpdatedStocks int    `json:"updatedStocks"`
+}

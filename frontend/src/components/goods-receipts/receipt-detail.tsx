@@ -30,15 +30,30 @@ import {
   FileText,
   Package,
   ShoppingCart,
+  MoreHorizontal,
+  Settings,
+  CheckCircle,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   getGoodsReceiptStatusLabel,
   getGoodsReceiptStatusColor,
+  getRejectionDispositionLabel,
+  getRejectionDispositionColor,
   type GoodsReceiptResponse,
+  type GoodsReceiptItemResponse,
 } from "@/types/goods-receipt.types";
 
 interface ReceiptDetailProps {
   receipt: GoodsReceiptResponse;
+  onSetDisposition?: (item: GoodsReceiptItemResponse) => void;
+  onResolveDisposition?: (item: GoodsReceiptItemResponse) => void;
 }
 
 // Format date to Indonesian locale
@@ -61,8 +76,11 @@ const formatDateTime = (dateString: string) => {
   });
 };
 
-export function ReceiptDetail({ receipt }: ReceiptDetailProps) {
+export function ReceiptDetail({ receipt, onSetDisposition, onResolveDisposition }: ReceiptDetailProps) {
   const items = receipt.items || [];
+
+  // Check if disposition actions are allowed (receipt must be ACCEPTED or PARTIAL and have rejected items)
+  const canManageDisposition = receipt.status === "ACCEPTED" || receipt.status === "PARTIAL";
 
   return (
     <div className="space-y-6">
@@ -301,8 +319,10 @@ export function ReceiptDetail({ receipt }: ReceiptDetailProps) {
                     <TableHead className="text-right">Qty Diterima</TableHead>
                     <TableHead className="text-right">Qty Diterima OK</TableHead>
                     <TableHead className="text-right">Qty Ditolak</TableHead>
+                    <TableHead>Disposisi</TableHead>
                     <TableHead>Batch / Kadaluarsa</TableHead>
                     <TableHead>Catatan</TableHead>
+                    {canManageDisposition && onSetDisposition && <TableHead className="w-[50px]"></TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -355,6 +375,29 @@ export function ReceiptDetail({ receipt }: ReceiptDetailProps) {
                         )}
                       </TableCell>
                       <TableCell>
+                        {parseFloat(item.rejectedQty) > 0 ? (
+                          <div className="space-y-1">
+                            {item.rejectionDisposition ? (
+                              <Badge className={getRejectionDispositionColor(item.rejectionDisposition)}>
+                                {getRejectionDispositionLabel(item.rejectionDisposition)}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-muted-foreground">
+                                Belum diatur
+                              </Badge>
+                            )}
+                            {item.dispositionResolved && (
+                              <div className="flex items-center gap-1 text-xs text-green-600">
+                                <CheckCircle className="h-3 w-3" />
+                                Selesai
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         {item.batchNumber ? (
                           <div>
                             <div className="font-mono text-sm">{item.batchNumber}</div>
@@ -381,6 +424,33 @@ export function ReceiptDetail({ receipt }: ReceiptDetailProps) {
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
+                      {/* Disposition Actions */}
+                      {canManageDisposition && onSetDisposition && (
+                        <TableCell>
+                          {parseFloat(item.rejectedQty) > 0 && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                  <span className="sr-only">Menu aksi</span>
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => onSetDisposition(item)}>
+                                  <Settings className="mr-2 h-4 w-4" />
+                                  {item.rejectionDisposition ? "Ubah Disposisi" : "Atur Disposisi"}
+                                </DropdownMenuItem>
+                                {item.rejectionDisposition && !item.dispositionResolved && onResolveDisposition && (
+                                  <DropdownMenuItem onClick={() => onResolveDisposition(item)}>
+                                    <CheckCircle className="mr-2 h-4 w-4 text-green-600" />
+                                    Selesaikan Disposisi
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -390,8 +460,8 @@ export function ReceiptDetail({ receipt }: ReceiptDetailProps) {
         </CardContent>
       </Card>
 
-      {/* Notes */}
-      {receipt.notes && (
+      {/* Notes - show all notes sections */}
+      {(receipt.notes || receipt.receiveNotes || receipt.inspectionNotes || receipt.acceptanceNotes || receipt.rejectionNotes) && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -399,8 +469,37 @@ export function ReceiptDetail({ receipt }: ReceiptDetailProps) {
               Catatan
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-sm whitespace-pre-wrap">{receipt.notes}</p>
+          <CardContent className="space-y-4">
+            {receipt.notes && (
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-1">Catatan Umum</p>
+                <p className="text-sm whitespace-pre-wrap bg-muted/30 p-3 rounded-md">{receipt.notes}</p>
+              </div>
+            )}
+            {receipt.receiveNotes && (
+              <div>
+                <p className="text-sm font-medium text-blue-600 mb-1">Catatan Penerimaan</p>
+                <p className="text-sm whitespace-pre-wrap bg-blue-50 p-3 rounded-md dark:bg-blue-900/20">{receipt.receiveNotes}</p>
+              </div>
+            )}
+            {receipt.inspectionNotes && (
+              <div>
+                <p className="text-sm font-medium text-purple-600 mb-1">Catatan Inspeksi</p>
+                <p className="text-sm whitespace-pre-wrap bg-purple-50 p-3 rounded-md dark:bg-purple-900/20">{receipt.inspectionNotes}</p>
+              </div>
+            )}
+            {receipt.acceptanceNotes && (
+              <div>
+                <p className="text-sm font-medium text-green-600 mb-1">Catatan Penerimaan Akhir</p>
+                <p className="text-sm whitespace-pre-wrap bg-green-50 p-3 rounded-md dark:bg-green-900/20">{receipt.acceptanceNotes}</p>
+              </div>
+            )}
+            {receipt.rejectionNotes && (
+              <div>
+                <p className="text-sm font-medium text-red-600 mb-1">Catatan Penolakan</p>
+                <p className="text-sm whitespace-pre-wrap bg-red-50 p-3 rounded-md dark:bg-red-900/20">{receipt.rejectionNotes}</p>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
