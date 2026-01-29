@@ -55,6 +55,10 @@ export interface Company {
   poPrefix: string;
   poNumberFormat: string;
 
+  // Purchase Invoice Settings (3-way matching)
+  invoiceControlPolicy: InvoiceControlPolicy;
+  invoiceTolerancePct: number;
+
   // System Settings
   currency: string;
   timezone: string;
@@ -118,6 +122,9 @@ export interface CompanyResponse {
   poNumberFormat?: string;
   soPrefix?: string;
   soNumberFormat?: string;
+  // Purchase Invoice Settings (3-way matching)
+  invoiceControlPolicy?: InvoiceControlPolicy;
+  invoiceTolerancePct?: number;
   isActive: boolean;
   banks?: CompanyBankInfo[];
 }
@@ -193,6 +200,9 @@ export interface UpdateCompanyRequest {
   soNumberFormat?: string;
   fakturPajakSeries?: string;
   sppkpNumber?: string;
+  // Purchase Invoice Settings (3-way matching)
+  invoiceControlPolicy?: InvoiceControlPolicy;
+  invoiceTolerancePct?: number;
 }
 
 /**
@@ -268,6 +278,19 @@ export interface BankAccountListResponse {
  * Indonesian Entity Types
  */
 export const ENTITY_TYPES = ["CV", "PT", "UD", "Firma"] as const;
+
+/**
+ * Invoice Control Policy (3-way matching like SAP/Odoo)
+ * ORDERED = Invoice berdasarkan qty PO (tanpa harus GRN)
+ * RECEIVED = Invoice berdasarkan qty yang sudah diterima (GRN) - Three-way matching
+ */
+export const INVOICE_CONTROL_POLICIES = ["ORDERED", "RECEIVED"] as const;
+export type InvoiceControlPolicy = (typeof INVOICE_CONTROL_POLICIES)[number];
+
+export const INVOICE_CONTROL_POLICY_LABELS: Record<InvoiceControlPolicy, string> = {
+  ORDERED: "Berdasarkan PO (Qty Dipesan)",
+  RECEIVED: "Berdasarkan GRN (Qty Diterima) - 3-Way Matching",
+};
 
 /**
  * Common Indonesian Banks

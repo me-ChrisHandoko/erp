@@ -3,11 +3,11 @@
 // Redux Provider and Auth State Restoration
 // Wraps the app with Redux Provider and restores auth state from localStorage or refresh token
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Provider } from "react-redux";
 import { useDispatch, useSelector } from "react-redux";
 import { store, RootState } from "@/store";
-import { setCredentials, logout } from "@/store/slices/authSlice";
+import { setCredentials } from "@/store/slices/authSlice";
 import { useGetCurrentUserQuery } from "@/store/services/authApi";
 import { jwtDecode } from "jwt-decode";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
@@ -42,6 +42,9 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
   const [tokenRestored, setTokenRestored] = useState(false);
   const [isRestoring, setIsRestoring] = useState(true);
   const user = useSelector((state: RootState) => state.auth.user);
+
+  // Ref to prevent infinite loop - tracks if redirect is in progress
+  const isRedirecting = useRef(false);
 
   // SOLUTION 1: Monitor access token from Redux to detect refresh flow
   const accessTokenFromRedux = useSelector((state: RootState) => state.auth.accessToken);
@@ -123,6 +126,9 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Only run on client side
     if (typeof window === "undefined") return;
+
+    // Prevent running if already redirecting
+    if (isRedirecting.current) return;
 
     const restoreSession = async () => {
       try {
@@ -309,7 +315,7 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
             setTokenRestored(true); // Trigger getCurrentUser query
           } else {
             // Handle specific error cases
-            let errorMessage = "Session expired";
+            let errorMessage = "session_expired";
             try {
               const errorData = await response.json();
               const errorCode = errorData?.error?.code;
@@ -319,10 +325,10 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
 
               // Check if token was revoked (user logged in from another session)
               if (errorCode === "AUTHENTICATION_ERROR" && errorMsg.includes("revoked")) {
-                errorMessage = "Sesi Anda telah berakhir karena login dari perangkat lain. Silakan login kembali.";
+                errorMessage = "session_revoked";
                 console.log("[Auth] Token was revoked - clearing stale auth state");
               } else if (response.status === 401) {
-                errorMessage = "Sesi Anda telah berakhir. Silakan login kembali.";
+                errorMessage = "session_expired";
               }
             } catch {
               console.log("[Auth] Could not parse error response");
@@ -331,10 +337,17 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
             // Clear stale localStorage token to prevent loops
             localStorage.removeItem("accessToken");
 
-            // Dispatch logout with reason so user sees message on login page
-            dispatch(logout({ reason: errorMessage }));
+            console.log("[Auth] Cleared stale auth state, redirecting to login...");
 
-            console.log("[Auth] Cleared stale auth state, user needs to re-login");
+            // IMPORTANT: Set flag BEFORE redirect to prevent infinite loop
+            // The dispatch(logout) was causing re-renders before redirect completed
+            isRedirecting.current = true;
+
+            // Redirect immediately to login page
+            // This handles the case where user was never authenticated (initial page load with stale cookie)
+            // AuthGuard won't redirect in this case because wasAuthenticated is false
+            window.location.href = `/login?reason=${encodeURIComponent(errorMessage)}`;
+            return; // Stop further execution
           }
         } catch (error) {
           console.log("[Auth] Failed to restore from refresh token:", error);

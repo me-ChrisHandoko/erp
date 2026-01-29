@@ -12,6 +12,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSelector } from "react-redux";
 import {
   FileText,
   Building2,
@@ -24,6 +25,8 @@ import {
   Truck,
   HandCoins,
   ReceiptText,
+  AlertTriangle,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,14 +54,28 @@ import { useCreatePurchaseInvoiceMutation } from "@/store/services/purchaseInvoi
 import { useListSuppliersQuery } from "@/store/services/supplierApi";
 import { useListPurchaseOrdersQuery, useGetPurchaseOrderQuery } from "@/store/services/purchaseOrderApi";
 import { useListGoodsReceiptsQuery, useGetGoodsReceiptQuery } from "@/store/services/goodsReceiptApi";
+import { useGetCompanyQuery } from "@/store/services/companyApi";
+import {
+  INVOICE_CONTROL_POLICY_LABELS,
+  type InvoiceControlPolicy,
+} from "@/types/company.types";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import type { CreatePurchaseInvoiceRequest } from "@/types/purchase-invoice.types";
 import {
   PURCHASE_ORDER_STATUS_LABELS,
   PURCHASE_ORDER_STATUS_COLORS,
-  type PurchaseOrderStatus
+  type PurchaseOrderStatus,
 } from "@/types/purchase-order.types";
+import type { GoodsReceiptResponse } from "@/types/goods-receipt.types";
+import { selectActiveCompany } from "@/store/slices/companySlice";
+import { CheckCircle2, AlertCircle as AlertCircleIcon, Clock } from "lucide-react";
 
 interface CreateInvoiceFormProps {
   onSuccess?: (invoiceId: string) => void;
@@ -79,6 +96,14 @@ interface InvoiceItem {
   taxPercent: string;
   taxAmount: string;
   totalAmount: string;
+  // PO/GRN reference fields for backend validation
+  purchaseOrderItemId?: string; // Reference to PO item for qty validation
+  goodsReceiptItemId?: string; // Reference to GRN item
+  // Invoice control fields
+  maxInvoiceableQty: number; // Max qty that can be invoiced based on policy
+  orderedQty: number; // Qty ordered in PO
+  receivedQty: number; // Qty received in GRN
+  invoicedQty: number; // Qty already invoiced
 }
 
 export function CreateInvoiceForm({
@@ -99,6 +124,8 @@ export function CreateInvoiceForm({
     goodsReceiptNumber: "",
     notes: "",
     taxPercentage: "11", // Default PPN 11%
+    // Header-level discount (diskon faktur)
+    headerDiscountAmount: "0",
     // Biaya non-barang (header level)
     shippingCost: "0", // Biaya Pengiriman/Ongkir
     handlingCost: "0", // Biaya Handling
@@ -158,14 +185,69 @@ export function CreateInvoiceForm({
     { skip: !formData.goodsReceiptId }
   );
 
+  // Fetch company settings for invoice control policy and tolerance
+  const { data: companyData } = useGetCompanyQuery();
+  const invoiceControlPolicy = (companyData?.invoiceControlPolicy || "ORDERED") as InvoiceControlPolicy;
+  const invoiceTolerancePct = companyData?.invoiceTolerancePct || 0;
+
+  // Get active company from Redux for PKP status
+  const activeCompany = useSelector(selectActiveCompany);
+
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 
+  // Get badge info for a specific GRN from the list (used in dropdown options)
+  const getGRNBadgeFromList = (gr: GoodsReceiptResponse) => {
+    switch (gr.invoiceStatus) {
+      case 'FULL':
+        return {
+          label: 'Invoice Penuh',
+          color: 'bg-red-100 text-red-800',
+          icon: CheckCircle2,
+          disabled: true,
+          tooltip: 'Semua item dari GRN ini sudah sepenuhnya di-invoice',
+        };
+      case 'PARTIAL':
+        return {
+          label: 'Invoice Sebagian',
+          color: 'bg-orange-100 text-orange-800',
+          icon: AlertCircleIcon,
+          disabled: false,
+          tooltip: 'Beberapa item sudah di-invoice. Hanya item dengan sisa qty yang akan ditambahkan.',
+        };
+      case 'NONE':
+      default:
+        return {
+          label: 'Belum Invoice',
+          color: 'bg-green-100 text-green-800',
+          icon: Clock,
+          disabled: false,
+          tooltip: 'Semua item masih tersedia untuk di-invoice',
+        };
+    }
+  };
+
+  // Check if the selected GRN is fully invoiced
+  const selectedGRN = goodsReceipts.find(gr => gr.id === formData.goodsReceiptId);
+  const isSelectedGRNFullyInvoiced = selectedGRN?.invoiceStatus === 'FULL';
+
+  // Initialize tax percentage based on PKP status
+  useEffect(() => {
+    if (activeCompany) {
+      const taxRate = activeCompany.isPKP ? (activeCompany.ppnRate ?? 11).toString() : "0";
+      setFormData(prev => ({ ...prev, taxPercentage: taxRate }));
+    }
+  }, [activeCompany]);
+
   // Auto-populate items from GRN when GRN data is loaded
+  // Option 4: Smart population - only add items with remaining invoiceable qty > 0
   useEffect(() => {
     if (selectedGRData && selectedGRData.items && selectedGRData.items.length > 0 && items.length === 0) {
-      const newItems: InvoiceItem[] = selectedGRData.items
+      let skippedItems = 0;
+      const skippedProductNames: string[] = [];
+
+      const newItems = selectedGRData.items
         .filter(item => parseFloat(item.acceptedQty) > 0)
         .map((item, index) => {
           // Get unit price from PO if available
@@ -173,12 +255,40 @@ export function CreateInvoiceForm({
             poi => poi.productId === item.productId
           );
           const unitPrice = poItem?.unitPrice || "0";
-          const qty = parseFloat(item.acceptedQty || "0");
           const price = parseFloat(unitPrice);
           const discPct = parseFloat(poItem?.discountPct || "0");
           const taxPct = parseFloat(formData.taxPercentage);
 
-          const subtotal = qty * price;
+          // Get unitId with fallbacks: GRN item > GRN productUnit > PO item > PO productUnit
+          // Note: unitId can be empty if product uses base unit (no conversion unit) - this is valid
+          const unitId = item.productUnitId ||
+                        item.productUnit?.id ||
+                        poItem?.productUnitId ||
+                        poItem?.productUnit?.id ||
+                        "";
+
+          // Calculate invoice control fields
+          // Use GRN-item-level invoicedQty (not PO-level) for accurate remaining calculation
+          const orderedQty = parseFloat(poItem?.quantity || "0");
+          const acceptedQty = parseFloat(item.acceptedQty || "0");
+          const grnItemInvoicedQty = parseFloat(item.invoicedQty || "0");
+
+          // Calculate remaining invoiceable qty = acceptedQty - already invoiced for this GRN item
+          const remainingQty = Math.max(0, acceptedQty - grnItemInvoicedQty);
+
+          // Apply tolerance percentage for max limit
+          const toleranceMultiplier = 1 + (invoiceTolerancePct / 100);
+          const maxInvoiceableQty = remainingQty * toleranceMultiplier;
+
+          // Skip items with no remaining invoiceable qty
+          if (remainingQty <= 0) {
+            skippedItems++;
+            skippedProductNames.push(item.product?.name || item.productId);
+            return null; // Will be filtered out
+          }
+
+          // Calculate totals based on REMAINING qty (not full accepted qty)
+          const subtotal = remainingQty * price;
           const discount = (subtotal * discPct) / 100;
           const taxableAmount = subtotal - discount;
           const tax = (taxableAmount * taxPct) / 100;
@@ -189,8 +299,8 @@ export function CreateInvoiceForm({
             productId: item.productId,
             productCode: item.product?.code || "",
             productName: item.product?.name || "",
-            quantity: item.acceptedQty,
-            unitId: item.productUnitId || "",
+            quantity: remainingQty.toString(),
+            unitId: unitId,
             unitName: item.productUnit?.unitName || item.product?.baseUnit || "PCS",
             unitPrice: unitPrice,
             discountPercent: poItem?.discountPct || "0",
@@ -198,17 +308,41 @@ export function CreateInvoiceForm({
             taxPercent: formData.taxPercentage,
             taxAmount: tax.toFixed(2),
             totalAmount: total.toFixed(2),
+            // PO/GRN reference fields for backend validation
+            purchaseOrderItemId: item.purchaseOrderItemId || poItem?.id,
+            goodsReceiptItemId: item.id,
+            // Invoice control fields
+            maxInvoiceableQty,
+            orderedQty,
+            receivedQty: acceptedQty, // Use GRN accepted qty as "received" for display
+            invoicedQty: grnItemInvoicedQty, // GRN-item level invoiced qty
           };
-        });
+        })
+        .filter((item) => item !== null) as InvoiceItem[]; // Filter out null items and cast to proper type
 
       if (newItems.length > 0) {
         setItems(newItems);
-        toast.success("Items Ditambahkan", {
-          description: `${newItems.length} item dari GRN telah ditambahkan ke faktur`,
+
+        if (skippedItems > 0) {
+          // Some items were added, but some were skipped
+          toast.info("Items Ditambahkan (Sebagian)", {
+            description: `${newItems.length} item ditambahkan. ${skippedItems} item dilewati karena sudah sepenuhnya di-invoice: ${skippedProductNames.slice(0, 3).join(", ")}${skippedProductNames.length > 3 ? ` dan ${skippedProductNames.length - 3} lainnya` : ""}`,
+            duration: 6000,
+          });
+        } else {
+          toast.success("Items Ditambahkan", {
+            description: `${newItems.length} item dari GRN telah ditambahkan ke faktur`,
+          });
+        }
+      } else if (skippedItems > 0) {
+        // All items were skipped - GRN is fully invoiced
+        toast.warning("Tidak Ada Item yang Dapat Di-invoice", {
+          description: `Semua ${skippedItems} item dari GRN ini sudah sepenuhnya di-invoice. Silakan pilih GRN lain.`,
+          duration: 8000,
         });
       }
     }
-  }, [selectedGRData, selectedPOData, formData.taxPercentage]);
+  }, [selectedGRData, selectedPOData, formData.taxPercentage, invoiceControlPolicy, invoiceTolerancePct]);
 
   const handleChange = (field: string, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -224,11 +358,13 @@ export function CreateInvoiceForm({
   const formatCurrency = (value: string | number): string => {
     const num = typeof value === "string" ? parseFloat(value || "0") : value;
     if (isNaN(num)) return "Rp 0";
+    // Check if number has decimal part
+    const hasDecimal = num % 1 !== 0;
     return new Intl.NumberFormat("id-ID", {
       style: "currency",
       currency: "IDR",
       minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
+      maximumFractionDigits: hasDecimal ? 2 : 0,
     }).format(num);
   };
 
@@ -280,10 +416,16 @@ export function CreateInvoiceForm({
       return sum + qty * price;
     }, 0);
 
-    // Total discount from items
-    const totalDiscount = items.reduce((sum, item) => {
+    // Line-level discount total
+    const lineDiscount = items.reduce((sum, item) => {
       return sum + parseFloat(item.discountAmount || "0");
     }, 0);
+
+    // Header-level discount (diskon faktur)
+    const headerDiscount = parseFloat(formData.headerDiscountAmount || "0");
+
+    // Total discount = line discount + header discount
+    const totalDiscount = lineDiscount + headerDiscount;
 
     // Total tax from items
     const totalTax = items.reduce((sum, item) => {
@@ -301,6 +443,8 @@ export function CreateInvoiceForm({
 
     return {
       subtotal,
+      lineDiscount,
+      headerDiscount,
       totalDiscount,
       totalTax,
       shippingCost,
@@ -323,6 +467,12 @@ export function CreateInvoiceForm({
     // GRN is required (GRN Wajib mode)
     if (!formData.goodsReceiptId) {
       newErrors.goodsReceiptId = "Penerimaan Barang (GRN) wajib dipilih";
+    } else {
+      // Check if selected GRN is fully invoiced
+      const selectedGR = goodsReceipts.find(gr => gr.id === formData.goodsReceiptId);
+      if (selectedGR?.invoiceStatus === 'FULL') {
+        newErrors.goodsReceiptId = "GRN ini sudah sepenuhnya di-invoice. Pilih GRN lain.";
+      }
     }
     // invoiceNumber is auto-generated by backend, no validation needed
     if (!formData.invoiceDate) {
@@ -391,10 +541,18 @@ export function CreateInvoiceForm({
         supplierId: formData.supplierId,
         purchaseOrderId: formData.purchaseOrderId || undefined,
         goodsReceiptId: formData.goodsReceiptId || undefined,
-        discountAmount: totals.totalDiscount > 0 ? totals.totalDiscount.toString() : undefined,
+        // Only send header-level discount (line-level discounts are in each item)
+        discountAmount: totals.headerDiscount > 0 ? totals.headerDiscount.toString() : undefined,
         taxRate: formData.taxPercentage,
         notes: formData.notes || undefined,
+        // Non-Goods Costs (Biaya Tambahan)
+        shippingCost: parseFloat(formData.shippingCost || "0") > 0 ? formData.shippingCost : undefined,
+        handlingCost: parseFloat(formData.handlingCost || "0") > 0 ? formData.handlingCost : undefined,
+        otherCost: parseFloat(formData.otherCost || "0") > 0 ? formData.otherCost : undefined,
+        otherCostDescription: formData.otherCostDescription || undefined,
         items: items.map((item) => ({
+          purchaseOrderItemId: item.purchaseOrderItemId || undefined,
+          goodsReceiptItemId: item.goodsReceiptItemId || undefined,
           productId: item.productId,
           unitId: item.unitId, // UUID of the product unit
           quantity: item.quantity,
@@ -406,6 +564,9 @@ export function CreateInvoiceForm({
         })),
       };
 
+      // Debug logging
+      console.log("📦 Invoice Data being sent:", JSON.stringify(invoiceData, null, 2));
+
       const result = await createInvoice(invoiceData).unwrap();
 
       toast.success("Faktur Berhasil Dibuat", {
@@ -416,18 +577,78 @@ export function CreateInvoiceForm({
         onSuccess(result.id);
       }
     } catch (error: any) {
+      // Enhanced error logging for debugging
+      console.error("❌ Create Invoice Error:", error);
+      console.error("❌ Error Data:", error?.data);
+
+      const errorMessage =
+        error?.data?.details ||
+        error?.data?.error?.message ||
+        error?.data?.error ||
+        error?.data?.message ||
+        error?.message ||
+        "Terjadi kesalahan pada server";
+
       toast.error("Gagal Membuat Faktur", {
-        description:
-          error?.data?.error?.message ||
-          error?.data?.message ||
-          error?.message ||
-          "Terjadi kesalahan pada server",
+        description: errorMessage,
       });
     }
   };
 
+  // Helper function to check if item qty exceeds limit
+  const isQtyExceedingLimit = (item: InvoiceItem): boolean => {
+    const qty = parseFloat(item.quantity || "0");
+    return qty > item.maxInvoiceableQty && item.maxInvoiceableQty > 0;
+  };
+
+  // Check if any item exceeds the limit
+  const hasExceedingItems = items.some(isQtyExceedingLimit);
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {/* Invoice Control Policy Info Banner */}
+      <Alert className={invoiceControlPolicy === "RECEIVED" ? "border-green-200 bg-green-50/50" : "border-blue-200 bg-blue-50/50"}>
+        <ShieldCheck className={`h-4 w-4 ${invoiceControlPolicy === "RECEIVED" ? "text-green-600" : "text-blue-600"}`} />
+        <div className="ml-2">
+          <div className="flex items-center gap-2">
+            <span className={`font-medium ${invoiceControlPolicy === "RECEIVED" ? "text-green-900" : "text-blue-900"}`}>
+              Kebijakan Faktur: {INVOICE_CONTROL_POLICY_LABELS[invoiceControlPolicy]}
+            </span>
+            {invoiceTolerancePct > 0 && (
+              <Badge variant="outline" className="text-xs">
+                Toleransi: {invoiceTolerancePct}%
+              </Badge>
+            )}
+          </div>
+          <p className={`text-sm mt-1 ${invoiceControlPolicy === "RECEIVED" ? "text-green-700" : "text-blue-700"}`}>
+            {invoiceControlPolicy === "RECEIVED"
+              ? "Faktur hanya dapat dibuat untuk qty yang sudah diterima (GRN). Pastikan barang sudah diterima sebelum membuat faktur."
+              : "Faktur dapat dibuat berdasarkan qty yang dipesan di PO, tanpa harus menunggu penerimaan barang."
+            }
+            {invoiceTolerancePct > 0 && ` Toleransi over-invoice: ${invoiceTolerancePct}%.`}
+          </p>
+        </div>
+      </Alert>
+
+      {/* Invoice Number - Auto-generated by backend based on company format settings */}
+      <div className="rounded-md bg-muted/50 p-3 border border-border">
+        <p className="text-sm text-muted-foreground">
+          <FileText className="h-4 w-4 inline mr-1" />
+          Nomor faktur akan di-generate otomatis oleh sistem berdasarkan format yang dikonfigurasi di Company Settings
+        </p>
+      </div>
+
+      {/* Warning if any item exceeds limit */}
+      {hasExceedingItems && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            <span className="font-medium">Peringatan:</span> Beberapa item memiliki qty yang melebihi batas maksimal.
+            Faktur mungkin akan ditolak oleh sistem. Silakan periksa dan sesuaikan qty item yang ditandai.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Invoice Header */}
       <Card className="border-2">
         <CardHeader>
@@ -439,7 +660,7 @@ export function CreateInvoiceForm({
         <CardContent>
           <div className="grid gap-6 sm:grid-cols-2">
             {/* Supplier Selection */}
-            <div className="space-y-2 sm:col-span-2">
+            <div className="space-y-2">
               <Label htmlFor="supplier" className="text-sm font-medium">
                 <div className="flex items-center gap-2">
                   <Building2 className="h-4 w-4" />
@@ -496,20 +717,10 @@ export function CreateInvoiceForm({
               )}
             </div>
 
-            {/* Invoice Number - Auto-generated by backend based on company format settings */}
-            <div className="space-y-2">
-              <div className="rounded-md bg-muted/50 p-3 border border-border">
-                <p className="text-sm text-muted-foreground">
-                  <FileText className="h-4 w-4 inline mr-1" />
-                  Nomor faktur akan di-generate otomatis oleh sistem berdasarkan format yang dikonfigurasi di Company Settings
-                </p>
-              </div>
-            </div>
-
             {/* Purchase Order Reference */}
             <div className="space-y-2">
               <Label htmlFor="purchaseOrder" className="text-sm font-medium">
-                Referensi PO
+                Referensi PO <span className="text-destructive">*</span>
               </Label>
               <Select
                 value={formData.purchaseOrderId}
@@ -543,7 +754,7 @@ export function CreateInvoiceForm({
                 </SelectTrigger>
                 <SelectContent>
                   {purchaseOrders.map((po) => (
-                    <SelectItem key={po.id} value={po.id}>
+                    <SelectItem key={po.id} value={po.id} textValue={po.poNumber}>
                       <div className="flex items-center gap-2">
                         <span>{po.poNumber}</span>
                         <Badge
@@ -565,68 +776,101 @@ export function CreateInvoiceForm({
               </p>
             </div>
 
-            {/* Goods Receipt Reference */}
-            <div className="space-y-2">
+            {/* Goods Receipt Reference - Full Width */}
+            <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="goodsReceipt" className="text-sm font-medium">
-                Referensi Penerimaan Barang (GRN)
+                Referensi Penerimaan Barang (GRN) <span className="text-destructive">*</span>
               </Label>
-              <Select
-                value={formData.goodsReceiptId}
-                onValueChange={(value) => {
-                  const selectedGR = goodsReceipts.find(gr => gr.id === value);
-                  handleChange("goodsReceiptId", value);
-                  if (selectedGR) {
-                    handleChange("goodsReceiptNumber", selectedGR.grnNumber);
-                  }
-                  // Clear items when GRN changes - will be repopulated by useEffect
-                  setItems([]);
-                }}
-                disabled={!formData.purchaseOrderId}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue
-                    placeholder={
-                      !formData.purchaseOrderId
-                        ? "Pilih PO terlebih dahulu"
-                        : isLoadingGRs
-                        ? "Memuat GRN..."
-                        : goodsReceipts.length === 0
-                        ? "Tidak ada GRN yang sudah diterima"
-                        : "Pilih GRN untuk auto-populate items..."
+              <TooltipProvider>
+                <Select
+                  value={formData.goodsReceiptId}
+                  onValueChange={(value) => {
+                    const selectedGR = goodsReceipts.find(gr => gr.id === value);
+                    handleChange("goodsReceiptId", value);
+                    if (selectedGR) {
+                      handleChange("goodsReceiptNumber", selectedGR.grnNumber);
                     }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {goodsReceipts.map((gr) => (
-                    <SelectItem key={gr.id} value={gr.id}>
-                      <div className="flex items-center gap-2">
-                        <span>{gr.grnNumber}</span>
-                        <Badge
-                          variant="secondary"
-                          className={gr.status === "ACCEPTED" ? "bg-green-100 text-green-800" : "bg-orange-100 text-orange-800"}
+                    // Clear items when GRN changes - will be repopulated by useEffect
+                    setItems([]);
+                  }}
+                  disabled={!formData.purchaseOrderId}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Pilih GRN..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {goodsReceipts.map((gr) => {
+                      // Use invoice status from the GRN list data (calculated by backend)
+                      const invoiceStatusBadge = getGRNBadgeFromList(gr);
+                      return (
+                        <SelectItem
+                          key={gr.id}
+                          value={gr.id}
+                          textValue={gr.grnNumber}
                         >
-                          {gr.status === "ACCEPTED" ? "Diterima" : "Sebagian"}
-                        </Badge>
-                        <span className="text-muted-foreground">
-                          {new Date(gr.grnDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          ({gr.itemCount} item)
-                        </span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={invoiceStatusBadge.disabled ? "text-muted-foreground" : ""}>
+                              {gr.grnNumber}
+                            </span>
+                            {/* GRN Status Badge */}
+                            <Badge
+                              variant="secondary"
+                              className={gr.status === "ACCEPTED" ? "bg-green-100 text-green-800" : "bg-orange-100 text-orange-800"}
+                            >
+                              {gr.status === "ACCEPTED" ? "Diterima Penuh" : "Diterima Sebagian"}
+                            </Badge>
+                            {/* Invoice Status Badge from backend data */}
+                            {invoiceStatusBadge && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Badge
+                                    variant="outline"
+                                    className={`${invoiceStatusBadge.color} flex items-center gap-1`}
+                                  >
+                                    <invoiceStatusBadge.icon className="h-3 w-3" />
+                                    {invoiceStatusBadge.label}
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>{invoiceStatusBadge.tooltip}</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                            <span className="text-muted-foreground text-xs">
+                              {new Date(gr.grnDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              ({gr.itemCount} item)
+                            </span>
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </TooltipProvider>
               {errors.goodsReceiptId && (
                 <p className="flex items-center gap-1 text-sm text-destructive">
                   <AlertCircle className="h-3 w-3" />
                   {errors.goodsReceiptId}
                 </p>
               )}
-              {!errors.goodsReceiptId && (
+              {/* Alert when selected GRN is fully invoiced */}
+              {isSelectedGRNFullyInvoiced && (
+                <Alert variant="destructive" className="mt-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <AlertDescription>
+                    Semua item dari GRN ini sudah sepenuhnya di-invoice. Tidak dapat membuat faktur baru dari GRN ini.
+                  </AlertDescription>
+                </Alert>
+              )}
+              {!errors.goodsReceiptId && !isSelectedGRNFullyInvoiced && (
                 <p className="text-xs text-muted-foreground">
-                  Pilih GRN untuk otomatis mengisi items berdasarkan barang yang sudah diterima
+                  {/* Show different message based on GRN invoice status */}
+                  {goodsReceipts.some(gr => gr.invoiceStatus === "PARTIAL")
+                    ? "Beberapa item mungkin sudah di-invoice. Hanya item dengan sisa qty yang akan ditambahkan."
+                    : "Pilih GRN untuk otomatis mengisi items berdasarkan barang yang sudah diterima"
+                  }
                 </p>
               )}
             </div>
@@ -685,6 +929,29 @@ export function CreateInvoiceForm({
                   {errors.dueDate}
                 </p>
               )}
+            </div>
+
+            {/* Header Discount */}
+            <div className="space-y-2">
+              <Label htmlFor="headerDiscount" className="text-sm font-medium">
+                Diskon Faktur (Rp)
+              </Label>
+              <div className="flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="headerDiscount"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={formData.headerDiscountAmount}
+                  onChange={(e) => handleChange("headerDiscountAmount", e.target.value)}
+                  placeholder="0"
+                  className="font-mono"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Diskon tambahan pada level faktur (selain diskon per item)
+              </p>
             </div>
 
             {/* Notes */}
@@ -835,27 +1102,31 @@ export function CreateInvoiceForm({
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[250px]">Produk</TableHead>
-                    <TableHead className="w-[100px]">Qty</TableHead>
-                    <TableHead className="w-[80px]">Unit</TableHead>
-                    <TableHead className="w-[120px] text-right">Harga</TableHead>
-                    <TableHead className="w-[80px] text-right">Diskon %</TableHead>
-                    <TableHead className="w-[80px] text-right">PPN %</TableHead>
+                    <TableHead className="w-[100px]">Kuantitas</TableHead>
+                    <TableHead className="w-[120px] text-right">Harga Satuan</TableHead>
+                    <TableHead className="w-[120px] text-right">Diskon</TableHead>
+                    <TableHead className="w-[120px] text-right">PPN</TableHead>
                     <TableHead className="w-[120px] text-right">Total</TableHead>
                     <TableHead className="w-[50px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {items.map((item, index) => (
-                    <TableRow key={item.id}>
+                  {items.map((item, index) => {
+                    const exceeds = isQtyExceedingLimit(item);
+                    return (
+                    <TableRow key={item.id} className={exceeds ? "bg-red-50" : ""}>
                       <TableCell>
-                        <Input
-                          value={item.productName}
-                          onChange={(e) =>
-                            handleItemChange(item.id, "productName", e.target.value)
-                          }
-                          placeholder="Nama produk"
-                          className="h-8"
-                        />
+                        <div className="space-y-1">
+                          <Input
+                            value={item.productName}
+                            onChange={(e) =>
+                              handleItemChange(item.id, "productName", e.target.value)
+                            }
+                            placeholder="Nama produk"
+                            className="h-8"
+                          />
+                          <p className="text-xs text-muted-foreground">{item.productCode}</p>
+                        </div>
                         {errors[`item-${index}-product`] && (
                           <p className="text-xs text-destructive mt-1">
                             {errors[`item-${index}-product`]}
@@ -863,25 +1134,32 @@ export function CreateInvoiceForm({
                         )}
                       </TableCell>
                       <TableCell>
-                        <Input
-                          type="number"
-                          value={item.quantity}
-                          onChange={(e) =>
-                            handleItemChange(item.id, "quantity", e.target.value)
-                          }
-                          className="h-8"
-                        />
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number"
+                              value={item.quantity}
+                              onChange={(e) =>
+                                handleItemChange(item.id, "quantity", e.target.value)
+                              }
+                              className={`h-8 w-16 ${exceeds ? "border-destructive" : ""}`}
+                            />
+                            <span className="text-sm text-muted-foreground whitespace-nowrap">
+                              {item.unitName}
+                            </span>
+                            {exceeds && (
+                              <AlertTriangle className="h-4 w-4 text-destructive flex-shrink-0" />
+                            )}
+                          </div>
+                          {item.maxInvoiceableQty > 0 && (
+                            <p className={`text-xs ${exceeds ? "text-destructive font-medium" : "text-muted-foreground"}`}>
+                              Max: {item.maxInvoiceableQty.toFixed(2)}
+                              {invoiceControlPolicy === "RECEIVED" ? " (diterima)" : " (dipesan)"}
+                            </p>
+                          )}
+                        </div>
                       </TableCell>
-                      <TableCell>
-                        <Input
-                          value={item.unitName}
-                          onChange={(e) =>
-                            handleItemChange(item.id, "unitName", e.target.value)
-                          }
-                          className="h-8"
-                        />
-                      </TableCell>
-                      <TableCell>
+                      <TableCell className="text-right">
                         <Input
                           type="number"
                           value={item.unitPrice}
@@ -891,27 +1169,43 @@ export function CreateInvoiceForm({
                           className="h-8 text-right"
                         />
                       </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          value={item.discountPercent}
-                          onChange={(e) =>
-                            handleItemChange(item.id, "discountPercent", e.target.value)
-                          }
-                          className="h-8 text-right"
-                        />
+                      <TableCell className="text-right">
+                        <div className="space-y-1">
+                          <div className="font-mono text-sm">
+                            {formatCurrency(item.discountAmount)}
+                          </div>
+                          <div className="flex items-center justify-end gap-1">
+                            <Input
+                              type="number"
+                              value={item.discountPercent}
+                              onChange={(e) =>
+                                handleItemChange(item.id, "discountPercent", e.target.value)
+                              }
+                              className="h-6 w-14 text-right text-xs"
+                            />
+                            <span className="text-xs text-muted-foreground">%</span>
+                          </div>
+                        </div>
                       </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          value={item.taxPercent}
-                          onChange={(e) =>
-                            handleItemChange(item.id, "taxPercent", e.target.value)
-                          }
-                          className="h-8 text-right"
-                        />
+                      <TableCell className="text-right">
+                        <div className="space-y-1">
+                          <div className="font-mono text-sm">
+                            {formatCurrency(item.taxAmount)}
+                          </div>
+                          <div className="flex items-center justify-end gap-1">
+                            <Input
+                              type="number"
+                              value={item.taxPercent}
+                              onChange={(e) =>
+                                handleItemChange(item.id, "taxPercent", e.target.value)
+                              }
+                              className="h-6 w-14 text-right text-xs"
+                            />
+                            <span className="text-xs text-muted-foreground">%</span>
+                          </div>
+                        </div>
                       </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
+                      <TableCell className="text-right font-mono text-sm font-medium text-primary">
                         {formatCurrency(item.totalAmount)}
                       </TableCell>
                       <TableCell>
@@ -927,7 +1221,8 @@ export function CreateInvoiceForm({
                         </Button>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -944,74 +1239,104 @@ export function CreateInvoiceForm({
               Ringkasan Keuangan
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {/* Items Subtotal */}
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Subtotal Barang:</span>
-                <span className="font-mono">{formatCurrency(totals.subtotal)}</span>
+          <CardContent className="space-y-4">
+            {/* Subtotal */}
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-muted-foreground">Subtotal</p>
+              <p className="font-mono font-semibold">
+                {formatCurrency(totals.subtotal)}
+              </p>
+            </div>
+
+            <Separator />
+
+            {/* Diskon Item (dari masing-masing item) */}
+            {totals.lineDiscount > 0 && (
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-muted-foreground">Diskon Item</p>
+                <p className="font-mono font-semibold text-green-600">
+                  - {formatCurrency(totals.lineDiscount)}
+                </p>
               </div>
-              {totals.totalDiscount > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Diskon:</span>
-                  <span className="font-mono text-green-600">
-                    - {formatCurrency(totals.totalDiscount)}
-                  </span>
+            )}
+
+            {/* Diskon Faktur (header-level discount) */}
+            {totals.headerDiscount > 0 && (
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-muted-foreground">Diskon Faktur</p>
+                <p className="font-mono font-semibold text-green-600">
+                  - {formatCurrency(totals.headerDiscount)}
+                </p>
+              </div>
+            )}
+
+            {/* Separator setelah diskon jika ada */}
+            {totals.totalDiscount > 0 && <Separator />}
+
+            {/* PPN */}
+            {totals.totalTax > 0 && (
+              <>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-muted-foreground">
+                    PPN ({formData.taxPercentage || 0}%)
+                  </p>
+                  <p className="font-mono font-semibold">
+                    {formatCurrency(totals.totalTax)}
+                  </p>
                 </div>
-              )}
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">PPN:</span>
-                <span className="font-mono">{formatCurrency(totals.totalTax)}</span>
-              </div>
+                <Separator />
+              </>
+            )}
 
-              {/* Non-Goods Costs Section */}
-              {totals.totalNonGoodsCost > 0 && (
-                <>
-                  <Separator />
-                  <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Biaya Tambahan
+            {/* Non-Goods Costs Section */}
+            {totals.totalNonGoodsCost > 0 && (
+              <>
+                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Biaya Tambahan
+                </div>
+                {totals.shippingCost > 0 && (
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                      <Truck className="h-3 w-3" />
+                      Biaya Pengiriman
+                    </p>
+                    <p className="font-mono font-semibold">
+                      {formatCurrency(totals.shippingCost)}
+                    </p>
                   </div>
-                  {totals.shippingCost > 0 && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground flex items-center gap-1">
-                        <Truck className="h-3 w-3" />
-                        Biaya Pengiriman:
-                      </span>
-                      <span className="font-mono">{formatCurrency(totals.shippingCost)}</span>
-                    </div>
-                  )}
-                  {totals.handlingCost > 0 && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground flex items-center gap-1">
-                        <HandCoins className="h-3 w-3" />
-                        Biaya Handling:
-                      </span>
-                      <span className="font-mono">{formatCurrency(totals.handlingCost)}</span>
-                    </div>
-                  )}
-                  {totals.otherCost > 0 && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground flex items-center gap-1">
-                        <DollarSign className="h-3 w-3" />
-                        Biaya Lain-lain:
-                      </span>
-                      <span className="font-mono">{formatCurrency(totals.otherCost)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-sm font-medium">
-                    <span className="text-muted-foreground">Total Biaya Tambahan:</span>
-                    <span className="font-mono">{formatCurrency(totals.totalNonGoodsCost)}</span>
+                )}
+                {totals.handlingCost > 0 && (
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                      <HandCoins className="h-3 w-3" />
+                      Biaya Handling
+                    </p>
+                    <p className="font-mono font-semibold">
+                      {formatCurrency(totals.handlingCost)}
+                    </p>
                   </div>
-                </>
-              )}
+                )}
+                {totals.otherCost > 0 && (
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                      <DollarSign className="h-3 w-3" />
+                      Biaya Lain-lain
+                    </p>
+                    <p className="font-mono font-semibold">
+                      {formatCurrency(totals.otherCost)}
+                    </p>
+                  </div>
+                )}
+                <Separator />
+              </>
+            )}
 
-              <Separator />
-              <div className="flex justify-between items-center rounded-lg bg-muted/50 p-4">
-                <span className="text-lg font-bold">Total Faktur:</span>
-                <span className="text-2xl font-bold text-blue-600">
-                  {formatCurrency(totals.total)}
-                </span>
-              </div>
+            {/* Total */}
+            <div className="flex items-center justify-between rounded-lg bg-muted/50 p-4">
+              <p className="text-base font-bold">Total</p>
+              <p className="text-2xl font-bold text-blue-600">
+                {formatCurrency(totals.total)}
+              </p>
             </div>
           </CardContent>
         </Card>

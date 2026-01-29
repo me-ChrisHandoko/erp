@@ -141,24 +141,28 @@ func (g *DocumentNumberGenerator) getNextSequence(
 		log.Printf("🔍 DEBUG [getNextSequence]: Building query for PurchaseOrder...")
 		query = g.db.WithContext(ctx).
 			Set("tenant_id", tenantID).
+			Unscoped(). // Include soft-deleted records to avoid duplicate numbers
 			Model(&models.PurchaseOrder{}).
 			Where("company_id = ?", companyID)
 
 	case DocTypePurchaseInvoice:
 		query = g.db.WithContext(ctx).
 			Set("tenant_id", tenantID).
+			Unscoped(). // Include soft-deleted records to avoid duplicate numbers
 			Model(&models.PurchaseInvoice{}).
 			Where("company_id = ?", companyID)
 
 	case DocTypeSalesOrder:
 		query = g.db.WithContext(ctx).
 			Set("tenant_id", tenantID).
+			Unscoped(). // Include soft-deleted records to avoid duplicate numbers
 			Model(&models.SalesOrder{}).
 			Where("company_id = ?", companyID)
 
 	case DocTypeDelivery:
 		query = g.db.WithContext(ctx).
 			Set("tenant_id", tenantID).
+			Unscoped(). // Include soft-deleted records to avoid duplicate numbers
 			Model(&models.Delivery{}).
 			Where("company_id = ?", companyID)
 
@@ -170,6 +174,7 @@ func (g *DocumentNumberGenerator) getNextSequence(
 	case DocTypeCustomerPayment, DocTypeSupplierPayment:
 		query = g.db.WithContext(ctx).
 			Set("tenant_id", tenantID).
+			Unscoped(). // Include soft-deleted records to avoid duplicate numbers
 			Model(&models.Payment{}).
 			Where("company_id = ?", companyID)
 

@@ -542,7 +542,7 @@ func (s *GoodsReceiptService) ListGoodsReceipts(ctx context.Context, tenantID, c
 	// Map to response DTOs
 	responses := make([]dto.GoodsReceiptResponse, len(goodsReceipts))
 	for i, gr := range goodsReceipts {
-		responses[i] = s.MapToResponse(&gr, false)
+		responses[i] = s.MapToResponse(ctx, &gr, false)
 	}
 
 	totalPages := int(math.Ceil(float64(totalCount) / float64(pageSize)))
@@ -1403,7 +1403,8 @@ func (s *GoodsReceiptService) ResolveDisposition(ctx context.Context, tenantID, 
 // ============================================================================
 
 // MapToResponse maps a GoodsReceipt model to response DTO
-func (s *GoodsReceiptService) MapToResponse(gr *models.GoodsReceipt, includeItems bool) dto.GoodsReceiptResponse {
+// Includes invoicedQty calculation for each GRN item
+func (s *GoodsReceiptService) MapToResponse(ctx context.Context, gr *models.GoodsReceipt, includeItems bool) dto.GoodsReceiptResponse {
 	response := dto.GoodsReceiptResponse{
 		ID:               gr.ID,
 		GRNNumber:        gr.GRNNumber,
@@ -1457,6 +1458,76 @@ func (s *GoodsReceiptService) MapToResponse(gr *models.GoodsReceipt, includeItem
 
 	// Map items
 	if includeItems && len(gr.Items) > 0 {
+		// Query invoiced quantities for all GRN items
+		// Use two approaches to handle both new and old data:
+		// 1. Via goods_receipt_item_id (granular, per-item tracking)
+		// 2. Via product_id from invoices linked to this GRN (fallback for older data)
+		invoicedQtyMap := make(map[string]float64)
+		if len(gr.Items) > 0 {
+			itemIDs := make([]string, len(gr.Items))
+			productIDs := make([]string, len(gr.Items))
+			itemProductMap := make(map[string]string) // GRN item ID -> product ID
+			for i, item := range gr.Items {
+				itemIDs[i] = item.ID
+				productIDs[i] = item.ProductID
+				itemProductMap[item.ID] = item.ProductID
+			}
+
+			// Approach 1: Query via goods_receipt_item_id (granular tracking)
+			// IMPORTANT: Exclude soft-deleted invoices and REJECTED/CANCELLED invoices
+			type InvoicedQtyResult struct {
+				GoodsReceiptItemID string
+				TotalInvoiced      float64
+			}
+			var results []InvoicedQtyResult
+			s.db.WithContext(ctx).
+				Table("purchase_invoice_items").
+				Select("purchase_invoice_items.goods_receipt_item_id, COALESCE(SUM(purchase_invoice_items.quantity), 0) as total_invoiced").
+				Joins("JOIN purchase_invoices ON purchase_invoice_items.purchase_invoice_id = purchase_invoices.id").
+				Where("purchase_invoice_items.goods_receipt_item_id IN ?", itemIDs).
+				Where("purchase_invoices.deleted_at IS NULL").
+				Where("purchase_invoices.status NOT IN ?", []string{"REJECTED", "CANCELLED"}).
+				Group("purchase_invoice_items.goods_receipt_item_id").
+				Scan(&results)
+
+			for _, r := range results {
+				invoicedQtyMap[r.GoodsReceiptItemID] = r.TotalInvoiced
+			}
+
+			// Approach 2: Fallback - query via product_id from invoices linked to this GRN
+			// This handles invoices created before item-level GRN linkage was implemented
+			// IMPORTANT: Exclude soft-deleted invoices and REJECTED/CANCELLED invoices
+			type ProductInvoicedResult struct {
+				ProductID     string
+				TotalInvoiced float64
+			}
+			var productResults []ProductInvoicedResult
+			s.db.WithContext(ctx).
+				Table("purchase_invoice_items").
+				Select("purchase_invoice_items.product_id, COALESCE(SUM(purchase_invoice_items.quantity), 0) as total_invoiced").
+				Joins("JOIN purchase_invoices ON purchase_invoice_items.purchase_invoice_id = purchase_invoices.id").
+				Where("purchase_invoices.goods_receipt_id = ?", gr.ID).
+				Where("purchase_invoices.deleted_at IS NULL").
+				Where("purchase_invoices.status NOT IN ?", []string{"REJECTED", "CANCELLED"}).
+				Where("purchase_invoice_items.goods_receipt_item_id IS NULL"). // Only items without GRN item linkage
+				Where("purchase_invoice_items.product_id IN ?", productIDs).
+				Group("purchase_invoice_items.product_id").
+				Scan(&productResults)
+
+			// Map product-level invoiced qty to GRN items (fallback for items without direct linkage)
+			productInvoicedMap := make(map[string]float64)
+			for _, r := range productResults {
+				productInvoicedMap[r.ProductID] = r.TotalInvoiced
+			}
+
+			// Add product-level invoiced qty to items that don't have direct linkage
+			for itemID, productID := range itemProductMap {
+				if invoicedQtyMap[itemID] == 0 && productInvoicedMap[productID] > 0 {
+					invoicedQtyMap[itemID] = productInvoicedMap[productID]
+				}
+			}
+		}
+
 		response.Items = make([]dto.GoodsReceiptItemResponse, len(gr.Items))
 		for i, item := range gr.Items {
 			// Map rejection disposition fields
@@ -1465,6 +1536,9 @@ func (s *GoodsReceiptService) MapToResponse(gr *models.GoodsReceipt, includeItem
 				disposition := string(*item.RejectionDisposition)
 				rejectionDisposition = &disposition
 			}
+
+			// Get invoiced qty for this item
+			invoicedQty := invoicedQtyMap[item.ID]
 
 			response.Items[i] = dto.GoodsReceiptItemResponse{
 				ID:                    item.ID,
@@ -1478,6 +1552,7 @@ func (s *GoodsReceiptService) MapToResponse(gr *models.GoodsReceipt, includeItem
 				OrderedQty:            item.OrderedQty.String(),
 				ReceivedQty:           item.ReceivedQty.String(),
 				AcceptedQty:           item.AcceptedQty.String(),
+				InvoicedQty:           fmt.Sprintf("%.4f", invoicedQty),
 				RejectedQty:           item.RejectedQty.String(),
 				RejectionReason:       item.RejectionReason,
 				RejectionDisposition:  rejectionDisposition,
@@ -1522,6 +1597,76 @@ func (s *GoodsReceiptService) MapToResponse(gr *models.GoodsReceipt, includeItem
 				}
 			}
 		}
+	}
+
+	// Calculate invoice status for this GRN (always, regardless of includeItems)
+	// This is needed for the list view to show correct invoice badges
+	var totalAccepted, totalInvoiced float64
+
+	// Query total accepted qty from GRN items
+	type AcceptedResult struct {
+		TotalAccepted float64
+	}
+	var acceptedResult AcceptedResult
+	s.db.WithContext(ctx).
+		Table("goods_receipt_items").
+		Select("COALESCE(SUM(accepted_qty), 0) as total_accepted").
+		Where("goods_receipt_id = ?", gr.ID).
+		Scan(&acceptedResult)
+	totalAccepted = acceptedResult.TotalAccepted
+
+	// Query total invoiced qty from purchase_invoice_items for this GRN
+	// Use two approaches and take the maximum to handle both:
+	// 1. Items with goods_receipt_item_id set (granular tracking)
+	// 2. Items from invoices linked to this GRN via goods_receipt_id (fallback for older data)
+	type InvoicedResult struct {
+		TotalInvoiced float64
+	}
+
+	// Approach 1: Via goods_receipt_item_id (granular, per-item tracking)
+	// IMPORTANT: Exclude soft-deleted invoices and REJECTED/CANCELLED invoices
+	var invoicedByItem InvoicedResult
+	s.db.WithContext(ctx).
+		Table("purchase_invoice_items").
+		Select("COALESCE(SUM(purchase_invoice_items.quantity), 0) as total_invoiced").
+		Joins("JOIN goods_receipt_items ON purchase_invoice_items.goods_receipt_item_id = goods_receipt_items.id").
+		Joins("JOIN purchase_invoices ON purchase_invoice_items.purchase_invoice_id = purchase_invoices.id").
+		Where("goods_receipt_items.goods_receipt_id = ?", gr.ID).
+		Where("purchase_invoices.deleted_at IS NULL").
+		Where("purchase_invoices.status NOT IN ?", []string{"REJECTED", "CANCELLED"}).
+		Scan(&invoicedByItem)
+
+	// Approach 2: Via purchase_invoices.goods_receipt_id (fallback for invoices without item-level GRN linkage)
+	// IMPORTANT: Exclude soft-deleted invoices and REJECTED/CANCELLED invoices
+	var invoicedByInvoice InvoicedResult
+	s.db.WithContext(ctx).
+		Table("purchase_invoice_items").
+		Select("COALESCE(SUM(purchase_invoice_items.quantity), 0) as total_invoiced").
+		Joins("JOIN purchase_invoices ON purchase_invoice_items.purchase_invoice_id = purchase_invoices.id").
+		Where("purchase_invoices.goods_receipt_id = ?", gr.ID).
+		Where("purchase_invoices.deleted_at IS NULL").
+		Where("purchase_invoices.status NOT IN ?", []string{"REJECTED", "CANCELLED"}).
+		Scan(&invoicedByInvoice)
+
+	// Take the maximum of both approaches
+	// This handles cases where item-level linkage is missing but invoice-level is present
+	totalInvoiced = invoicedByItem.TotalInvoiced
+	if invoicedByInvoice.TotalInvoiced > totalInvoiced {
+		totalInvoiced = invoicedByInvoice.TotalInvoiced
+	}
+
+	// Calculate invoice status
+	response.TotalAcceptedQty = fmt.Sprintf("%.4f", totalAccepted)
+	response.TotalInvoicedQty = fmt.Sprintf("%.4f", totalInvoiced)
+
+	if totalAccepted <= 0 {
+		response.InvoiceStatus = "NONE"
+	} else if totalInvoiced <= 0 {
+		response.InvoiceStatus = "NONE"
+	} else if totalInvoiced >= totalAccepted {
+		response.InvoiceStatus = "FULL"
+	} else {
+		response.InvoiceStatus = "PARTIAL"
 	}
 
 	return response

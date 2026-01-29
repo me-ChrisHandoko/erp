@@ -83,17 +83,18 @@ func (Company) TableName() string {
 // RefreshToken represents a refresh token for JWT authentication
 // Maps to refresh_tokens table in database
 type RefreshToken struct {
-	ID         string     `gorm:"primaryKey;size:255"`
-	UserID     string     `gorm:"size:255;not null;index"`
-	TokenHash  string     `gorm:"size:255;not null;uniqueIndex"`
-	DeviceInfo string     `gorm:"size:500"`
-	IPAddress  string     `gorm:"size:45"`
-	UserAgent  string     `gorm:"size:500"`
-	IsRevoked  bool       `gorm:"default:false;not null"`
-	RevokedAt  *time.Time
-	ExpiresAt  time.Time `gorm:"not null;index"`
-	CreatedAt  time.Time `gorm:"not null"`
-	UpdatedAt  time.Time `gorm:"not null"`
+	ID                string     `gorm:"primaryKey;size:255"`
+	UserID            string     `gorm:"size:255;not null;index"`
+	TokenHash         string     `gorm:"size:255;not null;uniqueIndex"`
+	DeviceFingerprint string     `gorm:"size:64;index:idx_user_device,priority:2"` // SHA256 hash of device info for per-device token management
+	DeviceInfo        string     `gorm:"size:500"`
+	IPAddress         string     `gorm:"size:45"`
+	UserAgent         string     `gorm:"size:500"`
+	IsRevoked         bool       `gorm:"default:false;not null;index:idx_user_device,priority:3"`
+	RevokedAt         *time.Time
+	ExpiresAt         time.Time `gorm:"not null;index"`
+	CreatedAt         time.Time `gorm:"not null"`
+	UpdatedAt         time.Time `gorm:"not null"`
 }
 
 // TableName specifies the table name for RefreshToken model

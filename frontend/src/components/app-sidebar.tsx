@@ -147,8 +147,8 @@ const staticData = {
           resource: "supplier-payments" as Resource,
         },
         {
-          title: "Toleransi Pengiriman",
-          url: "/procurement/settings/delivery-tolerance",
+          title: "Pengaturan",
+          url: "/procurement/settings",
           resource: "system-config" as Resource,
         },
       ],

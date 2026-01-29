@@ -119,6 +119,14 @@ export function InvoiceDetail({ invoice }: InvoiceDetailProps) {
     return due < today && invoice.paymentStatus !== "PAID";
   };
 
+  // Calculate total line item discount (diskon per item)
+  const lineDiscount = invoice.items?.reduce((sum, item) => {
+    return sum + Number(item.discountAmount || 0);
+  }, 0) || 0;
+
+  // Header-level discount (diskon faktur)
+  const headerDiscount = Number(invoice.discountAmount || 0);
+
   return (
     <div className="grid gap-4 md:grid-cols-2">
       {/* Invoice Header Card */}
@@ -343,20 +351,32 @@ export function InvoiceDetail({ invoice }: InvoiceDetailProps) {
 
           <Separator />
 
-          {/* Discount */}
-          {invoice.discountAmount && Number(invoice.discountAmount) > 0 && (
-            <>
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-muted-foreground">
-                  Diskon
-                </p>
-                <p className="font-mono font-semibold text-green-600">
-                  - Rp {Number(invoice.discountAmount).toLocaleString("id-ID")}
-                </p>
-              </div>
-              <Separator />
-            </>
+          {/* Diskon Item (dari masing-masing item) */}
+          {lineDiscount > 0 && (
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-muted-foreground">
+                Diskon Item
+              </p>
+              <p className="font-mono font-semibold text-green-600">
+                - Rp {lineDiscount.toLocaleString("id-ID")}
+              </p>
+            </div>
           )}
+
+          {/* Diskon Faktur (header-level discount) */}
+          {headerDiscount > 0 && (
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-muted-foreground">
+                Diskon Faktur
+              </p>
+              <p className="font-mono font-semibold text-green-600">
+                - Rp {headerDiscount.toLocaleString("id-ID")}
+              </p>
+            </div>
+          )}
+
+          {/* Separator setelah diskon jika ada */}
+          {(lineDiscount > 0 || headerDiscount > 0) && <Separator />}
 
           {/* Tax */}
           {invoice.taxAmount && Number(invoice.taxAmount) > 0 && (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useLoginMutation } from "@/store/services/authApi";
 import type { ApiErrorResponse } from "@/types/api";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Mail, Lock, Eye, EyeOff, Package, Loader2, AlertCircle } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, Package, Loader2, AlertCircle, Info } from "lucide-react";
+
+// Map reason codes to user-friendly messages
+const SESSION_MESSAGES: Record<string, { message: string; variant: "info" | "warning" }> = {
+  session_expired: {
+    message: "Sesi Anda telah berakhir. Silakan login kembali.",
+    variant: "info",
+  },
+  session_revoked: {
+    message: "Sesi Anda telah berakhir karena login dari perangkat lain. Silakan login kembali.",
+    variant: "warning",
+  },
+  logout: {
+    message: "Anda telah berhasil logout.",
+    variant: "info",
+  },
+};
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -25,8 +41,20 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
+  const [sessionMessage, setSessionMessage] = useState<{ message: string; variant: "info" | "warning" } | null>(null);
   const [login, { isLoading, error }] = useLoginMutation();
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Check for session reason in URL params (e.g., /login?reason=session_expired)
+  useEffect(() => {
+    const reason = searchParams.get("reason");
+    if (reason && SESSION_MESSAGES[reason]) {
+      setSessionMessage(SESSION_MESSAGES[reason]);
+      // Clear the URL param without triggering a navigation
+      window.history.replaceState({}, "", "/login");
+    }
+  }, [searchParams]);
 
   // Restore email from localStorage on component mount
   // This is intentional initialization from localStorage on mount, not a cascading side effect
@@ -115,6 +143,17 @@ export default function LoginPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Session Message Alert (session expired, revoked, etc.) */}
+            {sessionMessage && (
+              <Alert
+                variant={sessionMessage.variant === "warning" ? "destructive" : "default"}
+                className="animate-in fade-in-50 duration-300"
+              >
+                <Info className="h-4 w-4" />
+                <AlertDescription>{sessionMessage.message}</AlertDescription>
+              </Alert>
+            )}
+
             {/* Error Alert */}
             {error && (
               <Alert variant="destructive" className="animate-in fade-in-50 duration-300">

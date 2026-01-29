@@ -595,7 +595,7 @@ func setupProtectedRoutes(
 		// PURCHASE INVOICE MANAGEMENT ROUTES (PHASE 3 - Procurement)
 		// Reference: Purchase invoice (faktur pembelian) management for supplier invoices
 		// ============================================================================
-		purchaseInvoiceService := purchaseinvoice.NewPurchaseInvoiceService(db, docNumberGen)
+		purchaseInvoiceService := purchaseinvoice.NewPurchaseInvoiceService(db, docNumberGen, auditService)
 		purchaseInvoiceHandler := handler.NewPurchaseInvoiceHandler(purchaseInvoiceService)
 
 		purchaseInvoiceGroup := businessProtected.Group("/purchase-invoices")
@@ -611,8 +611,10 @@ func setupProtectedRoutes(
 			purchaseInvoiceGroup.DELETE("/:id", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseInvoiceHandler.DeletePurchaseInvoice)
 
 			// Workflow transition endpoints - OWNER/ADMIN only
+			purchaseInvoiceGroup.POST("/:id/submit", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseInvoiceHandler.SubmitPurchaseInvoice)
 			purchaseInvoiceGroup.POST("/:id/approve", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseInvoiceHandler.ApprovePurchaseInvoice)
 			purchaseInvoiceGroup.POST("/:id/reject", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseInvoiceHandler.RejectPurchaseInvoice)
+			purchaseInvoiceGroup.POST("/:id/cancel", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseInvoiceHandler.CancelPurchaseInvoice)
 			purchaseInvoiceGroup.POST("/:id/payment", middleware.RequireRoleMiddleware("OWNER", "ADMIN"), purchaseInvoiceHandler.RecordPayment)
 		}
 

@@ -31,12 +31,27 @@ type CreatePurchaseInvoiceItemRequest struct {
 	PurchaseOrderItemID *string `json:"purchaseOrderItemId" binding:"omitempty,uuid"`
 	GoodsReceiptItemID  *string `json:"goodsReceiptItemId" binding:"omitempty,uuid"`
 	ProductID           string  `json:"productId" binding:"required,uuid"`
-	UnitID              string  `json:"unitId" binding:"required,uuid"`
-	Quantity            string  `json:"quantity" binding:"required"`         // decimal as string, must be > 0
-	UnitPrice           string  `json:"unitPrice" binding:"required"`        // decimal as string, must be >= 0
+	UnitID              string  `json:"unitId" binding:"omitempty,uuid"` // Optional - defaults to product's base unit if not provided
+	Quantity            string  `json:"quantity" binding:"required"`    // decimal as string, must be > 0
+	UnitPrice           string  `json:"unitPrice" binding:"required"`   // decimal as string, must be >= 0
 	DiscountAmount      string  `json:"discountAmount" binding:"omitempty"`  // decimal as string
 	DiscountPct         string  `json:"discountPct" binding:"omitempty"`     // decimal as string
 	TaxAmount           string  `json:"taxAmount" binding:"omitempty"`       // decimal as string
+	Notes               *string `json:"notes" binding:"omitempty"`
+}
+
+// UpdatePurchaseInvoiceItemRequest represents purchase invoice item update request
+type UpdatePurchaseInvoiceItemRequest struct {
+	ID                  *string `json:"id" binding:"omitempty,uuid"`                  // Existing item ID (for reference), nil for new item
+	PurchaseOrderItemID *string `json:"purchaseOrderItemId" binding:"omitempty,uuid"` // Reference to PO item (for tracking)
+	GoodsReceiptItemID  *string `json:"goodsReceiptItemId" binding:"omitempty,uuid"`  // Reference to GRN item (for tracking invoiced qty)
+	ProductID           string  `json:"productId" binding:"required,uuid"`
+	UnitID              string  `json:"unitId" binding:"omitempty,uuid"`
+	Quantity            string  `json:"quantity" binding:"required"`        // decimal as string, must be > 0
+	UnitPrice           string  `json:"unitPrice" binding:"required"`       // decimal as string, must be >= 0
+	DiscountAmount      string  `json:"discountAmount" binding:"omitempty"` // decimal as string
+	DiscountPct         string  `json:"discountPct" binding:"omitempty"`    // decimal as string
+	TaxAmount           string  `json:"taxAmount" binding:"omitempty"`      // decimal as string
 	Notes               *string `json:"notes" binding:"omitempty"`
 }
 
@@ -55,6 +70,8 @@ type UpdatePurchaseInvoiceRequest struct {
 	HandlingCost         *string `json:"handlingCost" binding:"omitempty"`         // Biaya Handling / Bongkar Muat
 	OtherCost            *string `json:"otherCost" binding:"omitempty"`            // Biaya Lain-lain
 	OtherCostDescription *string `json:"otherCostDescription" binding:"omitempty"` // Keterangan Biaya Lain-lain
+	// Items - if provided, replaces all existing items
+	Items []UpdatePurchaseInvoiceItemRequest `json:"items" binding:"omitempty,dive"`
 }
 
 // ApprovePurchaseInvoiceRequest represents approval request
@@ -64,6 +81,11 @@ type ApprovePurchaseInvoiceRequest struct {
 
 // RejectPurchaseInvoiceRequest represents rejection request
 type RejectPurchaseInvoiceRequest struct {
+	Reason string `json:"reason" binding:"required,min=1,max=500"`
+}
+
+// CancelPurchaseInvoiceRequest represents cancellation request for approved invoices
+type CancelPurchaseInvoiceRequest struct {
 	Reason string `json:"reason" binding:"required,min=1,max=500"`
 }
 

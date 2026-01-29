@@ -45,11 +45,9 @@ type PurchaseInvoice struct {
 
 	// Purchase Order Reference (optional - can create invoice without PO)
 	PurchaseOrderID *string `gorm:"type:varchar(255);index:idx_purchase_invoice_po"`
-	PONumber        *string `gorm:"type:varchar(100)"`
 
 	// Goods Receipt Reference (optional)
 	GoodsReceiptID *string `gorm:"type:varchar(255);index:idx_purchase_invoice_gr"`
-	GRNumber       *string `gorm:"type:varchar(100)"`
 
 	// Financial Information
 	SubtotalAmount  decimal.Decimal `gorm:"type:decimal(20,4);not null;default:0"` // Before tax & discount
@@ -77,9 +75,14 @@ type PurchaseInvoice struct {
 	// Approval Workflow
 	ApprovedBy *string    `gorm:"type:varchar(255)"`
 	ApprovedAt *time.Time `gorm:"type:timestamp"`
-	RejectedBy *string    `gorm:"type:varchar(255)"`
-	RejectedAt *time.Time `gorm:"type:timestamp"`
-	RejectedReason *string `gorm:"type:text"`
+	RejectedBy     *string    `gorm:"type:varchar(255)"`
+	RejectedAt     *time.Time `gorm:"type:timestamp"`
+	RejectedReason *string    `gorm:"type:text"`
+
+	// Cancellation (for approved invoices)
+	CancelledBy        *string    `gorm:"type:varchar(255)"`
+	CancelledAt        *time.Time `gorm:"type:timestamp"`
+	CancellationReason *string    `gorm:"type:text"`
 
 	// Tax Document (Faktur Pajak)
 	TaxInvoiceNumber *string    `gorm:"type:varchar(100);uniqueIndex:idx_tax_invoice_number"` // Nomor Faktur Pajak
@@ -104,6 +107,7 @@ type PurchaseInvoice struct {
 	Updater       *User                   `gorm:"foreignKey:UpdatedBy"`
 	Approver      *User                   `gorm:"foreignKey:ApprovedBy"`
 	Rejecter      *User                   `gorm:"foreignKey:RejectedBy"`
+	Canceller     *User                   `gorm:"foreignKey:CancelledBy"`
 }
 
 // TableName specifies the table name for PurchaseInvoice model

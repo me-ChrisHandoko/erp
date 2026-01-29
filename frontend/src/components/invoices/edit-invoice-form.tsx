@@ -11,7 +11,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   FileText,
   Building2,
@@ -22,18 +22,15 @@ import {
   Plus,
   Trash2,
   DollarSign,
+  Receipt,
+  ReceiptText,
+  Truck,
+  HandCoins,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
@@ -46,7 +43,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useUpdatePurchaseInvoiceMutation } from "@/store/services/purchaseInvoiceApi";
-import { useListPurchaseOrdersQuery } from "@/store/services/purchaseOrderApi";
 import { toast } from "sonner";
 import type {
   PurchaseInvoiceResponse,
@@ -60,11 +56,15 @@ interface EditInvoiceFormProps {
 }
 
 interface InvoiceItem {
-  id: string;
+  id: string; // Local ID for UI tracking
+  originalId?: string; // Original item ID from backend (for reference in audit)
+  purchaseOrderItemId?: string; // Reference to PO item
+  goodsReceiptItemId?: string; // Reference to GRN item (for tracking invoiced qty)
   productId: string;
   productCode: string;
   productName: string;
   quantity: string;
+  unitId: string;
   unitName: string;
   unitPrice: string;
   discountPercent: string;
@@ -88,29 +88,24 @@ export function EditInvoiceForm({
     invoiceNumber: invoice.invoiceNumber,
     invoiceDate: invoice.invoiceDate.split("T")[0], // Convert to YYYY-MM-DD
     dueDate: invoice.dueDate.split("T")[0],
-    purchaseOrderId: invoice.purchaseOrderId || "",
-    purchaseOrderNumber: invoice.poNumber || "",
     notes: invoice.notes || "",
     taxPercentage: invoice.taxRate || "11",
+    // Header-level discount (diskon faktur)
+    headerDiscountAmount: invoice.discountAmount || "0",
+    // Biaya non-barang (header level)
+    shippingCost: invoice.shippingCost || "0",
+    handlingCost: invoice.handlingCost || "0",
+    otherCost: invoice.otherCost || "0",
+    otherCostDescription: invoice.otherCostDescription || "",
   });
-
-  // Fetch POs filtered by selected supplier
-  const { data: purchaseOrdersData, isFetching: isLoadingPOs } = useListPurchaseOrdersQuery(
-    {
-      supplierId: formData.supplierId,
-      status: "CONFIRMED", // Only show confirmed POs
-      pageSize: 100
-    },
-    {
-      skip: !formData.supplierId // Only fetch when supplier is selected
-    }
-  );
-  const purchaseOrders = purchaseOrdersData?.data || [];
 
   // Initialize items from invoice
   const [items, setItems] = useState<InvoiceItem[]>(
-    invoice.items?.map((item) => ({
-      id: `item-${item.productId}`,
+    invoice.items?.map((item, index) => ({
+      id: `item-${index}`, // Local ID for UI tracking
+      originalId: item.id, // Original item ID from backend
+      purchaseOrderItemId: item.purchaseOrderItemId, // PO item reference
+      goodsReceiptItemId: item.goodsReceiptItemId, // GRN item reference (for invoiced qty tracking)
       productId: item.productId,
       productCode: item.productCode || "",
       productName: item.productName,
@@ -125,6 +120,9 @@ export function EditInvoiceForm({
       totalAmount: item.lineTotal,
     })) || []
   );
+
+  // Track if items have been modified to decide whether to show original or recalculated values
+  const [itemsModified, setItemsModified] = useState(false);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
@@ -143,11 +141,13 @@ export function EditInvoiceForm({
   const formatCurrency = (value: string | number): string => {
     const num = typeof value === "string" ? parseFloat(value || "0") : value;
     if (isNaN(num)) return "Rp 0";
+    // Check if number has decimal part
+    const hasDecimal = num % 1 !== 0;
     return new Intl.NumberFormat("id-ID", {
       style: "currency",
       currency: "IDR",
       minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
+      maximumFractionDigits: hasDecimal ? 2 : 0,
     }).format(num);
   };
 
@@ -158,6 +158,7 @@ export function EditInvoiceForm({
       productCode: "",
       productName: "",
       quantity: "1",
+      unitId: "",
       unitName: "PCS",
       unitPrice: "0",
       discountPercent: "0",
@@ -167,13 +168,16 @@ export function EditInvoiceForm({
       totalAmount: "0",
     };
     setItems([...items, newItem]);
+    setItemsModified(true);
   };
 
   const handleRemoveItem = (itemId: string) => {
     setItems(items.filter((item) => item.id !== itemId));
+    setItemsModified(true);
   };
 
   const handleItemChange = (itemId: string, field: keyof InvoiceItem, value: string) => {
+    setItemsModified(true);
     setItems((prevItems) =>
       prevItems.map((item) => {
         if (item.id !== itemId) return item;
@@ -203,23 +207,50 @@ export function EditInvoiceForm({
   };
 
   const calculateTotals = () => {
+    // Calculate subtotal (qty × price)
     const subtotal = items.reduce((sum, item) => {
       const qty = parseFloat(item.quantity || "0");
       const price = parseFloat(item.unitPrice || "0");
       return sum + qty * price;
     }, 0);
 
-    const totalDiscount = items.reduce((sum, item) => {
+    // Line-level discount total
+    const lineDiscount = items.reduce((sum, item) => {
       return sum + parseFloat(item.discountAmount || "0");
     }, 0);
 
+    // Header-level discount (additional discount on entire invoice)
+    const headerDiscount = parseFloat(formData.headerDiscountAmount || "0");
+
+    // Total discount = line discount + header discount
+    const totalDiscount = lineDiscount + headerDiscount;
+
+    // Line-level tax total
     const totalTax = items.reduce((sum, item) => {
       return sum + parseFloat(item.taxAmount || "0");
     }, 0);
 
-    const total = subtotal - totalDiscount + totalTax;
+    // Non-goods costs (header level)
+    const shippingCost = parseFloat(formData.shippingCost || "0");
+    const handlingCost = parseFloat(formData.handlingCost || "0");
+    const otherCost = parseFloat(formData.otherCost || "0");
+    const totalNonGoodsCost = shippingCost + handlingCost + otherCost;
 
-    return { subtotal, totalDiscount, totalTax, total };
+    // Total = subtotal - total discount + tax + non-goods costs
+    const total = subtotal - totalDiscount + totalTax + totalNonGoodsCost;
+
+    return {
+      subtotal,
+      lineDiscount,
+      headerDiscount,
+      totalDiscount,
+      totalTax,
+      shippingCost,
+      handlingCost,
+      otherCost,
+      totalNonGoodsCost,
+      total,
+    };
   };
 
   const totals = calculateTotals();
@@ -285,13 +316,35 @@ export function EditInvoiceForm({
     }
 
     try {
+      // Use header discount (not total discount which includes line-level)
+      const headerDiscount = parseFloat(formData.headerDiscountAmount || "0");
+
       const updateData: UpdatePurchaseInvoiceRequest = {
         invoiceDate: formData.invoiceDate,
         dueDate: formData.dueDate,
         supplierId: formData.supplierId,
-        discountAmount: totals.totalDiscount > 0 ? totals.totalDiscount.toString() : undefined,
+        discountAmount: headerDiscount > 0 ? headerDiscount.toString() : undefined,
         taxRate: formData.taxPercentage,
         notes: formData.notes || undefined,
+        // Non-Goods Costs (Biaya Tambahan)
+        shippingCost: parseFloat(formData.shippingCost || "0") > 0 ? formData.shippingCost : undefined,
+        handlingCost: parseFloat(formData.handlingCost || "0") > 0 ? formData.handlingCost : undefined,
+        otherCost: parseFloat(formData.otherCost || "0") > 0 ? formData.otherCost : undefined,
+        otherCostDescription: formData.otherCostDescription || undefined,
+        // Include items for update
+        items: items.map(item => ({
+          id: item.originalId, // Reference to original item for audit
+          purchaseOrderItemId: item.purchaseOrderItemId, // Preserve PO item linkage
+          goodsReceiptItemId: item.goodsReceiptItemId, // Preserve GRN item linkage for invoiced qty tracking
+          productId: item.productId,
+          unitId: item.unitId,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          discountAmount: parseFloat(item.discountAmount || "0") > 0 ? item.discountAmount : undefined,
+          discountPct: parseFloat(item.discountPercent || "0") > 0 ? item.discountPercent : undefined,
+          taxAmount: parseFloat(item.taxAmount || "0") > 0 ? item.taxAmount : undefined,
+          notes: undefined, // Add notes if available
+        })),
       };
 
       await updateInvoice({
@@ -357,45 +410,31 @@ export function EditInvoiceForm({
               </p>
             </div>
 
-            {/* Purchase Order Reference */}
+            {/* Purchase Order Reference - Read-only */}
             <div className="space-y-2">
-              <Label htmlFor="purchaseOrder" className="text-sm font-medium">
-                Referensi PO
-              </Label>
-              <Select
-                value={formData.purchaseOrderId}
-                onValueChange={(value) => {
-                  const selectedPO = purchaseOrders.find(po => po.id === value);
-                  handleChange("purchaseOrderId", value);
-                  if (selectedPO) {
-                    handleChange("purchaseOrderNumber", selectedPO.poNumber);
-                  }
-                }}
-                disabled={!formData.supplierId}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue
-                    placeholder={
-                      !formData.supplierId
-                        ? "Pilih supplier terlebih dahulu"
-                        : isLoadingPOs
-                        ? "Memuat PO..."
-                        : purchaseOrders.length === 0
-                        ? "Tidak ada PO untuk supplier ini"
-                        : "Pilih PO (opsional)..."
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {purchaseOrders.map((po) => (
-                    <SelectItem key={po.id} value={po.id}>
-                      {po.poNumber} - {new Date(po.poDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label className="text-sm font-medium">Referensi PO</Label>
+              <div className="flex items-center gap-2 rounded-md border bg-muted px-3 py-2">
+                <Receipt className="h-4 w-4 text-muted-foreground" />
+                <span className="font-medium">
+                  {invoice.poNumber || "-"}
+                </span>
+              </div>
               <p className="text-xs text-muted-foreground">
-                PO akan difilter berdasarkan supplier yang dipilih
+                Referensi PO tidak dapat diubah setelah faktur dibuat
+              </p>
+            </div>
+
+            {/* Goods Receipt Reference - Read-only */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Referensi Penerimaan Barang (GRN)</Label>
+              <div className="flex items-center gap-2 rounded-md border bg-muted px-3 py-2">
+                <Package className="h-4 w-4 text-muted-foreground" />
+                <span className="font-medium">
+                  {invoice.grNumber || "-"}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Referensi GRN tidak dapat diubah setelah faktur dibuat
               </p>
             </div>
 
@@ -455,6 +494,29 @@ export function EditInvoiceForm({
               )}
             </div>
 
+            {/* Header Discount */}
+            <div className="space-y-2">
+              <Label htmlFor="headerDiscount" className="text-sm font-medium">
+                Diskon Faktur (Rp)
+              </Label>
+              <div className="flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="headerDiscount"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={formData.headerDiscountAmount}
+                  onChange={(e) => handleChange("headerDiscountAmount", e.target.value)}
+                  placeholder="0"
+                  className="font-mono"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Diskon tambahan pada level faktur (selain diskon per item)
+              </p>
+            </div>
+
             {/* Notes */}
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="notes" className="text-sm font-medium">
@@ -469,6 +531,100 @@ export function EditInvoiceForm({
                 className="resize-none"
               />
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Additional Costs (Non-Goods Costs) */}
+      <Card className="border-2">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ReceiptText className="h-5 w-5" />
+            Biaya Tambahan
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Biaya non-barang seperti ongkir, handling, dan biaya lainnya
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {/* Shipping Cost */}
+            <div className="space-y-2">
+              <Label htmlFor="shippingCost" className="text-sm font-medium">
+                <div className="flex items-center gap-2">
+                  <Truck className="h-4 w-4" />
+                  Biaya Pengiriman
+                </div>
+              </Label>
+              <Input
+                id="shippingCost"
+                type="number"
+                min="0"
+                step="1000"
+                value={formData.shippingCost}
+                onChange={(e) => handleChange("shippingCost", e.target.value)}
+                placeholder="0"
+                className="text-right"
+              />
+              <p className="text-xs text-muted-foreground">Ongkos kirim dari supplier</p>
+            </div>
+
+            {/* Handling Cost */}
+            <div className="space-y-2">
+              <Label htmlFor="handlingCost" className="text-sm font-medium">
+                <div className="flex items-center gap-2">
+                  <HandCoins className="h-4 w-4" />
+                  Biaya Handling
+                </div>
+              </Label>
+              <Input
+                id="handlingCost"
+                type="number"
+                min="0"
+                step="1000"
+                value={formData.handlingCost}
+                onChange={(e) => handleChange("handlingCost", e.target.value)}
+                placeholder="0"
+                className="text-right"
+              />
+              <p className="text-xs text-muted-foreground">Biaya bongkar muat</p>
+            </div>
+
+            {/* Other Cost */}
+            <div className="space-y-2">
+              <Label htmlFor="otherCost" className="text-sm font-medium">
+                <div className="flex items-center gap-2">
+                  <DollarSign className="h-4 w-4" />
+                  Biaya Lain-lain
+                </div>
+              </Label>
+              <Input
+                id="otherCost"
+                type="number"
+                min="0"
+                step="1000"
+                value={formData.otherCost}
+                onChange={(e) => handleChange("otherCost", e.target.value)}
+                placeholder="0"
+                className="text-right"
+              />
+              <p className="text-xs text-muted-foreground">Biaya tambahan lainnya</p>
+            </div>
+
+            {/* Other Cost Description - Only show if other cost > 0 */}
+            {parseFloat(formData.otherCost || "0") > 0 && (
+              <div className="space-y-2 sm:col-span-3">
+                <Label htmlFor="otherCostDescription" className="text-sm font-medium">
+                  Keterangan Biaya Lain-lain
+                </Label>
+                <Input
+                  id="otherCostDescription"
+                  value={formData.otherCostDescription}
+                  onChange={(e) => handleChange("otherCostDescription", e.target.value)}
+                  placeholder="Jelaskan biaya lain-lain..."
+                />
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -505,7 +661,7 @@ export function EditInvoiceForm({
             <div className="text-center py-12 text-muted-foreground">
               <Package className="mx-auto h-12 w-12 mb-4 opacity-50" />
               <p>Belum ada item dalam faktur</p>
-              <p className="text-sm">Klik "Tambah Item" untuk menambahkan produk</p>
+              <p className="text-sm">Klik &quot;Tambah Item&quot; untuk menambahkan produk</p>
             </div>
           ) : (
             <div className="rounded-md border overflow-x-auto">
@@ -513,11 +669,10 @@ export function EditInvoiceForm({
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[250px]">Produk</TableHead>
-                    <TableHead className="w-[100px]">Qty</TableHead>
-                    <TableHead className="w-[80px]">Unit</TableHead>
-                    <TableHead className="w-[120px] text-right">Harga</TableHead>
-                    <TableHead className="w-[80px] text-right">Diskon %</TableHead>
-                    <TableHead className="w-[80px] text-right">PPN %</TableHead>
+                    <TableHead className="w-[80px]">Kuantitas</TableHead>
+                    <TableHead className="w-[120px] text-right">Harga Satuan</TableHead>
+                    <TableHead className="w-[120px] text-right">Diskon</TableHead>
+                    <TableHead className="w-[120px] text-right">PPN</TableHead>
                     <TableHead className="w-[120px] text-right">Total</TableHead>
                     <TableHead className="w-[50px]"></TableHead>
                   </TableRow>
@@ -526,14 +681,17 @@ export function EditInvoiceForm({
                   {items.map((item, index) => (
                     <TableRow key={item.id}>
                       <TableCell>
-                        <Input
-                          value={item.productName}
-                          onChange={(e) =>
-                            handleItemChange(item.id, "productName", e.target.value)
-                          }
-                          placeholder="Nama produk"
-                          className="h-8"
-                        />
+                        <div className="space-y-1">
+                          <Input
+                            value={item.productName}
+                            onChange={(e) =>
+                              handleItemChange(item.id, "productName", e.target.value)
+                            }
+                            placeholder="Nama produk"
+                            className="h-8"
+                          />
+                          <p className="text-xs text-muted-foreground">{item.productCode}</p>
+                        </div>
                         {errors[`item-${index}-product`] && (
                           <p className="text-xs text-destructive mt-1">
                             {errors[`item-${index}-product`]}
@@ -541,25 +699,21 @@ export function EditInvoiceForm({
                         )}
                       </TableCell>
                       <TableCell>
-                        <Input
-                          type="number"
-                          value={item.quantity}
-                          onChange={(e) =>
-                            handleItemChange(item.id, "quantity", e.target.value)
-                          }
-                          className="h-8"
-                        />
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="number"
+                            value={item.quantity}
+                            onChange={(e) =>
+                              handleItemChange(item.id, "quantity", e.target.value)
+                            }
+                            className="h-8 w-16"
+                          />
+                          <span className="text-sm text-muted-foreground whitespace-nowrap">
+                            {item.unitName}
+                          </span>
+                        </div>
                       </TableCell>
-                      <TableCell>
-                        <Input
-                          value={item.unitName}
-                          onChange={(e) =>
-                            handleItemChange(item.id, "unitName", e.target.value)
-                          }
-                          className="h-8"
-                        />
-                      </TableCell>
-                      <TableCell>
+                      <TableCell className="text-right">
                         <Input
                           type="number"
                           value={item.unitPrice}
@@ -569,27 +723,43 @@ export function EditInvoiceForm({
                           className="h-8 text-right"
                         />
                       </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          value={item.discountPercent}
-                          onChange={(e) =>
-                            handleItemChange(item.id, "discountPercent", e.target.value)
-                          }
-                          className="h-8 text-right"
-                        />
+                      <TableCell className="text-right">
+                        <div className="space-y-1">
+                          <div className="font-mono text-sm">
+                            {formatCurrency(item.discountAmount)}
+                          </div>
+                          <div className="flex items-center justify-end gap-1">
+                            <Input
+                              type="number"
+                              value={item.discountPercent}
+                              onChange={(e) =>
+                                handleItemChange(item.id, "discountPercent", e.target.value)
+                              }
+                              className="h-6 w-14 text-right text-xs"
+                            />
+                            <span className="text-xs text-muted-foreground">%</span>
+                          </div>
+                        </div>
                       </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          value={item.taxPercent}
-                          onChange={(e) =>
-                            handleItemChange(item.id, "taxPercent", e.target.value)
-                          }
-                          className="h-8 text-right"
-                        />
+                      <TableCell className="text-right">
+                        <div className="space-y-1">
+                          <div className="font-mono text-sm">
+                            {formatCurrency(item.taxAmount)}
+                          </div>
+                          <div className="flex items-center justify-end gap-1">
+                            <Input
+                              type="number"
+                              value={item.taxPercent}
+                              onChange={(e) =>
+                                handleItemChange(item.id, "taxPercent", e.target.value)
+                              }
+                              className="h-6 w-14 text-right text-xs"
+                            />
+                            <span className="text-xs text-muted-foreground">%</span>
+                          </div>
+                        </div>
                       </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
+                      <TableCell className="text-right font-mono text-sm font-medium text-primary">
                         {formatCurrency(item.totalAmount)}
                       </TableCell>
                       <TableCell>
@@ -622,31 +792,107 @@ export function EditInvoiceForm({
               Ringkasan Keuangan
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Subtotal:</span>
-                <span className="font-mono">{formatCurrency(totals.subtotal)}</span>
+          <CardContent className="space-y-4">
+            {/* Use original invoice values when items haven't been modified */}
+            {/* Subtotal */}
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-muted-foreground">Subtotal</p>
+              <p className="font-mono font-semibold">
+                {formatCurrency(itemsModified ? totals.subtotal : invoice.subtotalAmount)}
+              </p>
+            </div>
+
+            <Separator />
+
+            {/* Diskon Item (dari masing-masing item) */}
+            {(itemsModified ? totals.lineDiscount > 0 : false) && (
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-muted-foreground">Diskon Item</p>
+                <p className="font-mono font-semibold text-green-600">
+                  - {formatCurrency(totals.lineDiscount)}
+                </p>
               </div>
-              {totals.totalDiscount > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Diskon:</span>
-                  <span className="font-mono text-green-600">
-                    - {formatCurrency(totals.totalDiscount)}
-                  </span>
-                </div>
-              )}
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">PPN:</span>
-                <span className="font-mono">{formatCurrency(totals.totalTax)}</span>
+            )}
+
+            {/* Diskon Faktur (header-level discount) */}
+            {(itemsModified ? totals.headerDiscount > 0 : parseFloat(invoice.discountAmount || "0") > 0) && (
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-muted-foreground">Diskon Faktur</p>
+                <p className="font-mono font-semibold text-green-600">
+                  - {formatCurrency(itemsModified ? totals.headerDiscount : invoice.discountAmount)}
+                </p>
               </div>
+            )}
+
+            {/* Separator setelah diskon jika ada */}
+            {(itemsModified ? totals.totalDiscount > 0 : parseFloat(invoice.discountAmount || "0") > 0) && (
               <Separator />
-              <div className="flex justify-between items-center rounded-lg bg-muted/50 p-4">
-                <span className="text-lg font-bold">Total:</span>
-                <span className="text-2xl font-bold text-blue-600">
-                  {formatCurrency(totals.total)}
-                </span>
-              </div>
+            )}
+
+            {/* PPN */}
+            {(itemsModified ? totals.totalTax > 0 : parseFloat(invoice.taxAmount || "0") > 0) && (
+              <>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-muted-foreground">
+                    PPN ({formData.taxPercentage || 0}%)
+                  </p>
+                  <p className="font-mono font-semibold">
+                    {formatCurrency(itemsModified ? totals.totalTax : invoice.taxAmount)}
+                  </p>
+                </div>
+                <Separator />
+              </>
+            )}
+
+            {/* Non-Goods Costs Section */}
+            {(itemsModified ? totals.totalNonGoodsCost > 0 : parseFloat(invoice.totalNonGoodsCost || "0") > 0) && (
+              <>
+                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Biaya Tambahan
+                </div>
+                {(itemsModified ? totals.shippingCost > 0 : parseFloat(invoice.shippingCost || "0") > 0) && (
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                      <Truck className="h-3 w-3" />
+                      Biaya Pengiriman
+                    </p>
+                    <p className="font-mono font-semibold">
+                      {formatCurrency(itemsModified ? totals.shippingCost : invoice.shippingCost)}
+                    </p>
+                  </div>
+                )}
+                {(itemsModified ? totals.handlingCost > 0 : parseFloat(invoice.handlingCost || "0") > 0) && (
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                      <HandCoins className="h-3 w-3" />
+                      Biaya Handling
+                    </p>
+                    <p className="font-mono font-semibold">
+                      {formatCurrency(itemsModified ? totals.handlingCost : invoice.handlingCost)}
+                    </p>
+                  </div>
+                )}
+                {(itemsModified ? totals.otherCost > 0 : parseFloat(invoice.otherCost || "0") > 0) && (
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                      <DollarSign className="h-3 w-3" />
+                      Biaya Lain-lain
+                    </p>
+                    <p className="font-mono font-semibold">
+                      {formatCurrency(itemsModified ? totals.otherCost : invoice.otherCost)}
+                    </p>
+                  </div>
+                )}
+                <Separator />
+              </>
+            )}
+
+            {/* Total */}
+            <div className="flex items-center justify-between rounded-lg bg-muted/50 p-4">
+              <p className="text-base font-bold">Total</p>
+              <p className="text-2xl font-bold text-blue-600">
+                {formatCurrency(itemsModified ? totals.total : invoice.totalAmount)}
+              </p>
             </div>
           </CardContent>
         </Card>

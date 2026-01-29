@@ -73,7 +73,7 @@ func (h *GoodsReceiptHandler) CreateGoodsReceipt(c *gin.Context) {
 	}
 
 	// Map to response DTO
-	response := h.goodsReceiptService.MapToResponse(goodsReceipt, true)
+	response := h.goodsReceiptService.MapToResponse(c.Request.Context(), goodsReceipt, true)
 
 	c.JSON(http.StatusCreated, gin.H{
 		"success": true,
@@ -161,7 +161,7 @@ func (h *GoodsReceiptHandler) GetGoodsReceipt(c *gin.Context) {
 	}
 
 	// Map to response DTO (include items for detail view)
-	response := h.goodsReceiptService.MapToResponse(goodsReceipt, true)
+	response := h.goodsReceiptService.MapToResponse(c.Request.Context(), goodsReceipt, true)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -215,7 +215,7 @@ func (h *GoodsReceiptHandler) UpdateGoodsReceipt(c *gin.Context) {
 	}
 
 	// Map to response DTO
-	response := h.goodsReceiptService.MapToResponse(goodsReceipt, true)
+	response := h.goodsReceiptService.MapToResponse(c.Request.Context(), goodsReceipt, true)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -318,7 +318,7 @@ func (h *GoodsReceiptHandler) ReceiveGoods(c *gin.Context) {
 	}
 
 	// Map to response DTO
-	response := h.goodsReceiptService.MapToResponse(goodsReceipt, true)
+	response := h.goodsReceiptService.MapToResponse(c.Request.Context(), goodsReceipt, true)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -377,7 +377,7 @@ func (h *GoodsReceiptHandler) InspectGoods(c *gin.Context) {
 	}
 
 	// Map to response DTO
-	response := h.goodsReceiptService.MapToResponse(goodsReceipt, true)
+	response := h.goodsReceiptService.MapToResponse(c.Request.Context(), goodsReceipt, true)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -436,7 +436,7 @@ func (h *GoodsReceiptHandler) AcceptGoods(c *gin.Context) {
 	}
 
 	// Map to response DTO
-	response := h.goodsReceiptService.MapToResponse(goodsReceipt, true)
+	response := h.goodsReceiptService.MapToResponse(c.Request.Context(), goodsReceipt, true)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -498,7 +498,7 @@ func (h *GoodsReceiptHandler) RejectGoods(c *gin.Context) {
 	}
 
 	// Map to response DTO
-	response := h.goodsReceiptService.MapToResponse(goodsReceipt, true)
+	response := h.goodsReceiptService.MapToResponse(c.Request.Context(), goodsReceipt, true)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -570,7 +570,7 @@ func (h *GoodsReceiptHandler) UpdateRejectionDisposition(c *gin.Context) {
 	}
 
 	// Map to response DTO
-	response := h.goodsReceiptService.MapToResponse(goodsReceipt, true)
+	response := h.goodsReceiptService.MapToResponse(c.Request.Context(), goodsReceipt, true)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -638,7 +638,7 @@ func (h *GoodsReceiptHandler) ResolveDisposition(c *gin.Context) {
 	}
 
 	// Map to response DTO
-	response := h.goodsReceiptService.MapToResponse(goodsReceipt, true)
+	response := h.goodsReceiptService.MapToResponse(c.Request.Context(), goodsReceipt, true)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

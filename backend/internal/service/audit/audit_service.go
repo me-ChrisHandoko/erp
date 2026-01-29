@@ -2887,3 +2887,355 @@ func (s *AuditService) LogGoodsReceiptDispositionResolved(
 	}
 	return db.Create(auditLog).Error
 }
+
+// ==================== Purchase Invoice Audit Methods ====================
+
+// LogPurchaseInvoiceCreated logs when a purchase invoice is created
+func (s *AuditService) LogPurchaseInvoiceCreated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	invoiceID string,
+	invoiceData interface{},
+) error {
+	newValuesJSON, _ := json.Marshal(invoiceData)
+	newValuesStr := string(newValuesJSON)
+	entityType := "PURCHASE_INVOICE"
+
+	// Create human-readable notes with created fields
+	createdFields := extractFieldNames(invoiceData)
+
+	notes := ""
+	if len(createdFields) > 0 {
+		notes = fmt.Sprintf("Created fields: [%s]", strings.Join(createdFields, ", "))
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "PURCHASE_INVOICE_CREATED",
+		EntityType: &entityType,
+		EntityID:   &invoiceID,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogPurchaseInvoiceUpdated logs when a purchase invoice is updated
+func (s *AuditService) LogPurchaseInvoiceUpdated(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	invoiceID string,
+	oldValues interface{},
+	newValues interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "PURCHASE_INVOICE"
+
+	notes := "Purchase invoice updated"
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "PURCHASE_INVOICE_UPDATED",
+		EntityType: &entityType,
+		EntityID:   &invoiceID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogPurchaseInvoiceDeleted logs when a purchase invoice is soft deleted
+func (s *AuditService) LogPurchaseInvoiceDeleted(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	invoiceID string,
+	invoiceNumber string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesJSON, _ := json.Marshal(newValues)
+	newValuesStr := string(newValuesJSON)
+	entityType := "PURCHASE_INVOICE"
+
+	notes := fmt.Sprintf("Purchase invoice %s deleted", invoiceNumber)
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "PURCHASE_INVOICE_DELETED",
+		EntityType: &entityType,
+		EntityID:   &invoiceID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogPurchaseInvoiceSubmitted logs when a purchase invoice is submitted for approval
+func (s *AuditService) LogPurchaseInvoiceSubmitted(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	invoiceID string,
+	invoiceNumber string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "PURCHASE_INVOICE"
+
+	notes := "Purchase invoice submitted for approval (DRAFT → SUBMITTED)"
+	if invoiceNumber != "" {
+		notes = fmt.Sprintf("Purchase invoice %s submitted for approval (DRAFT → SUBMITTED)", invoiceNumber)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "PURCHASE_INVOICE_SUBMITTED",
+		EntityType: &entityType,
+		EntityID:   &invoiceID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogPurchaseInvoiceApproved logs when a purchase invoice is approved
+func (s *AuditService) LogPurchaseInvoiceApproved(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	invoiceID string,
+	invoiceNumber string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "PURCHASE_INVOICE"
+
+	notes := "Purchase invoice approved (SUBMITTED → APPROVED)"
+	if invoiceNumber != "" {
+		notes = fmt.Sprintf("Purchase invoice %s approved (SUBMITTED → APPROVED)", invoiceNumber)
+	}
+	// Append approval notes if provided
+	if approvalNotes, ok := newValues["notes"].(string); ok && approvalNotes != "" {
+		notes = fmt.Sprintf("%s. Notes: %s", notes, approvalNotes)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "PURCHASE_INVOICE_APPROVED",
+		EntityType: &entityType,
+		EntityID:   &invoiceID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogPurchaseInvoiceRejected logs when a purchase invoice is rejected
+func (s *AuditService) LogPurchaseInvoiceRejected(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	invoiceID string,
+	invoiceNumber string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+	reason string,
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "PURCHASE_INVOICE"
+
+	notes := fmt.Sprintf("Purchase invoice rejected (SUBMITTED → REJECTED). Reason: %s", reason)
+	if invoiceNumber != "" {
+		notes = fmt.Sprintf("Purchase invoice %s rejected (SUBMITTED → REJECTED). Reason: %s", invoiceNumber, reason)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "PURCHASE_INVOICE_REJECTED",
+		EntityType: &entityType,
+		EntityID:   &invoiceID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogPurchaseInvoiceCancelled logs when an approved purchase invoice is cancelled
+func (s *AuditService) LogPurchaseInvoiceCancelled(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	invoiceID string,
+	invoiceNumber string,
+	oldValues map[string]interface{},
+	newValues map[string]interface{},
+	reason string,
+) error {
+	oldValuesJSON, _ := json.Marshal(oldValues)
+	newValuesJSON, _ := json.Marshal(newValues)
+	oldValuesStr := string(oldValuesJSON)
+	newValuesStr := string(newValuesJSON)
+	entityType := "PURCHASE_INVOICE"
+
+	notes := fmt.Sprintf("Purchase invoice cancelled (APPROVED → CANCELLED). Reason: %s", reason)
+	if invoiceNumber != "" {
+		notes = fmt.Sprintf("Purchase invoice %s cancelled (APPROVED → CANCELLED). Reason: %s", invoiceNumber, reason)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "PURCHASE_INVOICE_CANCELLED",
+		EntityType: &entityType,
+		EntityID:   &invoiceID,
+		OldValues:  &oldValuesStr,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}
+
+// LogPurchaseInvoicePaymentRecorded logs when a payment is recorded for a purchase invoice
+func (s *AuditService) LogPurchaseInvoicePaymentRecorded(
+	ctx context.Context,
+	auditCtx *AuditContext,
+	invoiceID string,
+	invoiceNumber string,
+	paymentData map[string]interface{},
+) error {
+	newValuesJSON, _ := json.Marshal(paymentData)
+	newValuesStr := string(newValuesJSON)
+	entityType := "PURCHASE_INVOICE_PAYMENT"
+
+	paymentNumber := ""
+	if pn, ok := paymentData["payment_number"].(string); ok {
+		paymentNumber = pn
+	}
+	amount := ""
+	if amt, ok := paymentData["amount"].(string); ok {
+		amount = amt
+	}
+	paymentMethod := ""
+	if pm, ok := paymentData["payment_method"].(string); ok {
+		paymentMethod = pm
+	}
+
+	notes := fmt.Sprintf("Payment %s recorded: %s (%s)", paymentNumber, amount, paymentMethod)
+	if invoiceNumber != "" {
+		notes = fmt.Sprintf("Payment %s recorded for invoice %s: %s (%s)", paymentNumber, invoiceNumber, amount, paymentMethod)
+	}
+
+	auditLog := &models.AuditLog{
+		TenantID:   auditCtx.TenantID,
+		CompanyID:  auditCtx.CompanyID,
+		UserID:     auditCtx.UserID,
+		RequestID:  auditCtx.RequestID,
+		Action:     "PURCHASE_INVOICE_PAYMENT_RECORDED",
+		EntityType: &entityType,
+		EntityID:   &invoiceID,
+		NewValues:  &newValuesStr,
+		Status:     StatusSuccess,
+		IPAddress:  auditCtx.IPAddress,
+		UserAgent:  auditCtx.UserAgent,
+		Notes:      &notes,
+	}
+
+	db := s.db.WithContext(ctx)
+	if auditCtx.TenantID != nil {
+		db = db.Set("tenant_id", *auditCtx.TenantID)
+	}
+	return db.Create(auditLog).Error
+}

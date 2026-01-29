@@ -16,6 +16,8 @@ import { useRouter } from "next/navigation";
 import { Plus, Search, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
@@ -26,12 +28,30 @@ import {
 } from "@/components/ui/select";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { ErrorDisplay } from "@/components/shared/error-display";
-import { useListPurchaseInvoicesQuery } from "@/store/services/purchaseInvoiceApi";
+import {
+  useListPurchaseInvoicesQuery,
+  useDeletePurchaseInvoiceMutation,
+  useSubmitInvoiceMutation,
+  useApprovePurchaseInvoiceMutation,
+  useRejectPurchaseInvoiceMutation,
+} from "@/store/services/purchaseInvoiceApi";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
 import { usePermissions } from "@/hooks/use-permissions";
 import { PurchaseInvoicesTable } from "@/components/invoices/invoices-table";
 import type {
   PurchaseInvoiceFilters,
   PurchaseInvoiceListResponse,
+  PurchaseInvoiceResponse,
   PurchaseInvoiceStatus,
   PaymentStatus,
 } from "@/types/purchase-invoice.types";
@@ -59,9 +79,18 @@ export function PurchaseInvoicesClient({
     sort_by: "invoiceDate",
     sort_order: "desc",
   });
+  const [invoiceToDelete, setInvoiceToDelete] = useState<PurchaseInvoiceResponse | null>(null);
+  const [invoiceToReject, setInvoiceToReject] = useState<PurchaseInvoiceResponse | null>(null);
+  const [rejectionReason, setRejectionReason] = useState("");
 
   // Get permissions hook
   const permissions = usePermissions();
+
+  // Mutations
+  const [deleteInvoice, { isLoading: isDeleting }] = useDeletePurchaseInvoiceMutation();
+  const [submitInvoice, { isLoading: isSubmitting }] = useSubmitInvoiceMutation();
+  const [approveInvoice, { isLoading: isApproving }] = useApprovePurchaseInvoiceMutation();
+  const [rejectInvoice, { isLoading: isRejecting }] = useRejectPurchaseInvoiceMutation();
 
   // 🔑 Get activeCompanyId from Redux to trigger refetch on company switch
   // This is the key to making switch company work without page reload
@@ -73,6 +102,7 @@ export function PurchaseInvoicesClient({
   const canCreateInvoices = permissions.canCreate("purchase-invoices");
   const canEditInvoices = permissions.canEdit("purchase-invoices");
   const canApproveInvoices = permissions.canApprove("purchase-invoices");
+  const canDeleteInvoices = permissions.canDelete("purchase-invoices");
 
   // Debounce search input (wait 500ms after user stops typing)
   useEffect(() => {
@@ -166,6 +196,92 @@ export function PurchaseInvoicesClient({
 
   const handleCreateClick = () => {
     router.push("/procurement/invoices/create");
+  };
+
+  const handleDeleteClick = (invoice: PurchaseInvoiceResponse) => {
+    setInvoiceToDelete(invoice);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!invoiceToDelete) return;
+
+    try {
+      await deleteInvoice(invoiceToDelete.id).unwrap();
+      toast.success("Faktur Berhasil Dihapus", {
+        description: `Faktur ${invoiceToDelete.invoiceNumber} telah dihapus`,
+      });
+      setInvoiceToDelete(null);
+      refetch();
+    } catch (error: any) {
+      toast.error("Gagal Menghapus Faktur", {
+        description: error?.data?.error?.message || error?.data?.message || "Terjadi kesalahan saat menghapus faktur",
+      });
+    }
+  };
+
+  // Submit invoice for approval
+  const handleSubmitInvoice = async (invoice: PurchaseInvoiceResponse) => {
+    try {
+      await submitInvoice(invoice.id).unwrap();
+      toast.success("Faktur Berhasil Disubmit", {
+        description: `Faktur ${invoice.invoiceNumber} telah disubmit untuk persetujuan`,
+      });
+      refetch();
+    } catch (error: any) {
+      toast.error("Gagal Submit Faktur", {
+        description: error?.data?.error?.message || error?.data?.message || "Terjadi kesalahan saat submit faktur",
+      });
+    }
+  };
+
+  // Approve invoice
+  const handleApproveInvoice = async (invoice: PurchaseInvoiceResponse) => {
+    try {
+      await approveInvoice({ invoiceId: invoice.id }).unwrap();
+      toast.success("Faktur Berhasil Disetujui", {
+        description: `Faktur ${invoice.invoiceNumber} telah disetujui`,
+      });
+      refetch();
+    } catch (error: any) {
+      toast.error("Gagal Menyetujui Faktur", {
+        description: error?.data?.error?.message || error?.data?.message || "Terjadi kesalahan saat menyetujui faktur",
+      });
+    }
+  };
+
+  // Open rejection dialog
+  const handleRejectClick = (invoice: PurchaseInvoiceResponse) => {
+    setInvoiceToReject(invoice);
+    setRejectionReason("");
+  };
+
+  // Confirm rejection with reason
+  const handleConfirmReject = async () => {
+    if (!invoiceToReject) return;
+
+    if (!rejectionReason.trim()) {
+      toast.error("Alasan Penolakan Diperlukan", {
+        description: "Silakan masukkan alasan penolakan faktur",
+      });
+      return;
+    }
+
+    try {
+      await rejectInvoice({
+        invoiceId: invoiceToReject.id,
+        data: { reason: rejectionReason.trim() },
+      }).unwrap();
+      toast.success("Faktur Berhasil Ditolak", {
+        description: `Faktur ${invoiceToReject.invoiceNumber} telah ditolak`,
+      });
+      setInvoiceToReject(null);
+      setRejectionReason("");
+      refetch();
+    } catch (error: any) {
+      toast.error("Gagal Menolak Faktur", {
+        description: error?.data?.error?.message || error?.data?.message || "Terjadi kesalahan saat menolak faktur",
+      });
+    }
   };
 
   const hasActiveFilters = statusFilter || paymentStatusFilter || search;
@@ -314,6 +430,11 @@ export function PurchaseInvoicesClient({
                     onSortChange={handleSortChange}
                     canEdit={canEditInvoices}
                     canApprove={canApproveInvoices}
+                    canDelete={canDeleteInvoices}
+                    onDelete={handleDeleteClick}
+                    onSubmit={handleSubmitInvoice}
+                    onApprove={handleApproveInvoice}
+                    onReject={handleRejectClick}
                   />
 
                   {/* Pagination */}
@@ -423,6 +544,63 @@ export function PurchaseInvoicesClient({
           )}
         </CardContent>
       </Card>
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!invoiceToDelete} onOpenChange={(open) => !open && setInvoiceToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus Faktur?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Apakah Anda yakin ingin menghapus faktur <strong>{invoiceToDelete?.invoiceNumber}</strong>?
+              Tindakan ini tidak dapat dibatalkan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? "Menghapus..." : "Hapus"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Reject Confirmation Dialog */}
+      <AlertDialog open={!!invoiceToReject} onOpenChange={(open) => !open && setInvoiceToReject(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Tolak Faktur?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Apakah Anda yakin ingin menolak faktur <strong>{invoiceToReject?.invoiceNumber}</strong>?
+              Silakan masukkan alasan penolakan di bawah ini.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <Label htmlFor="rejection-reason" className="mb-2 block">
+              Alasan Penolakan <span className="text-destructive">*</span>
+            </Label>
+            <Textarea
+              id="rejection-reason"
+              placeholder="Masukkan alasan penolakan faktur..."
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              rows={3}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmReject}
+              disabled={isRejecting || !rejectionReason.trim()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isRejecting ? "Menolak..." : "Tolak Faktur"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

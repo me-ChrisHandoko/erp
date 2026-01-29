@@ -70,6 +70,7 @@ export interface PurchaseOrderItem {
   discountAmt: string; // decimal as string
   subtotal: string; // decimal as string
   receivedQty: string; // decimal as string - quantity received so far
+  invoicedQty: string; // decimal as string - quantity already invoiced
 
   // Additional Info
   notes?: string | null;
@@ -238,6 +239,7 @@ export interface PurchaseOrderItemResponse {
   discountAmt: string;
   subtotal: string;
   receivedQty: string;
+  invoicedQty: string;
   notes?: string;
   createdAt: string;
   updatedAt: string;

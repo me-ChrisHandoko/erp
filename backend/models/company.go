@@ -59,6 +59,10 @@ type Company struct {
 	POPrefix       string `gorm:"type:varchar(20);default:'PO'"`
 	PONumberFormat string `gorm:"type:varchar(100);default:'{PREFIX}{NUMBER}'"`
 
+	// Purchase Invoice Settings (3-way matching like SAP/Odoo)
+	InvoiceControlPolicy InvoiceControlPolicy `gorm:"type:varchar(20);default:'ORDERED'"` // ORDERED = invoice based on PO qty, RECEIVED = invoice based on GRN qty
+	InvoiceTolerancePct  decimal.Decimal      `gorm:"type:decimal(5,2);default:0"`        // Tolerance % for over-invoicing (e.g., 5.00 = 5%)
+
 	// System Settings
 	Currency string `gorm:"type:varchar(10);default:'IDR'"`
 	Timezone string `gorm:"type:varchar(50);default:'Asia/Jakarta'"`

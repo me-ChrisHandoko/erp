@@ -12,6 +12,7 @@
 
 import { createApi } from '@reduxjs/toolkit/query/react';
 import { baseQueryWithReauth } from './authApi';
+import { goodsReceiptApi } from './goodsReceiptApi';
 import type {
   PurchaseInvoiceResponse,
   PurchaseInvoiceListResponse,
@@ -19,9 +20,11 @@ import type {
   UpdatePurchaseInvoiceRequest,
   ApprovePurchaseInvoiceRequest,
   RejectPurchaseInvoiceRequest,
+  CancelPurchaseInvoiceRequest,
   RecordPaymentRequest,
   PurchaseInvoiceFilters,
   PurchaseInvoicePaymentResponse,
+  PaginationResponse,
 } from '@/types/purchase-invoice.types';
 import type { ApiSuccessResponse } from '@/types/api';
 
@@ -71,8 +74,12 @@ export const purchaseInvoiceApi = createApi({
       },
       // Disable caching for filter changes
       keepUnusedDataFor: 0,
-      transformResponse: (response: ApiSuccessResponse<PurchaseInvoiceListResponse>) =>
-        response.data,
+      // Note: Backend returns { success, data: [...], pagination: {...} } at same level
+      // Not nested like ApiSuccessResponse<{ data, pagination }>
+      transformResponse: (response: { success: boolean; data: PurchaseInvoiceResponse[]; pagination: PaginationResponse }) => ({
+        data: response.data,
+        pagination: response.pagination,
+      } as PurchaseInvoiceListResponse),
       providesTags: (result) =>
         result?.data
           ? [
@@ -96,6 +103,8 @@ export const purchaseInvoiceApi = createApi({
     /**
      * Create Purchase Invoice
      * POST /api/v1/purchase-invoices
+     *
+     * Also invalidates GoodsReceipt cache since invoicedQty changes
      */
     createPurchaseInvoice: builder.mutation<PurchaseInvoiceResponse, CreatePurchaseInvoiceRequest>({
       query: (data) => ({
@@ -106,6 +115,19 @@ export const purchaseInvoiceApi = createApi({
       transformResponse: (response: ApiSuccessResponse<PurchaseInvoiceResponse>) =>
         response.data,
       invalidatesTags: [{ type: 'PurchaseInvoiceList', id: 'LIST' }],
+      async onQueryStarted(data, { dispatch, queryFulfilled }) {
+        try {
+          await queryFulfilled;
+          // Invalidate GoodsReceipt cache after successful create
+          // This ensures invoicedQty is recalculated correctly
+          dispatch(goodsReceiptApi.util.invalidateTags([
+            { type: 'GoodsReceipt' as const, id: 'LIST' },
+            { type: 'GoodsReceiptList' as const, id: 'LIST' },
+          ]));
+        } catch {
+          // Create failed, no need to invalidate cache
+        }
+      },
     }),
 
     /**
@@ -132,6 +154,8 @@ export const purchaseInvoiceApi = createApi({
     /**
      * Delete Purchase Invoice
      * DELETE /api/v1/purchase-invoices/:id
+     *
+     * Also invalidates GoodsReceipt cache since invoicedQty needs to be recalculated
      */
     deletePurchaseInvoice: builder.mutation<void, string>({
       query: (invoiceId) => ({
@@ -139,6 +163,19 @@ export const purchaseInvoiceApi = createApi({
         method: 'DELETE',
       }),
       invalidatesTags: [{ type: 'PurchaseInvoiceList', id: 'LIST' }],
+      async onQueryStarted(invoiceId, { dispatch, queryFulfilled }) {
+        try {
+          await queryFulfilled;
+          // Invalidate GoodsReceipt cache after successful delete
+          // This ensures invoicedQty is recalculated correctly when creating new invoices
+          dispatch(goodsReceiptApi.util.invalidateTags([
+            { type: 'GoodsReceipt' as const, id: 'LIST' },
+            { type: 'GoodsReceiptList' as const, id: 'LIST' },
+          ]));
+        } catch {
+          // Delete failed, no need to invalidate cache
+        }
+      },
     }),
 
     // ==================== Workflow Actions ====================
@@ -185,6 +222,8 @@ export const purchaseInvoiceApi = createApi({
     /**
      * Reject Purchase Invoice
      * POST /api/v1/purchase-invoices/:id/reject
+     * Changes status from SUBMITTED to REJECTED
+     * Reverts invoiced_qty on PO items
      */
     rejectPurchaseInvoice: builder.mutation<
       PurchaseInvoiceResponse,
@@ -201,24 +240,55 @@ export const purchaseInvoiceApi = createApi({
         { type: 'PurchaseInvoice', id: invoiceId },
         { type: 'PurchaseInvoiceList', id: 'LIST' },
       ],
+      async onQueryStarted(data, { dispatch, queryFulfilled }) {
+        try {
+          await queryFulfilled;
+          // Invalidate GoodsReceipt cache after successful reject
+          // This ensures invoicedQty is recalculated correctly
+          dispatch(goodsReceiptApi.util.invalidateTags([
+            { type: 'GoodsReceipt' as const, id: 'LIST' },
+            { type: 'GoodsReceiptList' as const, id: 'LIST' },
+          ]));
+        } catch {
+          // Reject failed, no need to invalidate cache
+        }
+      },
     }),
 
     /**
      * Cancel Invoice
      * POST /api/v1/purchase-invoices/:id/cancel
-     * Changes status to CANCELLED
+     * Changes status from APPROVED to CANCELLED
+     * Requires reason and reverts invoiced_qty on PO items
      */
-    cancelInvoice: builder.mutation<PurchaseInvoiceResponse, string>({
-      query: (invoiceId) => ({
+    cancelInvoice: builder.mutation<
+      PurchaseInvoiceResponse,
+      { invoiceId: string; data: CancelPurchaseInvoiceRequest }
+    >({
+      query: ({ invoiceId, data }) => ({
         url: `/purchase-invoices/${invoiceId}/cancel`,
         method: 'POST',
+        body: data,
       }),
       transformResponse: (response: ApiSuccessResponse<PurchaseInvoiceResponse>) =>
         response.data,
-      invalidatesTags: (result, error, invoiceId) => [
+      invalidatesTags: (result, error, { invoiceId }) => [
         { type: 'PurchaseInvoice', id: invoiceId },
         { type: 'PurchaseInvoiceList', id: 'LIST' },
       ],
+      async onQueryStarted(data, { dispatch, queryFulfilled }) {
+        try {
+          await queryFulfilled;
+          // Invalidate GoodsReceipt cache after successful cancel
+          // This ensures invoicedQty is recalculated correctly
+          dispatch(goodsReceiptApi.util.invalidateTags([
+            { type: 'GoodsReceipt' as const, id: 'LIST' },
+            { type: 'GoodsReceiptList' as const, id: 'LIST' },
+          ]));
+        } catch {
+          // Cancel failed, no need to invalidate cache
+        }
+      },
     }),
 
     // ==================== Payment Management ====================

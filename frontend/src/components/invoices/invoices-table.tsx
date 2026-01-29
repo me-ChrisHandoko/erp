@@ -35,6 +35,10 @@ import {
   Pencil,
   FileText,
   MoreHorizontal,
+  Trash2,
+  Send,
+  CheckCircle,
+  XCircle,
 } from "lucide-react";
 import { EmptyState } from "@/components/shared/empty-state";
 import type { PurchaseInvoiceResponse } from "@/types/purchase-invoice.types";
@@ -304,6 +308,11 @@ interface PurchaseInvoicesTableProps {
   onSortChange: (sortBy: string) => void;
   canEdit: boolean;
   canApprove: boolean;
+  canDelete: boolean;
+  onDelete?: (invoice: PurchaseInvoiceResponse) => void;
+  onSubmit?: (invoice: PurchaseInvoiceResponse) => void;
+  onApprove?: (invoice: PurchaseInvoiceResponse) => void;
+  onReject?: (invoice: PurchaseInvoiceResponse) => void;
 }
 
 export function PurchaseInvoicesTable({
@@ -312,6 +321,12 @@ export function PurchaseInvoicesTable({
   sortOrder = "desc",
   onSortChange,
   canEdit,
+  canApprove,
+  canDelete,
+  onDelete,
+  onSubmit,
+  onApprove,
+  onReject,
 }: PurchaseInvoicesTableProps) {
   // Sort icon component
   const SortIcon = ({ column }: { column: string }) => {
@@ -523,6 +538,51 @@ export function PurchaseInvoicesTable({
                               Edit Faktur
                             </Link>
                           </DropdownMenuItem>
+                        )}
+                        {/* Submit - only for DRAFT status */}
+                        {invoice.status === "DRAFT" && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="cursor-pointer"
+                              onClick={() => onSubmit?.(invoice)}
+                            >
+                              <Send className="mr-2 h-4 w-4" />
+                              Submit untuk Persetujuan
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                        {/* Approve/Reject - only for SUBMITTED status and user has approval permission */}
+                        {canApprove && invoice.status === "SUBMITTED" && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-green-600 focus:text-green-600 cursor-pointer"
+                              onClick={() => onApprove?.(invoice)}
+                            >
+                              <CheckCircle className="mr-2 h-4 w-4" />
+                              Setujui Faktur
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive cursor-pointer"
+                              onClick={() => onReject?.(invoice)}
+                            >
+                              <XCircle className="mr-2 h-4 w-4" />
+                              Tolak Faktur
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                        {canDelete && invoice.status === "DRAFT" && Number(invoice.paidAmount || 0) === 0 && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive cursor-pointer"
+                              onClick={() => onDelete?.(invoice)}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Hapus Faktur
+                            </DropdownMenuItem>
+                          </>
                         )}
                       </DropdownMenuContent>
                     </DropdownMenu>

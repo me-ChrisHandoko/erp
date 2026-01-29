@@ -171,9 +171,14 @@ func (h *PurchaseInvoiceHandler) CreatePurchaseInvoice(c *gin.Context) {
 		userIDStr = userID.(string)
 	}
 
+	// Get IP address and user agent for audit logging
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	// Parse request body
 	var req dto.CreatePurchaseInvoiceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		println("❌ ERROR [CreatePurchaseInvoice] Invalid request body:", err.Error())
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"error":   "Invalid request body",
@@ -182,9 +187,20 @@ func (h *PurchaseInvoiceHandler) CreatePurchaseInvoice(c *gin.Context) {
 		return
 	}
 
+	// Debug log the request
+	println("✅ DEBUG [CreatePurchaseInvoice] Request received")
+	println("  - SupplierID:", req.SupplierID)
+	println("  - InvoiceDate:", req.InvoiceDate)
+	println("  - DueDate:", req.DueDate)
+	println("  - Items count:", len(req.Items))
+	for i, item := range req.Items {
+		println("  - Item", i, "ProductID:", item.ProductID, "UnitID:", item.UnitID, "Qty:", item.Quantity)
+	}
+
 	// Create purchase invoice
-	invoice, err := h.service.CreatePurchaseInvoice(c.Request.Context(), tenantID.(string), companyID.(string), userIDStr, req)
+	invoice, err := h.service.CreatePurchaseInvoice(c.Request.Context(), tenantID.(string), companyID.(string), userIDStr, ipAddress, userAgent, req)
 	if err != nil {
+		println("❌ ERROR [CreatePurchaseInvoice] Service error:", err.Error())
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"error":   "Failed to create purchase invoice",
@@ -234,6 +250,10 @@ func (h *PurchaseInvoiceHandler) UpdatePurchaseInvoice(c *gin.Context) {
 		userIDStr = userID.(string)
 	}
 
+	// Get IP address and user agent for audit logging
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	invoiceID := c.Param("id")
 
 	// Parse request body
@@ -248,7 +268,7 @@ func (h *PurchaseInvoiceHandler) UpdatePurchaseInvoice(c *gin.Context) {
 	}
 
 	// Update purchase invoice
-	invoice, err := h.service.UpdatePurchaseInvoice(c.Request.Context(), tenantID.(string), companyID.(string), invoiceID, userIDStr, req)
+	invoice, err := h.service.UpdatePurchaseInvoice(c.Request.Context(), tenantID.(string), companyID.(string), invoiceID, userIDStr, ipAddress, userAgent, req)
 	if err != nil {
 		if err.Error() == "purchase invoice not found" {
 			c.JSON(http.StatusNotFound, gin.H{
@@ -300,10 +320,24 @@ func (h *PurchaseInvoiceHandler) DeletePurchaseInvoice(c *gin.Context) {
 		return
 	}
 
+	// Get user ID from context for audit trail
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "User context not found",
+		})
+		return
+	}
+
+	// Get IP address and user agent for audit logging
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	invoiceID := c.Param("id")
 
 	// Delete purchase invoice
-	if err := h.service.DeletePurchaseInvoice(c.Request.Context(), tenantID.(string), companyID.(string), invoiceID); err != nil {
+	if err := h.service.DeletePurchaseInvoice(c.Request.Context(), tenantID.(string), companyID.(string), invoiceID, userID.(string), ipAddress, userAgent); err != nil {
 		if err.Error() == "purchase invoice not found" {
 			c.JSON(http.StatusNotFound, gin.H{
 				"success": false,
@@ -328,6 +362,67 @@ func (h *PurchaseInvoiceHandler) DeletePurchaseInvoice(c *gin.Context) {
 // ============================================================================
 // WORKFLOW Handlers
 // ============================================================================
+
+// SubmitPurchaseInvoice handles POST /api/v1/purchase-invoices/:id/submit
+func (h *PurchaseInvoiceHandler) SubmitPurchaseInvoice(c *gin.Context) {
+	// Get tenant, company, and user context
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Tenant context not found",
+		})
+		return
+	}
+
+	companyID, exists := c.Get("company_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Company context not found",
+		})
+		return
+	}
+
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
+	// Get IP address and user agent for audit logging
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
+	invoiceID := c.Param("id")
+
+	// Submit purchase invoice
+	invoice, err := h.service.SubmitPurchaseInvoice(c.Request.Context(), tenantID.(string), companyID.(string), invoiceID, userIDStr, ipAddress, userAgent)
+	if err != nil {
+		if err.Error() == "purchase invoice not found" {
+			c.JSON(http.StatusNotFound, gin.H{
+				"success": false,
+				"error":   "Purchase invoice not found",
+			})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Failed to submit purchase invoice",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Convert to response DTO
+	response := convertToInvoiceResponse(invoice)
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Purchase invoice submitted successfully",
+		"data":    response,
+	})
+}
 
 // ApprovePurchaseInvoice handles POST /api/v1/purchase-invoices/:id/approve
 func (h *PurchaseInvoiceHandler) ApprovePurchaseInvoice(c *gin.Context) {
@@ -356,6 +451,10 @@ func (h *PurchaseInvoiceHandler) ApprovePurchaseInvoice(c *gin.Context) {
 		userIDStr = userID.(string)
 	}
 
+	// Get IP address and user agent for audit logging
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	invoiceID := c.Param("id")
 
 	// Parse request body (optional notes)
@@ -366,7 +465,7 @@ func (h *PurchaseInvoiceHandler) ApprovePurchaseInvoice(c *gin.Context) {
 	}
 
 	// Approve purchase invoice
-	invoice, err := h.service.ApprovePurchaseInvoice(c.Request.Context(), tenantID.(string), companyID.(string), invoiceID, userIDStr, req)
+	invoice, err := h.service.ApprovePurchaseInvoice(c.Request.Context(), tenantID.(string), companyID.(string), invoiceID, userIDStr, ipAddress, userAgent, req)
 	if err != nil {
 		if err.Error() == "purchase invoice not found" {
 			c.JSON(http.StatusNotFound, gin.H{
@@ -420,6 +519,10 @@ func (h *PurchaseInvoiceHandler) RejectPurchaseInvoice(c *gin.Context) {
 		userIDStr = userID.(string)
 	}
 
+	// Get IP address and user agent for audit logging
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	invoiceID := c.Param("id")
 
 	// Parse request body
@@ -434,7 +537,7 @@ func (h *PurchaseInvoiceHandler) RejectPurchaseInvoice(c *gin.Context) {
 	}
 
 	// Reject purchase invoice
-	invoice, err := h.service.RejectPurchaseInvoice(c.Request.Context(), tenantID.(string), companyID.(string), invoiceID, userIDStr, req)
+	invoice, err := h.service.RejectPurchaseInvoice(c.Request.Context(), tenantID.(string), companyID.(string), invoiceID, userIDStr, ipAddress, userAgent, req)
 	if err != nil {
 		if err.Error() == "purchase invoice not found" {
 			c.JSON(http.StatusNotFound, gin.H{
@@ -488,6 +591,10 @@ func (h *PurchaseInvoiceHandler) RecordPayment(c *gin.Context) {
 		userIDStr = userID.(string)
 	}
 
+	// Get IP address and user agent for audit logging
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
 	invoiceID := c.Param("id")
 
 	// Parse request body
@@ -502,7 +609,7 @@ func (h *PurchaseInvoiceHandler) RecordPayment(c *gin.Context) {
 	}
 
 	// Record payment
-	payment, err := h.service.RecordPayment(c.Request.Context(), tenantID.(string), companyID.(string), invoiceID, userIDStr, req)
+	payment, err := h.service.RecordPayment(c.Request.Context(), tenantID.(string), companyID.(string), invoiceID, userIDStr, ipAddress, userAgent, req)
 	if err != nil {
 		if err.Error() == "purchase invoice not found" {
 			c.JSON(http.StatusNotFound, gin.H{
@@ -529,6 +636,78 @@ func (h *PurchaseInvoiceHandler) RecordPayment(c *gin.Context) {
 	})
 }
 
+// CancelPurchaseInvoice handles POST /api/v1/purchase-invoices/:id/cancel
+func (h *PurchaseInvoiceHandler) CancelPurchaseInvoice(c *gin.Context) {
+	// Get tenant, company, and user context
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Tenant context not found",
+		})
+		return
+	}
+
+	companyID, exists := c.Get("company_id")
+	if !exists {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Company context not found",
+		})
+		return
+	}
+
+	userID, _ := c.Get("user_id")
+	userIDStr := ""
+	if userID != nil {
+		userIDStr = userID.(string)
+	}
+
+	// Get IP address and user agent for audit logging
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+
+	invoiceID := c.Param("id")
+
+	// Parse request body
+	var req dto.CancelPurchaseInvoiceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Invalid request body",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Cancel purchase invoice
+	invoice, err := h.service.CancelPurchaseInvoice(c.Request.Context(), tenantID.(string), companyID.(string), invoiceID, userIDStr, ipAddress, userAgent, req)
+	if err != nil {
+		if err.Error() == "purchase invoice not found" {
+			c.JSON(http.StatusNotFound, gin.H{
+				"success": false,
+				"error":   "Purchase invoice not found",
+			})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Failed to cancel purchase invoice",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Convert to response DTO
+	response := convertToInvoiceResponse(invoice)
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Purchase invoice cancelled successfully",
+		"data":    response,
+	})
+}
+
 // ============================================================================
 // HELPER FUNCTIONS - Model to DTO Conversion
 // ============================================================================
@@ -544,9 +723,7 @@ func convertToInvoiceResponse(invoice *models.PurchaseInvoice) dto.PurchaseInvoi
 		SupplierName:         invoice.SupplierName,
 		SupplierCode:         invoice.SupplierCode,
 		PurchaseOrderID:      invoice.PurchaseOrderID,
-		PONumber:             invoice.PONumber,
 		GoodsReceiptID:       invoice.GoodsReceiptID,
-		GRNumber:             invoice.GRNumber,
 		SubtotalAmount:       invoice.SubtotalAmount.String(),
 		DiscountAmount:       invoice.DiscountAmount.String(),
 		TaxAmount:            invoice.TaxAmount.String(),
@@ -587,6 +764,14 @@ func convertToInvoiceResponse(invoice *models.PurchaseInvoice) dto.PurchaseInvoi
 	if invoice.TaxInvoiceDate != nil {
 		taxDate := invoice.TaxInvoiceDate.Format("2006-01-02")
 		response.TaxInvoiceDate = &taxDate
+	}
+
+	// Populate PO and GRN numbers from relations (normalized approach)
+	if invoice.PurchaseOrder != nil {
+		response.PONumber = &invoice.PurchaseOrder.PONumber
+	}
+	if invoice.GoodsReceipt != nil {
+		response.GRNumber = &invoice.GoodsReceipt.GRNNumber
 	}
 
 	// Convert items if present

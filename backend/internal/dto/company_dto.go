@@ -20,8 +20,11 @@ type CompanyResponse struct {
 	IsPKP          bool               `json:"isPkp"`
 	PPNRate        float64            `json:"ppnRate"`
 	InvoicePrefix  string             `json:"invoicePrefix,omitempty"`
-	IsActive       bool               `json:"isActive"`
-	Banks          []CompanyBankInfo  `json:"banks,omitempty"`
+	// Purchase Invoice Settings (3-way matching)
+	InvoiceControlPolicy string  `json:"invoiceControlPolicy,omitempty"` // ORDERED or RECEIVED
+	InvoiceTolerancePct  float64 `json:"invoiceTolerancePct"`            // Tolerance % for over-invoicing
+	IsActive             bool    `json:"isActive"`
+	Banks                []CompanyBankInfo  `json:"banks,omitempty"`
 }
 
 // CompanyBankInfo represents bank account information in company response
@@ -58,6 +61,9 @@ type UpdateCompanyRequest struct {
 	InvoiceNumberFormat  *string  `json:"invoiceNumberFormat" binding:"omitempty,max=50" validate:"omitempty,max=50"`
 	FakturPajakSeries    *string  `json:"fakturPajakSeries" binding:"omitempty,max=20" validate:"omitempty,max=20"`
 	SPPKPNumber          *string  `json:"sppkpNumber" binding:"omitempty,max=50" validate:"omitempty,max=50"`
+	// Purchase Invoice Settings (3-way matching like SAP/Odoo)
+	InvoiceControlPolicy *string  `json:"invoiceControlPolicy" binding:"omitempty,oneof=ORDERED RECEIVED" validate:"omitempty,oneof=ORDERED RECEIVED"`
+	InvoiceTolerancePct  *float64 `json:"invoiceTolerancePct" binding:"omitempty,min=0,max=100" validate:"omitempty,min=0,max=100"`
 }
 
 // AddBankAccountRequest represents bank account addition request

@@ -70,6 +70,20 @@ export interface CreatePurchaseInvoiceRequest {
   items: CreatePurchaseInvoiceItemRequest[];
 }
 
+export interface UpdatePurchaseInvoiceItemRequest {
+  id?: string; // Existing item ID (for reference), nil for new item
+  purchaseOrderItemId?: string; // Reference to PO item (for tracking)
+  goodsReceiptItemId?: string; // Reference to GRN item (for tracking invoiced qty)
+  productId: string;
+  unitId: string;
+  quantity: string;
+  unitPrice: string;
+  discountAmount?: string;
+  discountPct?: string;
+  taxAmount?: string;
+  notes?: string;
+}
+
 export interface UpdatePurchaseInvoiceRequest {
   invoiceDate?: string;
   dueDate?: string;
@@ -84,6 +98,8 @@ export interface UpdatePurchaseInvoiceRequest {
   handlingCost?: string; // Biaya Handling / Bongkar Muat
   otherCost?: string; // Biaya Lain-lain
   otherCostDescription?: string; // Keterangan Biaya Lain-lain
+  // Items - if provided, replaces all existing items
+  items?: UpdatePurchaseInvoiceItemRequest[];
 }
 
 export interface ApprovePurchaseInvoiceRequest {
@@ -91,6 +107,10 @@ export interface ApprovePurchaseInvoiceRequest {
 }
 
 export interface RejectPurchaseInvoiceRequest {
+  reason: string;
+}
+
+export interface CancelPurchaseInvoiceRequest {
   reason: string;
 }
 
@@ -214,13 +234,11 @@ export interface PaginationResponse {
 }
 
 export interface PurchaseInvoiceListResponse {
-  success: boolean;
   data: PurchaseInvoiceResponse[];
   pagination: PaginationResponse;
 }
 
 export interface PurchaseInvoiceDetailResponse {
-  success: boolean;
   data: PurchaseInvoiceResponse;
 }
 

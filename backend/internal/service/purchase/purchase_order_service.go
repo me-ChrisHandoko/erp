@@ -1210,6 +1210,7 @@ func (s *PurchaseOrderService) mapPurchaseOrderItemToResponse(item *models.Purch
 		DiscountAmt: item.DiscountAmt.String(),
 		Subtotal:    item.Subtotal.String(),
 		ReceivedQty: item.ReceivedQty.String(),
+		InvoicedQty: item.InvoicedQty.String(),
 		Notes:       item.Notes,
 		CreatedAt:   item.CreatedAt,
 		UpdatedAt:   item.UpdatedAt,

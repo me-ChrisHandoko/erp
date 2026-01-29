@@ -112,6 +112,7 @@ export interface GoodsReceiptItemResponse {
   orderedQty: string;
   receivedQty: string;
   acceptedQty: string;
+  invoicedQty: string; // Qty already invoiced for this GRN item
   rejectedQty: string;
   rejectionReason?: string;
   qualityNote?: string;
@@ -157,6 +158,9 @@ export interface GoodsReceiptResponse {
   acceptanceNotes?: string;  // Notes during acceptance (INSPECTED → ACCEPTED/PARTIAL)
   rejectionNotes?: string;   // Notes during rejection
   itemCount: number; // Number of items in the goods receipt
+  invoiceStatus: "NONE" | "PARTIAL" | "FULL"; // Invoice status for this GRN
+  totalAcceptedQty: string; // Total accepted qty across all items
+  totalInvoicedQty: string; // Total invoiced qty across all items
   items?: GoodsReceiptItemResponse[];
   createdAt: string;
   updatedAt: string;

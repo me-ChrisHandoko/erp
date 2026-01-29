@@ -96,6 +96,7 @@ type PurchaseOrderItemResponse struct {
 	DiscountAmt   string                            `json:"discountAmt"`
 	Subtotal      string                            `json:"subtotal"`
 	ReceivedQty   string                            `json:"receivedQty"`
+	InvoicedQty   string                            `json:"invoicedQty"`
 	Notes         *string                           `json:"notes,omitempty"`
 	CreatedAt     time.Time                         `json:"createdAt"`
 	UpdatedAt     time.Time                         `json:"updatedAt"`

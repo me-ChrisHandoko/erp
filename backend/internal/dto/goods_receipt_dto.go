@@ -127,6 +127,7 @@ type GoodsReceiptItemResponse struct {
 	OrderedQty          string                           `json:"orderedQty"`
 	ReceivedQty         string                           `json:"receivedQty"`
 	AcceptedQty         string                           `json:"acceptedQty"`
+	InvoicedQty         string                           `json:"invoicedQty"` // Qty already invoiced for this GRN item
 	RejectedQty              string                           `json:"rejectedQty"`
 	RejectionReason          *string                          `json:"rejectionReason,omitempty"`
 	RejectionDisposition     *string                          `json:"rejectionDisposition,omitempty"`
@@ -175,6 +176,9 @@ type GoodsReceiptResponse struct {
 	AcceptanceNotes  *string                            `json:"acceptanceNotes,omitempty"`  // Notes during acceptance (INSPECTED → ACCEPTED/PARTIAL)
 	RejectionNotes   *string                            `json:"rejectionNotes,omitempty"`   // Notes during rejection
 	ItemCount        int                                `json:"itemCount"`                  // Number of items in the goods receipt
+	InvoiceStatus    string                             `json:"invoiceStatus"`              // Invoice status: NONE, PARTIAL, FULL
+	TotalAcceptedQty string                             `json:"totalAcceptedQty"`           // Total accepted qty across all items
+	TotalInvoicedQty string                             `json:"totalInvoicedQty"`           // Total invoiced qty across all items
 	Items            []GoodsReceiptItemResponse         `json:"items,omitempty"`
 	CreatedAt        time.Time                          `json:"createdAt"`
 	UpdatedAt        time.Time                          `json:"updatedAt"`

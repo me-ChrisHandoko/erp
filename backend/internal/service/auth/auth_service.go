@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -668,14 +669,19 @@ func (s *AuthService) ResetPassword(ctx context.Context, req *dto.PasswordResetC
 // Helper functions
 
 // storeRefreshTokenTx stores refresh token in database within a transaction
-// Also enforces a limit of 3 active tokens per user to prevent token accumulation
 // CRITICAL: This method accepts a transaction to maintain atomicity with other operations
+// UPDATED: Implements per-device token management (same logic as storeRefreshToken)
+// - Each device (identified by UserAgent fingerprint) gets its own token
+// - Login from the same device revokes only that device's previous token
+// - Login from a different device does NOT affect other devices' tokens
 func (s *AuthService) storeRefreshTokenTx(ctx context.Context, tx *gorm.DB, userID, token, deviceInfo, ipAddress, userAgent string) error {
 	tokenHash := hashToken(token)
 	expiresAt := time.Now().Add(s.cfg.JWT.RefreshExpiry)
+	deviceFingerprint := generateDeviceFingerprint(userAgent)
 
-	// STEP 1: Cleanup expired tokens first (regardless of revocation status)
-	// This prevents accumulation of expired but unrevoked tokens
+	logger.Debugf("[StoreTokenTx] Storing token for user %s, device fingerprint: %s...", userID, deviceFingerprint[:16])
+
+	// STEP 1: Cleanup expired tokens for this user (regardless of device)
 	expiredCount := int64(0)
 	if result := tx.Model(&RefreshToken{}).
 		Where("user_id = ? AND expires_at < ? AND is_revoked = ?", userID, time.Now(), false).
@@ -692,84 +698,78 @@ func (s *AuthService) storeRefreshTokenTx(ctx context.Context, tx *gorm.DB, user
 		}
 	}
 
-	// STEP 2: Check how many active (non-expired) tokens this user currently has
-	var activeTokenCount int64
-	if err := tx.Model(&RefreshToken{}).
-		Where("user_id = ? AND is_revoked = ? AND expires_at > ?", userID, false, time.Now()).
-		Count(&activeTokenCount).Error; err != nil {
-		logger.Warnf("[StoreTokenTx] Failed to count active tokens: %v", err)
+	// STEP 2: Revoke previous tokens ONLY from the SAME device
+	// This is the key change: we only revoke tokens with the same device fingerprint
+	var sameDeviceRevokeCount int64
+	if result := tx.Model(&RefreshToken{}).
+		Where("user_id = ? AND device_fingerprint = ? AND is_revoked = ?", userID, deviceFingerprint, false).
+		Updates(map[string]interface{}{
+			"is_revoked": true,
+			"revoked_at": time.Now(),
+			"updated_at": time.Now(),
+		}); result.Error != nil {
+		logger.Warnf("[StoreTokenTx] Failed to revoke same-device tokens: %v", result.Error)
 	} else {
-		logger.Debugf("[StoreTokenTx] User has %d active tokens (after removing %d expired)", activeTokenCount, expiredCount)
-
-		// STEP 3: Enforce maximum active token limit
-		// UPDATED: Changed from >= 3 to >= 2 to keep only 1 newest + new one = 2 total
-		// This prevents accumulation and ensures proper cleanup
-		const maxActiveTokens = 2 // Keep only 1 old token + 1 new token
-		if activeTokenCount >= maxActiveTokens {
-			tokensToRevoke := activeTokenCount - (maxActiveTokens - 1) // Keep maxActiveTokens-1, revoke the rest
-			logger.Warnf("[StoreTokenTx] User has %d active tokens (limit: %d), revoking %d oldest tokens",
-				activeTokenCount, maxActiveTokens, tokensToRevoke)
-
-			// Get oldest tokens to revoke
-			var oldTokens []RefreshToken
-			if err := tx.Where("user_id = ? AND is_revoked = ? AND expires_at > ?", userID, false, time.Now()).
-				Order("created_at ASC").
-				Limit(int(tokensToRevoke)).
-				Find(&oldTokens).Error; err != nil {
-				logger.Warnf("[StoreTokenTx] Failed to fetch old tokens: %v", err)
-			} else {
-				// Revoke each old token
-				revokedCount := 0
-				for _, oldToken := range oldTokens {
-					if err := tx.Model(&RefreshToken{}).
-						Where("id = ?", oldToken.ID).
-						Updates(map[string]interface{}{
-							"is_revoked": true,
-							"revoked_at": time.Now(),
-							"updated_at": time.Now(),
-						}).Error; err != nil {
-						logger.Warnf("[StoreTokenTx] Failed to revoke old token %s: %v", oldToken.ID, err)
-					} else {
-						revokedCount++
-						logger.Debugf("[StoreTokenTx] Revoked old token ID %s from %v (age: %v)",
-							oldToken.ID[:8], oldToken.CreatedAt, time.Since(oldToken.CreatedAt))
-					}
-				}
-				logger.Debugf("[StoreTokenTx] Successfully revoked %d/%d old tokens", revokedCount, len(oldTokens))
-			}
+		sameDeviceRevokeCount = result.RowsAffected
+		if sameDeviceRevokeCount > 0 {
+			logger.Infof("[StoreTokenTx] Revoked %d previous token(s) from same device (fingerprint: %s...)",
+				sameDeviceRevokeCount, deviceFingerprint[:16])
 		}
 	}
 
-	// Create new refresh token
+	// STEP 3: Safety limit - if user has too many active devices, warn but don't revoke
+	var activeDeviceCount int64
+	if err := tx.Model(&RefreshToken{}).
+		Where("user_id = ? AND is_revoked = ? AND expires_at > ?", userID, false, time.Now()).
+		Count(&activeDeviceCount).Error; err != nil {
+		logger.Warnf("[StoreTokenTx] Failed to count active devices: %v", err)
+	} else {
+		const maxActiveDevices = 10 // Warning threshold only
+		if activeDeviceCount >= maxActiveDevices {
+			logger.Warnf("[StoreTokenTx] User %s has %d active devices (threshold: %d) - consider reviewing",
+				userID, activeDeviceCount, maxActiveDevices)
+		} else {
+			logger.Debugf("[StoreTokenTx] User has %d active device(s)", activeDeviceCount)
+		}
+	}
+
+	// STEP 4: Create new refresh token with device fingerprint
 	refreshToken := RefreshToken{
-		ID:         uuid.New().String(),
-		UserID:     userID,
-		TokenHash:  tokenHash,
-		DeviceInfo: deviceInfo,
-		IPAddress:  ipAddress,
-		UserAgent:  userAgent,
-		IsRevoked:  false,
-		ExpiresAt:  expiresAt,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		ID:                uuid.New().String(),
+		UserID:            userID,
+		TokenHash:         tokenHash,
+		DeviceFingerprint: deviceFingerprint,
+		DeviceInfo:        deviceInfo,
+		IPAddress:         ipAddress,
+		UserAgent:         userAgent,
+		IsRevoked:         false,
+		ExpiresAt:         expiresAt,
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
 	}
 
 	if err := tx.Create(&refreshToken).Error; err != nil {
 		return errors.NewInternalError(fmt.Errorf("failed to store refresh token: %w", err))
 	}
 
-	logger.Debugf("[StoreTokenTx] New token stored (expires: %v)", expiresAt)
+	logger.Infof("[StoreTokenTx] New token stored for device %s... (expires: %v)", deviceFingerprint[:16], expiresAt)
 	return nil
 }
 
 // storeRefreshToken stores refresh token in database (non-transactional version)
-// Also enforces a limit of 2 active tokens per user to prevent token accumulation
-// UPDATED: Matches storeRefreshTokenTx logic with expired token cleanup
+// UPDATED: Implements per-device token management
+// - Each device (identified by UserAgent fingerprint) gets its own token
+// - Login from the same device revokes only that device's previous token
+// - Login from a different device does NOT affect other devices' tokens
+// - This allows true multi-device support (phone, laptop, tablet, etc.)
 func (s *AuthService) storeRefreshToken(ctx context.Context, userID, token, deviceInfo, ipAddress, userAgent string) error {
 	tokenHash := hashToken(token)
 	expiresAt := time.Now().Add(s.cfg.JWT.RefreshExpiry)
+	deviceFingerprint := generateDeviceFingerprint(userAgent)
 
-	// STEP 1: Cleanup expired tokens first (regardless of revocation status)
+	logger.Debugf("[StoreToken] Storing token for user %s, device fingerprint: %s...", userID, deviceFingerprint[:16])
+
+	// STEP 1: Cleanup expired tokens for this user (regardless of device)
 	expiredCount := int64(0)
 	if result := s.db.Model(&RefreshToken{}).
 		Where("user_id = ? AND expires_at < ? AND is_revoked = ?", userID, time.Now(), false).
@@ -786,71 +786,62 @@ func (s *AuthService) storeRefreshToken(ctx context.Context, userID, token, devi
 		}
 	}
 
-	// STEP 2: Check how many active (non-expired) tokens this user currently has
-	var activeTokenCount int64
-	if err := s.db.Model(&RefreshToken{}).
-		Where("user_id = ? AND is_revoked = ? AND expires_at > ?", userID, false, time.Now()).
-		Count(&activeTokenCount).Error; err != nil {
-		logger.Warnf("[StoreToken] Failed to count active tokens: %v", err)
+	// STEP 2: Revoke previous tokens ONLY from the SAME device
+	// This is the key change: we only revoke tokens with the same device fingerprint
+	var sameDeviceRevokeCount int64
+	if result := s.db.Model(&RefreshToken{}).
+		Where("user_id = ? AND device_fingerprint = ? AND is_revoked = ?", userID, deviceFingerprint, false).
+		Updates(map[string]interface{}{
+			"is_revoked": true,
+			"revoked_at": time.Now(),
+			"updated_at": time.Now(),
+		}); result.Error != nil {
+		logger.Warnf("[StoreToken] Failed to revoke same-device tokens: %v", result.Error)
 	} else {
-		logger.Debugf("[StoreToken] User has %d active tokens (after removing %d expired)", activeTokenCount, expiredCount)
-
-		// STEP 3: Enforce maximum active token limit
-		const maxActiveTokens = 2 // Keep only 1 old token + 1 new token
-		if activeTokenCount >= maxActiveTokens {
-			tokensToRevoke := activeTokenCount - (maxActiveTokens - 1)
-			logger.Warnf("[StoreToken] User has %d active tokens (limit: %d), revoking %d oldest tokens",
-				activeTokenCount, maxActiveTokens, tokensToRevoke)
-
-			// Get oldest tokens to revoke
-			var oldTokens []RefreshToken
-			if err := s.db.Where("user_id = ? AND is_revoked = ? AND expires_at > ?", userID, false, time.Now()).
-				Order("created_at ASC").
-				Limit(int(tokensToRevoke)).
-				Find(&oldTokens).Error; err != nil {
-				logger.Warnf("[StoreToken] Failed to fetch old tokens: %v", err)
-			} else {
-				// Revoke each old token
-				revokedCount := 0
-				for _, oldToken := range oldTokens {
-					if err := s.db.Model(&RefreshToken{}).
-						Where("id = ?", oldToken.ID).
-						Updates(map[string]interface{}{
-							"is_revoked": true,
-							"revoked_at": time.Now(),
-							"updated_at": time.Now(),
-						}).Error; err != nil {
-						logger.Warnf("[StoreToken] Failed to revoke old token %s: %v", oldToken.ID, err)
-					} else {
-						revokedCount++
-						logger.Debugf("[StoreToken] Revoked old token ID %s from %v (age: %v)",
-							oldToken.ID[:8], oldToken.CreatedAt, time.Since(oldToken.CreatedAt))
-					}
-				}
-				logger.Debugf("[StoreToken] Successfully revoked %d/%d old tokens", revokedCount, len(oldTokens))
-			}
+		sameDeviceRevokeCount = result.RowsAffected
+		if sameDeviceRevokeCount > 0 {
+			logger.Infof("[StoreToken] Revoked %d previous token(s) from same device (fingerprint: %s...)",
+				sameDeviceRevokeCount, deviceFingerprint[:16])
 		}
 	}
 
-	// Create new refresh token
+	// STEP 3: Safety limit - if user has too many active devices, warn but don't revoke
+	// This is a soft limit for monitoring, not enforcement
+	var activeDeviceCount int64
+	if err := s.db.Model(&RefreshToken{}).
+		Where("user_id = ? AND is_revoked = ? AND expires_at > ?", userID, false, time.Now()).
+		Count(&activeDeviceCount).Error; err != nil {
+		logger.Warnf("[StoreToken] Failed to count active devices: %v", err)
+	} else {
+		const maxActiveDevices = 10 // Warning threshold only
+		if activeDeviceCount >= maxActiveDevices {
+			logger.Warnf("[StoreToken] User %s has %d active devices (threshold: %d) - consider reviewing",
+				userID, activeDeviceCount, maxActiveDevices)
+		} else {
+			logger.Debugf("[StoreToken] User has %d active device(s)", activeDeviceCount)
+		}
+	}
+
+	// STEP 4: Create new refresh token with device fingerprint
 	refreshToken := RefreshToken{
-		ID:         uuid.New().String(),
-		UserID:     userID,
-		TokenHash:  tokenHash,
-		DeviceInfo: deviceInfo,
-		IPAddress:  ipAddress,
-		UserAgent:  userAgent,
-		IsRevoked:  false,
-		ExpiresAt:  expiresAt,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		ID:                uuid.New().String(),
+		UserID:            userID,
+		TokenHash:         tokenHash,
+		DeviceFingerprint: deviceFingerprint,
+		DeviceInfo:        deviceInfo,
+		IPAddress:         ipAddress,
+		UserAgent:         userAgent,
+		IsRevoked:         false,
+		ExpiresAt:         expiresAt,
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
 	}
 
 	if err := s.db.Create(&refreshToken).Error; err != nil {
 		return errors.NewInternalError(fmt.Errorf("failed to store refresh token: %w", err))
 	}
 
-	logger.Debugf("[StoreToken] New token stored (expires: %v)", expiresAt)
+	logger.Infof("[StoreToken] New token stored for device %s... (expires: %v)", deviceFingerprint[:16], expiresAt)
 	return nil
 }
 
@@ -1344,5 +1335,27 @@ func (s *AuthService) ChangePassword(userID string, oldPassword string, newPassw
 // This prevents token compromise if database is leaked
 func hashToken(token string) string {
 	hash := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(hash[:])
+}
+
+// generateDeviceFingerprint creates a unique identifier for a device based on UserAgent
+// This is used for per-device token management - allowing multiple devices while
+// ensuring login from the same device revokes only that device's old token
+//
+// Strategy: Use UserAgent as primary identifier because:
+// - IP addresses can change (mobile networks, VPN, etc.)
+// - UserAgent is relatively stable per browser/device combination
+// - Provides good balance between uniqueness and stability
+func generateDeviceFingerprint(userAgent string) string {
+	// Normalize: trim whitespace and use lowercase for consistency
+	normalized := strings.TrimSpace(strings.ToLower(userAgent))
+
+	// If no UserAgent provided, use a placeholder
+	if normalized == "" {
+		normalized = "unknown-device"
+	}
+
+	// Generate SHA256 hash for consistent length and privacy
+	hash := sha256.Sum256([]byte(normalized))
 	return hex.EncodeToString(hash[:])
 }

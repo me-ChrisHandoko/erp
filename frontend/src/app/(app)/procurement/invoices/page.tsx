@@ -17,7 +17,6 @@ import { PurchaseInvoicesClient } from "./invoices-client";
 import { apiFetch } from "@/lib/server/api-fetch";
 import { requireAuth } from "@/lib/server/auth";
 import type { PurchaseInvoiceListResponse } from "@/types/purchase-invoice.types";
-import type { ApiSuccessResponse } from "@/types/api";
 
 export default async function PurchaseInvoicesPage() {
   // Ensure user is authenticated
@@ -54,7 +53,9 @@ export default async function PurchaseInvoicesPage() {
   let initialData: PurchaseInvoiceListResponse;
 
   try {
-    const response = await apiFetch<ApiSuccessResponse<PurchaseInvoiceListResponse>>({
+    // Note: Backend returns { success, data: [...], pagination: {...} } at same level
+    // Not nested like ApiSuccessResponse<{ data, pagination }>
+    const response = await apiFetch<{ success: boolean; data: any[]; pagination: any }>({
       endpoint: '/purchase-invoices',
       params: {
         page: 1,
@@ -65,8 +66,11 @@ export default async function PurchaseInvoicesPage() {
       cache: 'no-store', // Always fetch fresh data for now
     });
 
-    // Extract data from success response envelope
-    initialData = response.data;
+    // Construct PurchaseInvoiceListResponse from flat response
+    initialData = {
+      data: response.data,
+      pagination: response.pagination,
+    };
   } catch (error) {
     console.error('[Purchase Invoices Page] Failed to fetch initial data:', error);
 

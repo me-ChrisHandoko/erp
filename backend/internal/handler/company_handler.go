@@ -138,6 +138,13 @@ func (h *CompanyHandler) UpdateCompanyProfile(c *gin.Context) {
 	if req.SPPKPNumber != nil {
 		updates["sppkp_number"] = *req.SPPKPNumber
 	}
+	// Purchase Invoice Settings (3-way matching)
+	if req.InvoiceControlPolicy != nil {
+		updates["invoice_control_policy"] = *req.InvoiceControlPolicy
+	}
+	if req.InvoiceTolerancePct != nil {
+		updates["invoice_tolerance_pct"] = *req.InvoiceTolerancePct
+	}
 
 	// Call service with company ID (using MultiCompanyService for PHASE 5)
 	updatedCompany, err := h.multiCompanyService.UpdateCompany(c.Request.Context(), companyID.(string), updates)
@@ -420,7 +427,10 @@ func (h *CompanyHandler) mapCompanyToResponse(companyData interface{}) *dto.Comp
 		IsPKP:         companyModel.IsPKP,
 		PPNRate:       companyModel.PPNRate.InexactFloat64(),
 		InvoicePrefix: companyModel.InvoicePrefix,
-		IsActive:      companyModel.IsActive,
+		// Purchase Invoice Settings (3-way matching)
+		InvoiceControlPolicy: string(companyModel.InvoiceControlPolicy),
+		InvoiceTolerancePct:  companyModel.InvoiceTolerancePct.InexactFloat64(),
+		IsActive:             companyModel.IsActive,
 	}
 
 	// Set optional fields

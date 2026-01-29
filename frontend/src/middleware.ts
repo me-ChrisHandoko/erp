@@ -32,12 +32,20 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // FIX: Don't redirect logout page even if refresh_token cookie exists
-  // This prevents infinite loop when user has stale cookie but no tenant access
-  if (isLoginPage && hasRefreshToken) {
-    // Accessing login page while already authenticated
+  // FIX: Don't redirect if there's a reason parameter (session_expired, session_revoked, etc.)
+  // This prevents infinite loop when cookie exists but token is invalid/revoked in database
+  const hasSessionReason = request.nextUrl.searchParams.has("reason");
+
+  if (isLoginPage && hasRefreshToken && !hasSessionReason) {
+    // Accessing login page while already authenticated (and no session invalidation reason)
     console.log("[Middleware] Already authenticated, redirecting to dashboard");
     return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
+
+  // If login page with reason, allow it to proceed and clear state
+  if (isLoginPage && hasSessionReason) {
+    console.log("[Middleware] Login page with reason param, allowing access");
+    // Note: The cookie will be cleared by a proper logout flow or will expire
   }
 
   // Allow logout page to always proceed (no redirect)

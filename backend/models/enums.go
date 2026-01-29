@@ -124,6 +124,23 @@ const (
 	PurchaseOrderStatusCancelled   PurchaseOrderStatus = "CANCELLED"    // Dibatalkan
 )
 
+// POInvoiceStatus - Purchase Order invoicing status (like Odoo/SAP)
+type POInvoiceStatus string
+
+const (
+	POInvoiceStatusNotInvoiced       POInvoiceStatus = "NOT_INVOICED"       // Belum ada invoice
+	POInvoiceStatusPartiallyInvoiced POInvoiceStatus = "PARTIALLY_INVOICED" // Sebagian sudah diinvoice
+	POInvoiceStatusFullyInvoiced     POInvoiceStatus = "FULLY_INVOICED"     // Sudah diinvoice seluruhnya
+)
+
+// InvoiceControlPolicy - Control policy for purchase invoice creation (like Odoo/SAP 3-way matching)
+type InvoiceControlPolicy string
+
+const (
+	InvoiceControlPolicyOrdered  InvoiceControlPolicy = "ORDERED"  // Bisa invoice berdasarkan qty PO (tanpa harus GRN)
+	InvoiceControlPolicyReceived InvoiceControlPolicy = "RECEIVED" // Hanya bisa invoice berdasarkan qty yang sudah diterima (GRN)
+)
+
 // RejectionDisposition - Disposition for rejected goods (Odoo+M3 model)
 type RejectionDisposition string
 
